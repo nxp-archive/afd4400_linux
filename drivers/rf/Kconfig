@@ -1,0 +1,16 @@
+#
+# RF subsystem configuration
+#
+
+menuconfig RF
+	tristate "RF support"
+	depends on HAS_IOMEM
+	---help---
+	  If you say yes to this option, support will be included
+	  for RF subsystem drivers
+
+if RF
+
+source "drivers/rf/cpri/Kconfig"
+
+endif # RF
