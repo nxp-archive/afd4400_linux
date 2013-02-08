@@ -21,6 +21,7 @@
 #include <linux/bitops.h>
 
 #include "sfp.h"
+#include "cpri_eth.h"
 
 /* Autoneg data structures - Start */
 enum cpri_state {

@@ -675,6 +675,7 @@ static int cpri_autoneg_all(struct cpri_framer *framer)
 {
 	enum cpri_state state = framer->framer_state;
 	struct device *dev = framer->cpri_dev->dev;
+	struct net_device *ndev = framer->eth_priv->ndev;
 	unsigned long timer_dur;
 	int err = 0;
 
@@ -730,7 +731,9 @@ static int cpri_autoneg_all(struct cpri_framer *framer)
 		add_timer(&framer->link_poller);
 
 		/* Setup poller for checking change in eth ptr */
-		if (framer->framer_state == PASSIVELINK) {
+		if (framer->framer_state != PASSIVELINK)
+			netif_carrier_on(ndev);
+		else {
 			timer_dur = jiffies + framer->passive_poll_dur_sec * HZ;
 			framer->ethptr_poller.expires = timer_dur;
 			add_timer(&framer->ethptr_poller);
