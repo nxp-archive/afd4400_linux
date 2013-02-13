@@ -41,6 +41,38 @@ static struct class *cpri_class;
 static LIST_HEAD(cpri_dev_list);
 raw_spinlock_t cpri_list_lock;
 
+struct cpri_framer *get_attached_cpri_dev(struct device_node *sfp_dev_node)
+{
+	struct cpri_dev *cpri_dev = NULL;
+	struct cpri_framer *framer = NULL;
+	struct sfp_dev *sfp_dev;
+	struct device_node *node = NULL;
+	int i;
+
+	raw_spin_lock(&cpri_list_lock);
+	list_for_each_entry(cpri_dev, &cpri_dev_list, list) {
+
+		for (i = 0; i < cpri_dev->framers; i++) {
+			framer = cpri_dev->framer[i];
+			if (sfp_dev_node == framer->sfp_dev_node) {
+				node = framer->sfp_dev_node;
+				break;
+			}
+		}
+
+		if (framer->sfp_dev == NULL) {
+			sfp_dev = container_of(node, struct sfp_dev, dev_node);
+			framer->sfp_dev = sfp_dev;
+			framer->framer_state = STANDBY;
+			break;
+		}
+	}
+	raw_spin_unlock(&cpri_list_lock);
+
+	return framer;
+}
+EXPORT_SYMBOL(get_attached_cpri_dev);
+
 static int cpri_open(struct inode *inode, struct file *fp)
 {
 	struct cpri_framer *framer = NULL;
@@ -536,6 +568,17 @@ static int cpri_probe(struct platform_device *pdev)
 		rc = cpri_register_framer_irqs(framer);
 		if (rc < 0)
 			goto err_node;
+
+		/* Get the SFP handle and determine the cpri state */
+		framer->sfp_dev_node = of_parse_phandle(child,
+					"sfp-handle", 0);
+		framer->sfp_dev = get_attached_sfp_dev(framer->sfp_dev_node);
+		if (framer->sfp_dev != NULL) {
+			framer->framer_state = STANDBY;
+		} else {
+			framer->framer_state = SFP_DETACHED;
+			dev_err(dev, "no sfp, framer state remains detached\n");
+		}
 
 		/* Setup ethernet interface */
 		if (cpri_eth_init(pdev, framer, child) < 0) {

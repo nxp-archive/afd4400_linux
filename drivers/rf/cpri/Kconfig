@@ -10,4 +10,11 @@ config RF_CPRI
 	help
 	  If you say yes to this option, support will be included
 	  for CPRI driver
+
+config RF_SFP
+        bool "SFP"
+        help
+          If you say yes to this option, support will be included
+          for SFP driver
+
 endmenu

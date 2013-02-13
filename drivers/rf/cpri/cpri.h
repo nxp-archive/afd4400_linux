@@ -20,6 +20,8 @@
 #include <linux/etherdevice.h>
 #include <linux/bitops.h>
 
+#include "sfp.h"
+
 /* Autoneg data structures - Start */
 enum cpri_state {
 	/* Initial state */
@@ -300,6 +302,26 @@ struct cpri_dev {
 	unsigned int framers;
 	struct list_head list;
 	struct cpri_framer *framer[];
+};
+
+struct sfp_dev {
+	u32 id;
+	struct device_node *dev_node;
+	unsigned int num_addresses;
+	enum mem_type type;
+	int use_smbus;
+	struct sfp_info *info;
+	struct cpri_framer *pair_framer;
+	struct mutex lock;
+	u8 *writebuf;
+	unsigned write_max;
+	/* TODO: stats */
+	unsigned int irq_txfault;
+	unsigned int irq_rxlos;
+	unsigned int irq_prs;
+	unsigned int tx_disable;
+	struct list_head list;
+	struct i2c_client *client[];
 };
 
 struct cpri_common_regs {
@@ -630,6 +652,8 @@ struct cpri_framer {
 	struct cdev cdev;
 	dev_t dev_t;
 	raw_spinlock_t regs_lock;
+	struct device_node *sfp_dev_node;
+	struct sfp_dev *sfp_dev;
 	/* ISR events and bottom half */
 	unsigned int irq_rx_t;
 	unsigned int irq_tx_t;
@@ -946,6 +970,10 @@ struct cpri_reg_data {
 #define IEVENT_FAE				0x800000
 #define IEVENT_RRA				0x1000000
 
+#define IEVENT_SFP_TXFAULT			0x2000000
+#define IEVENT_SFP_LOS				0x4000000
+#define IEVENT_SFP_PRS				0x8000000
+
 #define CPRI_ERR_EVT_ALL	(IEVENT_RX_IQ_OVERRUN \
 		| IEVENT_TX_IQ_UNDERRUN \
 		| IEVENT_RX_ETH_MEM_OVERRUN \
@@ -1245,5 +1273,11 @@ extern void cpri_eth_enable(struct cpri_framer *framer);
 extern int cpri_eth_handle_rx(struct cpri_framer *framer);
 extern int cpri_eth_handle_tx(struct cpri_framer *framer);
 extern int cpri_eth_handle_error(struct cpri_framer *framer);
+
+/* SFP exported functions */
+extern struct cpri_framer
+	*get_attached_cpri_dev(struct device_node *sfp_dev_node);
+extern struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node);
+extern void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value);
 
 #endif /* __CPRIDRV_H */
