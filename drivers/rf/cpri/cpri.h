@@ -659,6 +659,7 @@ struct cpri_framer {
 	unsigned int irq_tx_t;
 	unsigned int irq_rx_c;
 	unsigned int irq_tx_c;
+	unsigned int timer_expiry_events;
 	/* Configuration and stats */
 	u32 test_flags;
 	enum cpri_state framer_state;
@@ -1095,12 +1096,13 @@ struct cpri_reg_data {
 #define CPRI_MAGIC 'C'
 #define CPRI_START_AUTONEG			_IO(CPRI_MAGIC, 1)
 #define CPRI_START_L1TIMER			_IO(CPRI_MAGIC, 2)
-#define CPRI_CFG_L1TIMER			_IOW(CPRI_MAGIC, 3, long)
-#define CPRI_SET_AUTONEG_PARAM			_IOW(CPRI_MAGIC, 4, \
+#define  CPRI_STOP_L1TIMER			_IO(CPRI_MAGIC, 3)
+#define CPRI_CFG_L1TIMER			_IOW(CPRI_MAGIC, 4, long)
+#define CPRI_SET_AUTONEG_PARAM			_IOW(CPRI_MAGIC, 5, \
 						struct cpri_autoneg_param*)
-#define CPRI_GET_AUTONEG_PARAM			_IOR(CPRI_MAGIC, 5, \
+#define CPRI_GET_AUTONEG_PARAM			_IOR(CPRI_MAGIC, 6, \
 						struct cpri_autoneg_param*)
-#define CPRI_GET_AUTONEG_OUTPUT			_IOR(CPRI_MAGIC, 6, \
+#define CPRI_GET_AUTONEG_OUTPUT			_IOR(CPRI_MAGIC, 7, \
 						struct cpri_autoneg_output*)
 
 /* Main driver IOCTLS */
