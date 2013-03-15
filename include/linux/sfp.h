@@ -1,5 +1,5 @@
 /*
- * drivers/rf/cpri/sfp.h
+ * include/linux/sfp.h
  * SFP device driver
  * Author: Freescale semiconductor, Inc.
  *
@@ -10,6 +10,9 @@
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
  */
+
+#ifndef __SFP_H_
+#define __SFP_H_
 
 struct sfp_diag_info {
 	/* Alarm and Warning Thresholds */
@@ -122,7 +125,7 @@ struct sfp_diag_info {
 	u8 vendor[8];
 };
 
-struct sfp_info {
+struct sfp {
 	/* Basic ID fields */
 	u8 type;
 	u8 ext_type;
@@ -162,8 +165,6 @@ struct sfp_info {
 	u8 check_code_e;
 	u8 vendor_id_fields[32];
 	u8 reserved5[128];
-	/* Diagnostic info */
-	struct sfp_diag_info diag;
 };
 
 #define SFP_EEPROM_INFO_SIZE		128
@@ -177,3 +178,5 @@ enum mem_type {
 	SFP_MEM_EEPROM = 0,
 	SFP_MEM_DIAG
 };
+
+#endif /* __SFP_H_ */

@@ -1,5 +1,5 @@
 /*
- * drivers/rf/cpri/cpri.h
+ * include/linux/cpri.h
  * CPRI device driver
  * Author: Freescale semiconductor, Inc.
  *
@@ -11,8 +11,8 @@
  * option) any later version.
  */
 
-#ifndef __CPRIDRV_H
-#define __CPRIDRV_H
+#ifndef __CPRI_H
+#define __CPRI_H
 
 #include <linux/cdev.h>
 #include <linux/io.h>
@@ -20,151 +20,24 @@
 #include <linux/etherdevice.h>
 #include <linux/bitops.h>
 
-#include "sfp.h"
-#include "cpri_eth.h"
-
-/* Autoneg data structures - Start */
-enum cpri_state {
-	/* Initial state */
-	SFP_DETACHED = 1,
-	STANDBY,
-	/* State during autoneg*/
-	LINE_RATE_AUTONEG,
-	SERDES_ERROR,
-	LINK_RATE_SETUP_TIMER_EXPIRED,
-	PROT_VER_AUTONEG,
-	PROT_VER_SETUP_TIMER_EXPIRED,
-	ETHLINK_AUTONEG,
-	ETHLINK_SETUP_TIMER_EXPIRED,
-	PASSIVELINK,
-	VENDOR_CONFIG,
-	AUTONEG_COMPLETED,
-	OPERATIONAL,
-	/* Reconfiguration */
-	LINK_RECONFIG_READY,
-	INTERFACE_RECONFIG_READY,
-	INTERFACE_RECONFIG_DONE,
-	AXC_MAPPING_RECONFIG_READY,
-	AXC_MAPPING_RECONFIG_DONE,
-	/* Error state; can occur during operation */
-	L1TIMER_EXPIRED,
-	L1INBAND_ERROR,
-	REC_RESET,
-	ETHLINK_RATE_MISMATCH,
-	ETHLINK_DISCONNECT,
-	ETH_LINK_PROPOSED,
-	PROT_VER_MISMATCH,
-	INVALID_PARAM
-};
-
-enum cpri_link_rate {
-	RATE2_1228_8M = 1,
-	RATE3_2457_6M,
-	RATE4_3072_0M,
-	RATE5_4915_2M,
-	RATE6_6144_0M,
-	RATE7_9830_4M
-};
-
-enum cpri_cm_mode {
-	ETH = 1,
-	HDLC
-};
-
-enum cpri_prot_ver {
-	VER_1 = 1,
-	VER_2
-};
-
-enum hdlc_link_rate {
-	RATE_0 = 1,
-	RATE_240K,
-	RATE_480K,
-	RATE_960K,
-	RATE_1920K,
-	RATE_2400K,
-	RATE_3840K,
-	RATE_4800K,
-	RATE_7680K
-};
-
-enum autoneg_cmd {
-	CPRI_DO_LINE_RATE_AUTONEG = 1,
-	CPRI_DO_PROTOCOL_AUTONEG,
-	CPRI_DO_CNM_AUTONEG,
-	CPRI_DO_VENDOR_AUTONEG,
-	CPRI_DO_AUTONEG_ALL,
-	CPRI_DO_RECONFIG
-#define CPRI_LINK_RECONFIG_INIT_REQ		0x1
-#define CPRI_INTERFACE_RECONFIG_INIT_REQ	0x2
-#define CPRI_INTERFACE_RECONFIG_SETUP_REQ	0x4
-#define CPRI_AXC_MAPPING_RECONFIG_INIT_REQ	0x8
-#define CPRI_AXC_MAPPING_RECONFIG_SETUP_REQ	0x10
-};
-
-struct cpri_delay_config {
-	u32 rx_ex_delay_period;
-	u32 tx_ex_delay;
-};
-
-struct cpri_autoneg_param {
-	u32 autoneg_param_flags;
-	/* Line rate auto neg parameters */
-	unsigned long linerate_autoneg_dur_sec;
-	unsigned long tx_on_dur_sec;
-	unsigned long tx_off_dur_sec;
-	enum cpri_link_rate link_rate_low, link_rate_high;
-	/*C&M rate auto neg parameters */
-	unsigned long eth_setup_dur_sec;
-	enum cpri_cm_mode cm_mode;
-	enum hdlc_link_rate hdlc_rate_low, hdlc_rate_high;
-	u8 eth_rate_cnt;
-	u8 *eth_rate;
-	/* Protocol auto neg parameters */
-	unsigned long proto_ver_setup_dur_sec;
-	enum cpri_prot_ver tx_prot_ver;
-	u32 tx_scrseed_val;
-};
-
-struct cpri_delay_output {
-	/* Extended delay measurement status */
-	unsigned short rx_ex_buf_delay;
-	unsigned char rx_ex_buf_delay_valid;
-	/* Receive delay */
-	unsigned char rx_byte_delay;
-	unsigned char rx_buf_delay;
-	unsigned char rx_align_delay;
-	/* Round trip delay */
-	u32 rx_roundtrip_delay;
-};
-
-struct cpri_autoneg_output {
-	enum cpri_link_rate common_linkrate;
-	u8 common_ethrate;
-	enum cpri_prot_ver common_protver;
-	unsigned char rx_eth_ptr;
-	/* Basic frame */
-	unsigned int cpri_bf_word_size;
-	unsigned int cpri_bf_iq_datablock_size;
-	/* Scramble seed */
-	u32 rx_scrseed_val;
-};
-/* Autoneg data structures - End */
-
-/* AxC data structures - Start */
-enum mapping_method {
-	METHOD_1 = 1,
-	METHOD_2,
-	METHOD_3
-};
+#include <linux/sfp.h>
+#include <linux/cpri_eth.h>
+#include <linux/cpri_ioctl.h>
 
 struct axc_rx_param {
 	unsigned int axc_rx_param_flag;
+#define AXC_DATA_TYPE_IQ			(1 << 1)
+#define AXC_DATA_TYPE_VSS			(1 << 2)
+#define AXC_OVERSMAPLING			(1 << 3)
+#define AXC_92E_CONVERSION			(1 << 4)
+#define AXC_INTERLEAVING			(1 << 5)
+#define AXC_TX_ROUNDING				(1 << 6)
 	unsigned char sampling_width;
 	unsigned int buffer_threshold;
 	unsigned int S;
 	unsigned char K;
-	unsigned int Nst;
+	unsigned int Ns;
+	unsigned int Na;
 };
 
 struct axc_tx_param {
@@ -173,15 +46,8 @@ struct axc_tx_param {
 	unsigned int buffer_threshold;
 	unsigned int S;
 	unsigned char K;
-	unsigned int Nst;
-};
-
-struct axc_buf {
-	u32 addr;
-	u32 size;
-	unsigned int mem_blk;
-	struct axc *axc;
-	struct list_head list;
+	unsigned int Ns;
+	unsigned int Na;
 };
 
 struct axc {
@@ -196,6 +62,14 @@ struct axc {
 	struct axc_tx_param tx_param;
 	struct axc_buf *axc_buf;
 	unsigned int buffer_threshold;
+};
+
+struct axc_buf {
+	u32 addr;
+	u32 size;
+	unsigned int mem_blk;
+	struct axc *axc;
+	struct list_head list;
 };
 
 struct axc_map_table {
@@ -236,56 +110,13 @@ struct axc_buf_head {
 	struct list_head free_list;
 	spinlock_t lock;
 };
-/* AxC data structures - End */
 
-/* VSS data structures - Start */
-struct vss_buffer_params {
-	u32 flags;
-	unsigned long buf_base_phys;
-	unsigned int buff_count_hf;
-	unsigned int buff_threshold_hf;
-};
+
 struct vss_buf_ctrl {
 	u32  base_addr_phys;
 	unsigned int buff_size;
 	unsigned int curr_idx;
 	unsigned int threshold;
-};
-/* VSS data structures - End */
-
-/* Control word data structures - Start */
-struct ctrl_chan {
-	unsigned int chan;
-	u8 words[4][16];
-	u8 word_bitmap;
-};
-struct hf_ctrl_chans {
-	struct ctrl_chan  **channels;
-	unsigned int channel_count;
-	unsigned int hf;
-};
-/* Control word data structures - End */
-
-/* Daisy chain data structure */
-struct daisy_chain_param {
-	unsigned int flag;
-	u8 hw_reset_bitmap;
-	u8 cw130_bitmap;
-	u32 axc_bitmap;
-	u8 cw_bitmap[8];
-};
-
-/* Per CPRI complex data structures - Start */
-struct event_listener {
-	u32 evt_mask;
-	unsigned int signal;
-};
-
-struct cpri_event_handler_list {
-	u32 evt_mask;
-	struct pid *pid;
-	struct siginfo siginfo;
-	struct list_head list;
 };
 
 struct cpri_dev {
@@ -311,8 +142,8 @@ struct sfp_dev {
 	unsigned int num_addresses;
 	enum mem_type type;
 	int use_smbus;
-	struct sfp_info *info;
 	struct cpri_framer *pair_framer;
+	struct sfp info;
 	struct mutex lock;
 	u8 *writebuf;
 	unsigned write_max;
@@ -338,9 +169,7 @@ struct cpri_common_regs {
 	u32 reserved2[(0x7eb8 - 0x7e94) / sizeof(u32)];
 	u32 cpri_remresetoutputctrl; /* 0x7EB8 - CPRI Rem Reset Output Ctrl */
 };
-/* Per CPRI complex data structures - End */
 
-/* Per CPRI framer data structures - Start */
 struct cpri_framer_regs {
 	/* Framer registers */
 	u32 cpri_status;	/* 0x4  - Status */
@@ -564,87 +393,6 @@ struct cpri_framer_regs {
 	u32 cpri_taxcorunintstatus; /* 0xF2C - Tx Ant Carr Orun Int Status */
 };
 
-struct cpri_map_sync_offset {
-	u8 rx_bfn_offset;
-	u8 rx_hfn_offset;
-	u8 tx_bfn_offset;
-	u8 tx_hfn_offset;
-	u8 start_tx_hfn_offset;
-	u8 start_tx_bfn_offset;
-};
-
-struct cpri_framer_param {
-	u32 framer_pram_flags;
-	unsigned int max_axc_count;
-	u32 rx_vss_axi_transac_size;
-	u32 tx_vss_axi_transac_size;
-	u32 tx_framer_buf_size;
-	unsigned int k0;
-	unsigned int k1;
-	struct cpri_map_sync_offset map_sync_offset;
-};
-
-struct cpri_framer_stats {
-	u8 tx_hfn;
-	u16 tx_bfn;
-	u8 rx_hfn;
-	u16 rx_bfn;
-	/* VSS Rx & Tx stats */
-	u32 tx_vss_frames;
-	u32 rx_vss_frames;
-	/* Autoneg error stats */
-	u32 linerate_autoneg_failures;
-	u32 proto_autoneg_failures;
-	u32 eth_autoneg_failures;
-	u32 vendor_config_failures;
-	/* Framer error stats */
-	u32 rx_iq_overrun_err_count;
-	u32 tx_iq_underrun_err_count;
-	u32 rx_eth_mem_overrun_err_count;
-	u32 tx_eth_underrun_err_count;
-	u32 rx_eth_bd_underrun_err_count;
-	u32 rx_hdlc_overrun_err_count;
-	u32 tx_hdlc_underrun_err_count;
-	u32 rx_hdlc_bd_underrun_err_count;
-	u32 rx_vss_overrun_err_count;
-	u32 tx_vss_underrun_err_count;
-	u32 ecc_config_mem_err_count;
-	u32 ecc_data_mem_err_count;
-	u32 rx_eth_dma_overrun_err_count;
-	u32 eth_fwd_rem_fifo_full_err_count;
-	u32 ext_sync_loss_err_count;
-	u32 rlos_err_count;
-	u32 rlof_err_count;
-	u32 rai_err_count;
-	u32 rsdi_err_count;
-	u32 llos_err_count;
-	u32 llof_err_count;
-	u32 rr_err_count;
-	u32 fa_err_count;
-	u32 rra_err_count;
-	/* CPRIn_LCV */
-	u32 rx_line_coding_violation;
-};
-
-struct framer_info {
-	enum cpri_state state;
-	u32 test_flags;
-	/* CPRIn_BFN */
-	u16 cur_bfn;
-	/* CPRIn_HFN */
-	u8 cur_hfn;
-	struct cpri_framer_param framer_param;
-	unsigned int max_axc_count;
-	/* CPRIn_STATUS, CPRInRSR & CPRInTSR */
-	u32 cpri_status_flags;
-	/* CPRIn_HW_RESET */
-	u8 hw_reset_status_flags;
-	/* CPRInTXHFN */
-	u8 tx_hfn_counter;
-	/* CPRInTXBFN */
-	u8 tx_bfn_counter;
-};
-
 struct cpri_framer {
 	/* Overall data structures per framer */
 	unsigned long id;
@@ -663,16 +411,17 @@ struct cpri_framer {
 	unsigned int timer_expiry_events;
 	/* Configuration and stats */
 	u32 test_flags;
+	u32 dev_flags;
 	enum cpri_state framer_state;
-	struct cpri_framer_stats stats;
-	struct cpri_framer_param framer_param;
+	struct cpri_dev_stats stats;
+	struct cpri_dev_init_params framer_param;
 	struct cpri_framer *chained_framer;
 	/* Autoneg data structures per framer*/
-	struct cpri_autoneg_param autoneg_param;
+	struct cpri_autoneg_params autoneg_param;
 	struct cpri_autoneg_output autoneg_output;
 	/* Delay data structures */
-	struct cpri_delay_config delay_cfg;
-	struct cpri_delay_output delay_out;
+	struct cpri_delays_raw_cfg delay_cfg;
+	struct cpri_delays_raw delay_out;
 	/* AxC data structures per framer */
 	unsigned int max_axcs;
 	u32 *axc_enable_bitmap;
@@ -686,8 +435,8 @@ struct cpri_framer {
 	/* Ethernet data structures per framer */
 	struct cpri_eth_priv *eth_priv;
 	/* VSS data structures per framer */
-	struct vss_buf_ctrl  vss_tx_ctrl;
-	struct vss_buf_ctrl  vss_rx_ctrl;
+	struct vss_buf_ctrl vss_tx_ctrl;
+	struct vss_buf_ctrl vss_rx_ctrl;
 	u8 rx_vss_axi_transaction_size;
 	u8 tx_vss_axi_transaction_size;
 	/* Control word channel data structures per framer */
@@ -709,110 +458,15 @@ struct cpri_framer {
 	/* misc */
 	unsigned char notification_state;
 };
-/* Per CPRI framer data structures - End */
 
-/* Register R/W data structure */
-struct regrw {
-	u32 offset;
-	unsigned int length;
-	u32 buf[];
-};
+#define TEVENT_LINERATE_SETUP_TEXPIRED		(1 << 1)
+#define TEVENT_PROTVER_SETUP_TEXPIRED		(1 << 2)
+#define TEVENT_ETHRATE_SETUP_TEXPIRED		(1 << 3)
 
-struct cpri_event_listener {
-	u32 evt_mask;
-	unsigned int signal;
-};
+#define IEVENT_SFP_TXFAULT			(1 << 1)
+#define IEVENT_SFP_LOS				(1 << 2)
+#define IEVENT_SFP_PRS				(1 << 3)
 
-struct cpri_reg_data {
-	u32 mask;
-	u32 val;
-};
-
-/* test_flags */
-#define RX_TRANSPARENT_MODE			0x80000000
-#define TX_TRANSPARENT_MODE			0x40000000
-
-/* framer_pram_flags */
-/* CPRIn_CONFIG */
-#define SET_10_ACKS				0x80000000
-#define CNT_6_RESET				0x40000000
-#define SYNC_PULSE_MODE				0x20000000
-#define TX_CW_INSERT				0x10000000
-/* CPRInCWMASKEN */
-#define CW					0x08000000
-#define CW130					0x04000000
-/* SRC */
-#define RST_REQ_BYP				0x02000000
-/* CPRIRROCR */
-#define C1_REM_RES_OP				0x01000000
-#define C1_REM_RES_ACK_OP			0x00800000
-#define C2_REM_RES_OP				0x00400000
-#define C2_REM_RES_ACK_OP			0x00200000
-/* CPRInRCR */
-#define RX_IQ_SYNC				0x00100000
-/* CPRInTCR */
-#define TX_IQ_SYNC				0x00080000
-/* CPRInEFICR */
-#define ETH_FWD					0x00040000
-/* CPRIGRSR & CPRIGTSR */
-#define GEN_RX_IQ_SYNC				0x00020000
-#define GEN_TX_IQ_SYNC				0x00010000
-/* CPRInECCEIER */
-#define SINGLE_BIT_ECC_ERROR_OUTPUT		0x00008000
-#define MULTI_BIT_ECC_ERROR_OUTPUT		0x00004000
-/* Daisy chain */
-#define AUX_MODE				0x00002000
-/* Operation mode */
-#define SLAVE_MODE				0x00001000
-/* AxC mapping mode */
-#define ADVANCED_MAP_MODE			0x00000800
-
-/* cpri_status_flags */
-/* CPRIn_STATUS */
-#define RX_LOS_STATUS				0x80000000
-#define RX_STATE_STATUS				0x40000000
-#define RX_HFN_STATE_STATUS			0x20000000
-#define RX_BFN_STATE_STATUS			0x10000000
-#define RX_LOS_HOLD_STATUS			0x08000000
-#define RX_STATE_HOLD_STATUS			0x04000000
-#define RX_FREQ_ALARM_HOLD_STATUS		0x02000000
-#define RX_RFP_HOLD_STATUS			0x01000000
-/* CPRInRSR & CPRInTSR */
-#define RX_VSS_EVENT_STATUS			0x00800000
-#define TX_VSS_EVENT_STATUS			0x00400000
-#define RX_ETH_EVENT_STATUS			0x00200000
-#define TX_ETH_EVENT_STATUS			0x00100000
-#define RX_IQ_EVENT_STATUS			0x00080000
-#define TX_IQ_EVENT_STATUS			0x00040000
-/* hw_reset_status_flags */
-/* CPRIn_HW_RESET */
-#define RESET_GEN_DONE_HOLD_STATUS		0x80000000
-#define RESET_GEN_DONE_STATUS			0x40000000
-#define RESET_DETECT_HOLD_STATUS		0x20000000
-#define RESET_DETECT_STATUS			0x10000000
-
-/* autoneg_param_flags */
-/* CPRIn_RX_SCR_SEED */
-#define RX_SCRAMBLER_EN				0x80000000
-
-/* Timer Expiry Event flags */
-#define TEVENT_LINERATE_SETUP_TEXPIRED		0x80000000
-#define TEVENT_PROTVER_SETUP_TEXPIRED		0x40000000
-#define TEVENT_ETHRATE_SETUP_TEXPIRED		0x20000000
-
-/* Rx AxC Param Flags */
-#define AXC_RX_IQ_FORMAT_2                      0x80000000
-#define AXC_RX_INTERLEAVING_EN                  0x40000000
-#define AXC_RX_CONVERSION_9E2_EN                0x20000000
-#define AXC_RX_OVERSAMPLING_2X                  0x10000000
-
-/* Tx AxC Param Flags */
-#define AXC_TX_IQ_FORMAT_2                      0x80000000
-#define AXC_TX_INTERLEAVING_EN                  0x40000000
-#define AXC_TX_OVERSAMPLING_2X                  0x20000000
-#define AXC_TX_ROUNDING_EN                      0x10000000
-
-/* Misc flags */
 #define MASK_ALL				0xFFFFFFFF
 #define BITS_PER_U32				32
 #define REG_SIZE				0x20
@@ -835,10 +489,10 @@ struct cpri_reg_data {
 
 /* ------------- Register masks - Start ------------- */
 /* CPRI Status Register (CPRIn_STATUS) */
-#define RX_LOS_MASK				0x1
-#define RX_STATE_MASK				0x2
-#define RX_HFN_STATE_MASK			0x4
-#define RX_BFN_STATE_MASK			0x8
+#define RX_LOS_MASK				0x001
+#define RX_STATE_MASK				0x002
+#define RX_HFN_STATE_MASK			0x004
+#define RX_BFN_STATE_MASK			0x008
 #define RX_LOS_HOLD_MASK			0x100
 #define RX_STATE_HOLD_MASK			0x200
 #define RX_FREQ_ALARM_HOLD_MASK			0x400
@@ -846,12 +500,12 @@ struct cpri_reg_data {
 
 /* CPRI Configuration (CPRIn_CONFIG) */
 #define CONF_SET_10_ACKS_MASK			0x4000
-#define CONF_CNT_6_RESET_MASK			0x800
-#define CONF_SYNC_PULSE_MODE_MASK		0x400
-#define CONF_RX_EN_MASK                         0x200
-#define CONF_TX_EN_MASK				0x20
-#define SLAVE_MODE_MASK				0x2
-#define TX_CW_INSERT_EN_MASK			0x1
+#define CONF_CNT_6_RESET_MASK			0x0800
+#define CONF_SYNC_PULSE_MODE_MASK		0x0400
+#define CONF_RX_EN_MASK				0x0200
+#define CONF_TX_EN_MASK				0x0020
+#define SLAVE_MODE_MASK				0x0002
+#define TX_CW_INSERT_EN_MASK			0x0001
 
 /* CPRI Receive Line Coding Violation Counter (CPRIn_LCV) */
 #define CNT_LCV_MASK				0xFF
@@ -867,9 +521,9 @@ struct cpri_reg_data {
 #define RESET_GEN_DONE_MASK			0x40
 #define RESET_DETECT_HOLD_MASK			0x20
 #define RESET_DETECT_MASK			0x10
-#define RESET_OUT_EN_MASK			0x4
-#define RESET_GEN_FORCE_EN_MASK			0x2
-#define RESET_GEN_EN_MASK			0x1
+#define RESET_OUT_EN_MASK			0x04
+#define RESET_GEN_FORCE_EN_MASK			0x02
+#define RESET_GEN_EN_MASK			0x01
 
 /* CPRI Control and Management Configuration (CPRIn_CM_CONFIG) */
 #define TX_FAST_CM_PTR_MASK			0x3F
@@ -907,10 +561,10 @@ struct cpri_reg_data {
 /* CPRI Mapping Configuration (CPRIn_MAP_CONFIG) */
 #define TX_TRANSPARENT_MODE_MASK		0x80
 #define RX_TRANSPARENT_MODE_MASK		0x40
-#define MAP_MODE_MASK				0x3
+#define MAP_MODE_MASK				0x03
 
 /* CPRIn_MAP_OFFSET_TX, CPRIn_MAP_OFFSET_RX & CPRIn_START_OFFSET_TX */
-#define MAP_OFFSET_X_MASK			0xFF
+#define MAP_OFFSET_X_MASK			0x00FF
 #define MAP_OFFSET_Z_MASK			0xFF00
 
 /* CPRInRVSSMTS & CPRInTVSSMTS */
@@ -923,20 +577,20 @@ struct cpri_reg_data {
 #define AUX_MODE_MASK				0x1
 
 /* Rx & Tx Control Register (CPRInRCR/CPRInTCR)) */
-#define IQ_EN_MASK				0x1
-#define ETH_EN_MASK				0x2
-#define HDLC_EN_MASK				0x4
-#define VSS_EN_MASK				0x8
+#define IQ_EN_MASK				0x0001
+#define ETH_EN_MASK				0x0002
+#define HDLC_EN_MASK				0x0004
+#define VSS_EN_MASK				0x0008
 #define IQ_SYNC_EN_MASK				0x8000
 
 /* CPRInRCIER & CPRInTCIER */
 #define TIMING_INT_LEVEL_MASK			0x80000000
-#define BFN_TIMING_EVENT_EN_MASK		0x20000
-#define HFN_TIMING_EVENT_EN_MASK		0x10000
-#define CONTROL_INT_LEVEL_MASK			0x8000
-#define ETH_EVENT_EN_MASK			0x4
-#define HDLC_EVENT_EN_MASK			0x2
-#define VSS_EVENT_EN_MASK			0x1
+#define BFN_TIMING_EVENT_EN_MASK		0x00020000
+#define HFN_TIMING_EVENT_EN_MASK		0x00010000
+#define CONTROL_INT_LEVEL_MASK			0x00008000
+#define ETH_EVENT_EN_MASK			0x00000004
+#define HDLC_EVENT_EN_MASK			0x00000002
+#define VSS_EVENT_EN_MASK			0x00000001
 
 /* CPRI ECC Error Indication Enable Register (CPRInECCEIER) */
 #define SINGLE_BIT_ECC_ERROR_OUTPUT_EN_MASK	0x1
@@ -947,67 +601,63 @@ struct cpri_reg_data {
 #define CW130_EN_MASK				0x2
 
 /* CPRInEIER & CPRInEER */
-#define IEVENT_RX_IQ_OVERRUN			0x1
-#define IEVENT_TX_IQ_UNDERRUN			0x2
-#define IEVENT_RX_ETH_MEM_OVERRUN		0x4
-#define IEVENT_TX_ETH_UNDERRUN			0x8
-#define IEVENT_RX_ETH_BD_UNDERRUN		0x10
-#define IEVENT_RX_HDLC_OVERRUN			0x20
-#define IEVENT_TX_HDLC_UNDERRUN			0x40
-#define IEVENT_RX_HDLC_BD_UNDERRUN		0x80
-#define IEVENT_RX_VSS_OVERRUN			0x100
-#define IEVENT_TX_VSS_UNDERRUN			0x200
-#define IEVENT_ECC_CONFIG_MEM			0x400
-#define IEVENT_ECC_DATA_MEM			0x800
-#define IEVENT_RX_ETH_DMA_OVERRUN		0x1000
-#define IEVENT_ETH_FORWARD_REM_FIFO_FULL	0x2000
-#define IEVENT_EXT_SYNC_LOSS			0x8000
-#define IEVENT_RLOS				0x10000
-#define IEVENT_RLOF				0x20000
-#define IEVENT_RAI				0x40000
-#define IEVENT_RSDI				0x80000
-#define IEVENT_LLOS				0x100000
-#define IEVENT_LLOF				0x200000
-#define IEVENT_RRE				0x400000
-#define IEVENT_FAE				0x800000
-#define IEVENT_RRA				0x1000000
+#define RX_IQ_OVERRUN				(1 << 1)
+#define TX_IQ_UNDERRUN				(1 << 2)
+#define RX_ETH_MEM_OVERRUN			(1 << 3)
+#define TX_ETH_UNDERRUN				(1 << 4)
+#define RX_ETH_BD_UNDERRUN			(1 << 5)
+#define RX_HDLC_OVERRUN				(1 << 6)
+#define TX_HDLC_UNDERRUN			(1 << 7)
+#define RX_HDLC_BD_UNDERRUN			(1 << 8)
+#define RX_VSS_OVERRUN				(1 << 9)
+#define TX_VSS_UNDERRUN				(1 << 10)
+#define ECC_CONFIG_MEM				(1 << 11)
+#define ECC_DATA_MEM				(1 << 12)
+#define RX_ETH_DMA_OVERRUN			(1 << 13)
+#define ETH_FORWARD_REM_FIFO_FULL		(1 << 14)
+#define EXT_SYNC_LOSS				(1 << 15)
+#define RLOS					(1 << 16)
+#define RLOF					(1 << 17)
+#define RAI					(1 << 18)
+#define RSDI					(1 << 19)
+#define LLOS					(1 << 20)
+#define LLOF					(1 << 21)
+#define RRE					(1 << 23)
+#define FAE					(1 << 24)
+#define RRA					(1 << 25)
 
-#define IEVENT_SFP_TXFAULT			0x2000000
-#define IEVENT_SFP_LOS				0x4000000
-#define IEVENT_SFP_PRS				0x8000000
-
-#define CPRI_ERR_EVT_ALL	(IEVENT_RX_IQ_OVERRUN \
-		| IEVENT_TX_IQ_UNDERRUN \
-		| IEVENT_RX_ETH_MEM_OVERRUN \
-		| IEVENT_TX_ETH_UNDERRUN \
-		| IEVENT_RX_ETH_BD_UNDERRUN \
-		| IEVENT_RX_HDLC_OVERRUN \
-		| IEVENT_TX_HDLC_UNDERRUN \
-		| IEVENT_RX_HDLC_BD_UNDERRUN \
-		| IEVENT_RX_VSS_OVERRUN \
-		| IEVENT_TX_VSS_UNDERRUN \
-		| IEVENT_ECC_CONFIG_MEM \
-		| IEVENT_ECC_DATA_MEM \
-		| IEVENT_RX_ETH_DMA_OVERRUN \
-		| IEVENT_ETH_FORWARD_REM_FIFO_FULL \
-		| IEVENT_EXT_SYNC_LOSS \
-		| IEVENT_RLOS \
-		| IEVENT_RLOF \
-		| IEVENT_RAI \
-		| IEVENT_RSDI \
-		| IEVENT_LLOS \
-		| IEVENT_LLOF \
-		| IEVENT_RRE \
-		| IEVENT_FAE \
-		| IEVENT_RRA)
+#define CPRI_ERR_EVT_ALL	(RX_IQ_OVERRUN \
+				| TX_IQ_UNDERRUN \
+				| RX_ETH_MEM_OVERRUN \
+				| TX_ETH_UNDERRUN \
+				| RX_ETH_BD_UNDERRUN \
+				| RX_HDLC_OVERRUN \
+				| TX_HDLC_UNDERRUN \
+				| RX_HDLC_BD_UNDERRUN \
+				| RX_VSS_OVERRUN \
+				| TX_VSS_UNDERRUN \
+				| ECC_CONFIG_MEM \
+				| ECC_DATA_MEM \
+				| RX_ETH_DMA_OVERRUN \
+				| ETH_FORWARD_REM_FIFO_FULL \
+				| EXT_SYNC_LOSS \
+				| RLOS \
+				| RLOF \
+				| RAI \
+				| RSDI \
+				| LLOS \
+				| LLOF \
+				| RRE \
+				| FAE \
+				| RRA)
 
 /* CPRInRER & CPRInTER */
 #define IEVENT_BFN_MASK				0x80
 #define IEVENT_HFN_MASK				0x40
 #define IEVENT_ETH_MASK				0x20
 #define IEVENT_HDLC_MASK			0x10
-#define IEVENT_VSS_THRESHOLD_MASK		0x8
-#define IEVENT_IQ_THRESHOLD_MASK		0x1
+#define IEVENT_VSS_THRESHOLD_MASK		0x08
+#define IEVENT_IQ_THRESHOLD_MASK		0x01
 
 /* CPRInRSR & CPRInTSR */
 #define VSS_EVENT_EN_STATUS_MASK		0x8
@@ -1019,24 +669,24 @@ struct cpri_reg_data {
 #define ECC_ERR_ALL_MASK			0x3FFFFC
 #define ECC_ERR_CW_DEL_MEM_MASK			0x200000
 #define ECC_ERR_ETH_FWD_MEM_MASK		0x100000
-#define ECC_ERR_TX_IQ_MEM1_MASK			0x80000
-#define ECC_ERR_TX_IQ_MEM0_MASK			0x40000
-#define ECC_ERR_RX_IQ_MEM1_MASK			0x20000
-#define ECC_ERR_RX_IQ_MEM0_MASK			0x10000
-#define ECC_ERR_RX_CFG_MEM_MASK			0x8000
-#define ECC_ERR_TX_CFG_MEM_MASK			0x4000
-#define ECC_ERR_FR_RX_IQ_MEM_MASK		0x2000
-#define ECC_ERR_FR_TX_IQ_MEM_MASK		0x1000
-#define ECC_ERR_RX_DMA_MEM_MASK			0x800
-#define ECC_ERR_TX_DMA_MEM_MASK			0x400
-#define ECC_ERR_RX_CWD_MEM_MASK			0x200
-#define ECC_ERR_TX_CWD_MEM_MASK			0x100
-#define ECC_ERR_FR_RX_ETH_MEM_MASK		0x80
-#define ECC_ERR_FR_TX_ETH_MEM_MASK		0x40
-#define ECC_ERR_FR_RX_HLC_MEM_MASK		0x20
-#define ECC_ERR_FR_TX_HDLC_MEM_MASK		0x10
-#define ECC_ERR_AUX_MEM_MASK			0x8
-#define ECC_ERR_FR_ELASTIC_MEM_MASK		0x4
+#define ECC_ERR_TX_IQ_MEM1_MASK			0x080000
+#define ECC_ERR_TX_IQ_MEM0_MASK			0x040000
+#define ECC_ERR_RX_IQ_MEM1_MASK			0x020000
+#define ECC_ERR_RX_IQ_MEM0_MASK			0x010000
+#define ECC_ERR_RX_CFG_MEM_MASK			0x008000
+#define ECC_ERR_TX_CFG_MEM_MASK			0x004000
+#define ECC_ERR_FR_RX_IQ_MEM_MASK		0x002000
+#define ECC_ERR_FR_TX_IQ_MEM_MASK		0x001000
+#define ECC_ERR_RX_DMA_MEM_MASK			0x000800
+#define ECC_ERR_TX_DMA_MEM_MASK			0x000400
+#define ECC_ERR_RX_CWD_MEM_MASK			0x000200
+#define ECC_ERR_TX_CWD_MEM_MASK			0x000100
+#define ECC_ERR_FR_RX_ETH_MEM_MASK		0x000080
+#define ECC_ERR_FR_TX_ETH_MEM_MASK		0x000040
+#define ECC_ERR_FR_RX_HLC_MEM_MASK		0x000020
+#define ECC_ERR_FR_TX_HDLC_MEM_MASK		0x000010
+#define ECC_ERR_AUX_MEM_MASK			0x000008
+#define ECC_ERR_FR_ELASTIC_MEM_MASK		0x000004
 
 /* CPRI Transmit HFN Counter (CPRInTXHFN) */
 #define TX_HFN_COUNTER_MASK			0xFF
@@ -1050,13 +700,13 @@ struct cpri_reg_data {
 
 /* CPRI Interrupt Control Register y (CPRIICR<y>) */
 #define EVENT_REG_SELECT_MASK			0xF0000000
-#define LEVEL_MASK				0x10000
-#define IEVENT_BFN_FR_TIMING_EN_MASK		0x80
-#define IEVENT_HFN_FR_TIMING_EN_MASK		0x40
-#define IEVENT_ETH_EN_MASK			0x20
-#define IEVENT_HDLC_MASK			0x10
-#define IEVENT_VSS_MASK				0x8
-#define IEVENT_IQ_THRESHOLD_MASK		0x1
+#define LEVEL_MASK				0x00010000
+#define IEVENT_BFN_FR_TIMING_EN_MASK		0x00000080
+#define IEVENT_HFN_FR_TIMING_EN_MASK		0x00000040
+#define IEVENT_ETH_EN_MASK			0x00000020
+#define IEVENT_HDLC_EN_MASK			0x00000010
+#define IEVENT_VSS_EN_MASK			0x00000008
+#define IEVENT_IQ_THRESHOLD_EN_MASK		0x00000001
 
 /* General Receive Synchronization Register (CPRIGRSR) */
 #define GEN_IQ_SYNC_MASK			0x1
@@ -1066,79 +716,31 @@ struct cpri_reg_data {
 #define C2_ERR_MASK				0x2
 
 /* CPRI Remote Reset Output Control Register (CPRIRROCR) */
-#define C1_REM_RES_OP_EN_MASK			0x1
-#define C2_REM_RES_OP_EN_MASK			0x2
+#define C1_REM_RES_OP_EN_MASK			0x001
+#define C2_REM_RES_OP_EN_MASK			0x002
 #define C1_REM_RES_ACK_OP_EN_MASK		0x100
 #define C2_REM_RES_ACK_OP_EN_MASK		0x200
 
 /* Transmit Control Attribute Register (CPRInTCA)*/
 #define TCT_ADDR_MASK				0x3FC00
 #define TCT_WRITE_MASK				0x40000
-
 /* ----------- Register masks - End ---------------- */
 
 /* Control word constants */
-#define CHAN_MAX		64
-#define WDOFF_B0		0
-#define MAX_CWBYTES		16
-#define NUM_IDX			4
-#define WORD_IDX0		0
-#define WORD_IDX1		1
-#define WORD_IDX2		2
-#define WORD_IDX3		3
-#define CWIDX_ETHPTR		3
-#define CWIDX_PROTVER		0
-#define FIND_CW_NUM(chan_no, cw_idx)	(chan_no + CHAN_MAX * cw_idx)
-#define SIZE_BYTE		8
-#define BYTE_MASK		0xFF
-#define SIZE_REGBYTES		4
-
-/* Autoneg IOCTLS */
-#define CPRI_MAGIC 'C'
-#define CPRI_START_AUTONEG			_IO(CPRI_MAGIC, 1)
-#define CPRI_START_L1TIMER			_IO(CPRI_MAGIC, 2)
-#define  CPRI_STOP_L1TIMER			_IO(CPRI_MAGIC, 3)
-#define CPRI_CFG_L1TIMER			_IOW(CPRI_MAGIC, 4, long)
-#define CPRI_SET_AUTONEG_PARAM			_IOW(CPRI_MAGIC, 5, \
-						struct cpri_autoneg_param*)
-#define CPRI_GET_AUTONEG_PARAM			_IOR(CPRI_MAGIC, 6, \
-						struct cpri_autoneg_param*)
-#define CPRI_GET_AUTONEG_OUTPUT			_IOR(CPRI_MAGIC, 7, \
-						struct cpri_autoneg_output*)
-
-/* Main driver IOCTLS */
-#define CPRI_SET_STATE                          _IOW(CPRI_MAGIC, 20, \
-						enum cpri_state)
-#define CPRI_GET_STATE                          _IOR(CPRI_MAGIC, 21, \
-						enum cpri_state)
-#define CPRI_SET_TEST_MODE                      _IOW(CPRI_MAGIC, 22, \
-						unsigned int)
-#define CPRI_GET_TEST_MODE                      _IOR(CPRI_MAGIC, 23, \
-						unsigned int)
-#define CPRI_INIT_FRAMER			_IOW(CPRI_MAGIC, 24, \
-						struct cpri_framer_param*)
-#define CPRI_GET_FRAMER_INFO                    _IOR(CPRI_MAGIC, 25, \
-						struct framer_info)
-#define CPRI_GET_STATS                          _IOR(CPRI_MAGIC, 26, \
-						struct cpri_framer_stats*)
-#define CPRI_BFN_RESET                          _IO(CPRI_MAGIC, 27)
-#define CPRI_REG_WRITE                          _IOW(CPRI_MAGIC, 28, \
-						struct reg_rw*)
-#define CPRI_REG_READ                           _IOR(CPRI_MAGIC, 29, \
-						struct reg_rw*)
-#define CPRI_REGISTER_EVENT			_IOW(CPRI_MAGIC, 30, \
-						struct event_listener*)
-#define CPRI_UNREGISTER_EVENT			_IO(CPRI_MAGIC, 31)
-#define CPRI_EVENT_NOTIFICATION			_IOW(CPRI_MAGIC, 31, \
-						unsigned char*)
-#define CPRI_CFG_DELAY_RAW			_IOW(CPRI_MAGIC, 32, \
-						struct cpri_delay_config*)
-#define CPRI_GET_DELAY_RAW			_IOR(CPRI_MAGIC, 33, \
-						struct cpri_delay_output*)
-
-/* TODO: AxC IOCTLS */
-/* TODO: VSS IOCTLS */
-/* TODO: CW IOCTLS */
+#define CHAN_MAX				64
+#define WDOFF_B0				0
+#define MAX_CWBYTES				16
+#define NUM_IDX					4
+#define WORD_IDX0				0
+#define WORD_IDX1				1
+#define WORD_IDX2				2
+#define WORD_IDX3				3
+#define CWIDX_ETHPTR				3
+#define CWIDX_PROTVER				0
+#define FIND_CW_NUM(chan_no, cw_idx)		(chan_no + CHAN_MAX * cw_idx)
+#define SIZE_BYTE				8
+#define BYTE_MASK				0xFF
+#define SIZE_REGBYTES				4
 
 static inline u32 cpri_read(const void __iomem *addr)
 {
@@ -1216,6 +818,11 @@ static inline u32 cpri_reg_get_val(raw_spinlock_t *lock,
 	return (val & mask)>>cnt;
 }
 
+struct cpri_reg_data {
+	u32 mask;
+	u32 val;
+};
+
 static inline void cpri_reg_vset_val(raw_spinlock_t *lock,
 				void __iomem *addr,
 				struct cpri_reg_data *data)
@@ -1279,8 +886,12 @@ extern int cpri_eth_handle_error(struct cpri_framer *framer);
 
 /* SFP exported functions */
 extern struct cpri_framer
-	*get_attached_cpri_dev(struct device_node *sfp_dev_node);
+	*get_attached_cpri_dev(struct device_node **sfp_dev_node);
 extern struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node);
 extern void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value);
+extern int sfp_raw_write(struct sfp_dev *sfp, u8 *buf, u8 offset,
+		unsigned int count, enum mem_type type);
+int sfp_raw_read(struct sfp_dev *sfp, u8 *buf, u8 offset,
+		unsigned int count, enum mem_type type);
 
-#endif /* __CPRIDRV_H */
+#endif /* __CPRI_H */

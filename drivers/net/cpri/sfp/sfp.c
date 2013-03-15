@@ -1,5 +1,5 @@
 /*
- * drivers/rf/cpri/sfp.c
+ * drivers/net/cpri/sfp/sfp.c
  * SFP device driver
  * Author: Freescale semiconductor, Inc.
  *
@@ -21,16 +21,16 @@
 #include <linux/of.h>
 #include <linux/i2c.h>
 #include <linux/of_irq.h>
+#include <linux/of_gpio.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 
-#include "cpri.h"
+#include <linux/cpri.h>
 
 static LIST_HEAD(sfp_dev_list);
 raw_spinlock_t sfp_list_lock;
 
-/*
- * This parameter is to help this driver avoid blocking other drivers out
+/* This parameter is to help this driver avoid blocking other drivers out
  * of I2C for potentially troublesome amounts of time. With a 100 kHz I2C
  * clock, one 256 byte read takes about 1/43 second which is excessive;
  * but the 1/170 second it takes at 400 kHz may be quite reasonable; and
@@ -42,8 +42,7 @@ static unsigned io_limit = SFP_EEPROM_INFO_SIZE;
 module_param(io_limit, uint, 0);
 MODULE_PARM_DESC(io_limit, "Maximum bytes per I/O (default 128)");
 
-/*
- * Specs often allow 5 msec for a page write, sometimes 20 msec;
+/* Specs often allow 5 msec for a page write, sometimes 20 msec;
  * it's important to recover from write timeouts.
  */
 static unsigned write_timeout = 25;
@@ -78,8 +77,7 @@ static int sfp_eeprom_write(struct sfp_dev *sfp, u8 *buf,
 		msg.len = i + count;
 	}
 
-	/*
-	 * Writes fail if the previous one didn't complete yet. We may
+	/* Writes fail if the previous one didn't complete yet. We may
 	 * loop a few times until this one succeeds, waiting at least
 	 * long enough for one entire page write to work.
 	 */
@@ -205,8 +203,7 @@ static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 		msg[1].len = count;
 	}
 
-	/*
-	 * Reads fail if the previous write didn't complete yet. We may
+	/* Reads fail if the previous write didn't complete yet. We may
 	 * loop a few times until this one succeeds, waiting at least
 	 * long enough for one entire page write to work.
 	 */
@@ -298,7 +295,7 @@ int sfp_raw_read(struct sfp_dev *sfp,
 }
 EXPORT_SYMBOL(sfp_raw_read);
 
-static unsigned long long do_bdata_sanity_check(struct sfp_info *info)
+static unsigned long long do_bdata_sanity_check(struct sfp *info)
 {
 	unsigned long long csum = 0;
 	u8 *taddr;
@@ -328,7 +325,7 @@ static int read_sfp_info(struct sfp_dev *sfp)
 	int ret = 0;
 	unsigned int count = SFP_EEPROM_INFO_SIZE;
 	enum mem_type type = SFP_MEM_EEPROM;
-	u8 *buf = &(sfp->info->type);
+	u8 *buf = &(sfp->info.type);
 
 	/* Try reading basic eeprom info */
 	ret = sfp_raw_read(sfp, buf, offset, count, type);
@@ -338,9 +335,9 @@ static int read_sfp_info(struct sfp_dev *sfp)
 	}
 
 	/* Check the read was proper */
-	csum = do_bdata_sanity_check(sfp->info);
+	csum = do_bdata_sanity_check(&sfp->info);
 
-	if ((u8)csum != sfp->info->check_code_b) {
+	if ((u8)csum != sfp->info.check_code_b) {
 		dev_dbg(dev, "basic data verification failed");
 		ret = -1;
 		goto out;
@@ -443,40 +440,38 @@ static int config_sfp_lines(struct sfp_dev *sfp)
 {
 	int ret;
 
-	/* TBD: gpio pin numbers are not known yet */
 	/* Get the GPIO pin numbers from device node */
-	sfp->irq_txfault = irq_of_parse_and_map(sfp->dev_node, 0);
-	sfp->irq_rxlos = irq_of_parse_and_map(sfp->dev_node, 1);
-	sfp->irq_prs = irq_of_parse_and_map(sfp->dev_node, 2);
-	sfp->tx_disable = irq_of_parse_and_map(sfp->dev_node, 4);
+	sfp->irq_txfault = of_get_named_gpio(sfp->dev_node,
+				"sfp-int-txfault", 0);
+	sfp->irq_rxlos = of_get_named_gpio(sfp->dev_node,
+				"sfp-int-rxlos", 0);
+	sfp->irq_prs = of_get_named_gpio(sfp->dev_node,
+				"sfp-int-prs", 0);
+	sfp->tx_disable = of_get_named_gpio(sfp->dev_node,
+				"sfp-int-disable", 0);
 
-	/*
-	 * Check enhanced options supported by transceiver
+	/* Check enhanced options supported by transceiver
 	 * and configure the pins accordingly
 	 */
-	if (sfp->info->options[1] & TX_FAULT_BIT3_EN) {
+	if (sfp->info.options[1] & TX_FAULT_BIT3_EN) {
 		ret = config_gpio_irq(sfp->irq_txfault, "sfp txfault",
-					txfault_handler,
-					sfp);
+				txfault_handler, sfp);
 		if (ret < 0)
 			goto out;
 	}
-	if (sfp->info->options[1] & LOS_BIT1_EN) {
+	if (sfp->info.options[1] & LOS_BIT1_EN) {
 		ret = config_gpio_irq(sfp->irq_rxlos, "sfp los",
-					rxlos_handler,
-					sfp);
+				rxlos_handler, sfp);
 		if (ret < 0)
 			goto out;
 	}
 
 	/* TBD: Not sure whether PRS is interrupt */
-	ret = config_gpio_irq(sfp->irq_prs, "sfp prs",
-				prs_handler,
-				sfp);
+	ret = config_gpio_irq(sfp->irq_prs, "sfp prs", prs_handler, sfp);
 	if (ret < 0)
 		goto out;
 
-	if (sfp->info->options[1] & TX_DISABLE_BIT4_EN) {
+	if (sfp->info.options[1] & TX_DISABLE_BIT4_EN) {
 		ret = config_gpio_out(sfp->tx_disable, "sfp txdisable");
 		if (ret < 0)
 			goto out;
@@ -550,8 +545,7 @@ static int sfp_probe(struct i2c_client *client,
 		goto err_struct;
 	}
 
-	/*
-	 * TBD: The 'reg' field is used by the multiplexer driver to create
+	/* TBD: The 'reg' field is used by the multiplexer driver to create
 	 * nodes and as well by this driver to send notification
 	 * on connected framer
 	 */
@@ -595,7 +589,7 @@ static int sfp_probe(struct i2c_client *client,
 
 	/* Log i2c performance info */
 	if (use_smbus == I2C_SMBUS_WORD_DATA ||
-	    use_smbus == I2C_SMBUS_BYTE_DATA) {
+		use_smbus == I2C_SMBUS_BYTE_DATA) {
 		dev_notice(dev, "Falling back to %s reads, perf will suffer\n",
 			use_smbus == I2C_SMBUS_WORD_DATA ? "word" : "byte");
 	}
@@ -609,10 +603,9 @@ static int sfp_probe(struct i2c_client *client,
 	/* Get the pair cpri device. If found, update the sfp device there and
 	 * change its state
 	 */
-	sfp->pair_framer = get_attached_cpri_dev(sfp->dev_node);
+	sfp->pair_framer = get_attached_cpri_dev(&sfp->dev_node);
 
-	/*
-	 * Add the populated sfp_dev to global sfp_dev_list. This is required
+	/* Add the populated sfp_dev to global sfp_dev_list. This is required
 	 * since the probe will get called for multiple sfp transceivers
 	 */
 	raw_spin_lock(&sfp_list_lock);

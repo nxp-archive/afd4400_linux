@@ -1,5 +1,5 @@
 /*
- * drivers/rf/cpri/cpri_eth.h
+ * include/linux/cpri_eth.h
  * CPRI device driver - Ethernet MAC
  * Author: Freescale semiconductor, Inc.
  *

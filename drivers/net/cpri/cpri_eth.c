@@ -1,5 +1,5 @@
 /*
- * drivers/rf/cpri/cpri_eth.h
+ * drivers/net/cpri/cpri_eth.h
  * CPRI device driver - Ethernet MAC
  * Author: Freescale semiconductor, Inc.
  *
@@ -11,7 +11,7 @@
  * option) any later version.
  */
 
-#include "cpri.h"
+#include <linux/cpri.h>
 
 static int cpri_eth_init_bd_regs(struct net_device *ndev)
 {
@@ -433,7 +433,8 @@ static int cpri_eth_open(struct net_device *ndev)
 
 	netif_start_queue(ndev);
 
-	ndev->trans_start = jiffies; /* prevent tx timeout */
+	/* prevent tx timeout */
+	ndev->trans_start = jiffies;
 
 	return 0;
 }
@@ -504,7 +505,8 @@ static int cpri_eth_restart(struct net_device *ndev)
 
 	netif_start_queue(ndev);
 
-	ndev->trans_start = jiffies; /* prevent tx timeout */
+	/* prevent tx timeout */
+	ndev->trans_start = jiffies;
 
 	netif_carrier_on(ndev);
 
@@ -571,7 +573,8 @@ static int cpri_eth_xmit(struct sk_buff *skb, struct net_device *ndev)
 
 
 	/* CPRI IP expects the buffer descriptors in big endian
-		format; section 22.6  */
+	 * format; section 22.6
+	 */
 	txbde = tx_bd->tx_bd_current;
 	CPRI_ETH_BD_TO_BE(txbde, &txbde_le);
 
@@ -770,7 +773,8 @@ static int cpri_eth_set_features(struct net_device *ndev,
 
 	if (changed & NETIF_F_RXALL) {
 		/* MAC_FAIL_PASS_EN is not handled here. As enabling the
-		   ETH_FWD_IF requires this flag; it is always set */
+		 * ETH_FWD_IF requires this flag; it is always set
+		 */
 		if (features & NETIF_F_RXALL) {
 			cpri_eth_config(ndev,
 				(priv->flags | CPRI_ETH_LONG_FRAME) &
@@ -889,7 +893,8 @@ static int cpri_eth_set_mac_addr(struct net_device *ndev, void *p)
 	memcpy(((char *)&msb) + 2, ndev->dev_addr, 2);
 
 	/* MAC is already in big endian. So swap it once, so that
-		when writel swaps it will result in big endian */
+	 * when writel swaps it will result in big endian
+	 */
 	cpri_reg_set_val(&framer->regs_lock, &framer->regs->cpri_ethaddrlsb,
 		CPRI_ETH_ADDR_LSB_MASK, cpu_to_be32(lsb));
 	cpri_reg_set_val(&framer->regs_lock, &framer->regs->cpri_ethaddrmsb,
@@ -1100,6 +1105,8 @@ static int cpri_eth_rx_pkt(struct net_device *ndev, unsigned int skb_currx)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
 	union cpri_eth_rx_bd_entity *rxbde, rxbde_le;
+
+	memset(&rxbde_le.f, 0, sizeof(union cpri_eth_rx_bd_entity));
 
 	rxbde = rx_bd->rx_bd_base + skb_currx;
 	skb = rx_bd->rx_skbuff[skb_currx];
@@ -1318,7 +1325,6 @@ int cpri_eth_of_init(struct platform_device *ofdev,
 {
 	struct net_device *ndev = NULL;
 	struct cpri_eth_priv *priv = NULL;
-	struct device_node *np = ofdev->dev.of_node;
 	const void *mac_addr;
 	int err = 0;
 

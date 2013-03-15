@@ -1,5 +1,5 @@
 /*
- * drivers/rf/cpri/cpri_cw.c
+ * drivers/net/cpri/cpri_cw.c
  * CPRI device driver - control word utility functions
  * Author: Freescale semiconductor, Inc.
  *
@@ -11,7 +11,7 @@
  * option) any later version.
  */
 
-#include "cpri.h"
+#include <linux/cpri.h>
 
 static void cw_write(raw_spinlock_t *lock, u32 *addr, u8 data, u32 mask)
 {
@@ -245,7 +245,6 @@ int set_txethrate(u8 eth_rate, struct cpri_framer *framer)
 
 	return err;
 }
-EXPORT_SYMBOL(set_txethrate);
 
 /* Get Tx Ethernet rate */
 int get_txethrate(struct cpri_framer *framer, u8 *eth_rate)
@@ -278,7 +277,6 @@ out:
 
 	return err;
 }
-EXPORT_SYMBOL(get_txethrate);
 
 /* Set Tx protocol version */
 int set_txprotver(enum cpri_prot_ver ver, struct cpri_framer *framer)
@@ -308,7 +306,6 @@ int set_txprotver(enum cpri_prot_ver ver, struct cpri_framer *framer)
 
 	return err;
 }
-EXPORT_SYMBOL(set_txprotver);
 
 /* Get Tx protocol version */
 int get_txprotver(struct cpri_framer *framer,
@@ -342,7 +339,6 @@ int get_txprotver(struct cpri_framer *framer,
 
 	return err;
 }
-EXPORT_SYMBOL(get_txprotver);
 
 /* Get Rx Ethernet rate */
 int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate)
@@ -375,7 +371,6 @@ out:
 
 	return err;
 }
-EXPORT_SYMBOL(get_rxethrate);
 
 /* Get Rx protocol version */
 int get_rxprotver(struct cpri_framer *framer, enum cpri_prot_ver *prot_ver)
@@ -408,4 +403,3 @@ int get_rxprotver(struct cpri_framer *framer, enum cpri_prot_ver *prot_ver)
 
 	return err;
 }
-EXPORT_SYMBOL(get_rxprotver);

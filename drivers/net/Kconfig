@@ -353,4 +353,8 @@ config VMXNET3
 
 source "drivers/net/hyperv/Kconfig"
 
+source "drivers/net/cpri/Kconfig"
+
+source "drivers/net/cpri/sfp/Kconfig"
+
 endif # NETDEVICES
