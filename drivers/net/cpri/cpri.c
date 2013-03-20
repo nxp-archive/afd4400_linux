@@ -27,6 +27,7 @@
 #include <linux/input.h>
 #include <linux/interrupt.h>
 #include <linux/sched.h>
+#include <linux/of_device.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_gpio.h>
@@ -521,6 +522,9 @@ static int cpri_probe(struct platform_device *pdev)
 	int cpri_major, cpri_minor;
 	unsigned long fr_id;
 	int rc = 0;
+	struct axc_mem_info axc_mblk_info;
+	unsigned int property[4] = { 0, 0, 0, 0 };
+	int ret = 0;
 
 	if (!np || !of_device_is_available(np)) {
 		rc = -ENODEV;
@@ -591,10 +595,43 @@ static int cpri_probe(struct platform_device *pdev)
 						GFP_KERNEL);
 		framer = cpri_dev->framer[fr_id];
 		framer->id = fr_id;
+		framer->dl_axcs = NULL;
+		framer->ul_axcs = NULL;
 		framer->regs = of_iomap(child, 0);
 		framer->cpri_dev = cpri_dev;
 		framer->max_axcs = (unsigned int)of_get_property(child,
 						"max-axcs", NULL);
+		memset(&axc_mblk_info, 0, sizeof(struct axc_mem_info));
+		memset(property, 0, sizeof(property));
+		framer->tx_buf_head = kzalloc(
+				sizeof(struct axc_buf_head), GFP_KERNEL);
+		framer->rx_buf_head = kzalloc(
+				sizeof(struct axc_buf_head), GFP_KERNEL);
+		ret = of_property_read_u32_array(np, "memblk-rx", property,
+				ARRAY_SIZE(property));
+		if (ret) {
+			dev_err(dev, "cpri_dev: dts memblk-rx error\n");
+			ret = -EFAULT;
+			goto err_node;
+		}
+		axc_mblk_info.rx_mblk_addr[0] = property[0];
+		axc_mblk_info.rx_mblk_addr[1] = property[2];
+		axc_mblk_info.rx_mblk_size[0] = property[1];
+		axc_mblk_info.rx_mblk_size[1] = property[3];
+		ret = of_property_read_u32_array(np, "memblk-tx", property,
+				ARRAY_SIZE(property));
+		if (ret) {
+			dev_err(dev, "cpri_dev: dts memblk-tx error\n");
+			ret = -EFAULT;
+			goto err_node;
+		}
+		axc_mblk_info.tx_mblk_addr[0] = property[0];
+		axc_mblk_info.tx_mblk_addr[1] = property[2];
+		axc_mblk_info.tx_mblk_size[0] = property[1];
+		axc_mblk_info.tx_mblk_size[1] = property[3];
+
+		init_axc_mem_blk(framer, &axc_mblk_info);
+
 		/* Create cdev for each framer */
 		dev_t = MKDEV(cpri_major, cpri_minor + fr_id);
 		cdev_init(&framer->cdev, &cpri_fops);
@@ -692,6 +729,8 @@ err_node:
 	free_irq(cpri_dev->irq_err, cpri_dev);
 err_mem:
 	kfree(cpri_dev);
+	kfree(framer->tx_buf_head);
+	kfree(framer->rx_buf_head);
 err_out:
 	dev_err(dev, "cpri probe error\n");
 
@@ -728,6 +767,9 @@ static int cpri_remove(struct platform_device *pdev)
 		free_irq(framer->irq_tx_t, framer);
 		free_irq(framer->irq_rx_c, framer);
 		free_irq(framer->irq_tx_c, framer);
+		axc_buf_cleanup(framer);
+		kfree(framer->tx_buf_head);
+		kfree(framer->rx_buf_head);
 		kfree(framer);
 	}
 

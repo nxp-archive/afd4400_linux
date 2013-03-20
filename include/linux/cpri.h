@@ -24,31 +24,6 @@
 #include <linux/cpri_eth.h>
 #include <linux/cpri_ioctl.h>
 
-struct axc_rx_param {
-	unsigned int axc_rx_param_flag;
-#define AXC_DATA_TYPE_IQ			(1 << 1)
-#define AXC_DATA_TYPE_VSS			(1 << 2)
-#define AXC_OVERSMAPLING			(1 << 3)
-#define AXC_92E_CONVERSION			(1 << 4)
-#define AXC_INTERLEAVING			(1 << 5)
-#define AXC_TX_ROUNDING				(1 << 6)
-	unsigned char sampling_width;
-	unsigned int buffer_threshold;
-	unsigned int S;
-	unsigned char K;
-	unsigned int Ns;
-	unsigned int Na;
-};
-
-struct axc_tx_param {
-	unsigned int axc_tx_param_flag;
-	unsigned char sampling_width;
-	unsigned int buffer_threshold;
-	unsigned int S;
-	unsigned char K;
-	unsigned int Ns;
-	unsigned int Na;
-};
 
 struct axc {
 	unsigned int id;
@@ -58,10 +33,14 @@ struct axc {
 	enum mapping_method map_method;
 	u8 axc_addr_word;
 	u8 axc_addr_byte;
-	struct axc_rx_param rx_param;
-	struct axc_tx_param tx_param;
-	struct axc_buf *axc_buf;
+	u32 axc_com_param_flag;
+	unsigned char sampling_width;
 	unsigned int buffer_threshold;
+	unsigned int S;
+	unsigned char K;
+	unsigned int Na;
+	unsigned int Nst;
+	struct axc_buf *axc_buf;
 };
 
 struct axc_buf {
@@ -76,23 +55,23 @@ struct axc_map_table {
 	struct cpri_framer *framer;
 	unsigned int max_time_slots;
 	unsigned int slot_map_size;
-	struct time_slot  *time_slots;
-	u32 *time_slot_bitmap;
-	unsigned int k0;
-	unsigned int k1;
+	struct segment *segments;
+	u32 *segment_bitmap;
+	unsigned int k0_max;
+	unsigned int k1_max;
 	u32 k0_bitmap[2];
 	u32 k1_bitmap[2];
 };
 
-struct segment {
+struct subsegment {
 	struct axc *axc;
 	u8 offset;
 	u8 map_size;
 };
 
-struct time_slot {
-	struct segment segments[3];
-	unsigned int k;
+struct segment {
+	struct subsegment subsegments[3];
+	unsigned char k;
 	u8 segment_bitmap;
 };
 
@@ -111,6 +90,12 @@ struct axc_buf_head {
 	spinlock_t lock;
 };
 
+struct axc_mem_info {
+	unsigned int rx_mblk_addr[2];
+	unsigned int tx_mblk_addr[2];
+	unsigned int rx_mblk_size[2];
+	unsigned int tx_mblk_size[2];
+};
 
 struct vss_buf_ctrl {
 	u32  base_addr_phys;
@@ -424,14 +409,16 @@ struct cpri_framer {
 	struct cpri_delays_raw delay_out;
 	/* AxC data structures per framer */
 	unsigned int max_axcs;
-	u32 *axc_enable_bitmap;
+	unsigned int max_segments;
+	struct axc **ul_axcs;
+	struct axc **dl_axcs;
 	struct axc *axcs;
 	struct axc_map_table ul_map_table;
 	struct axc_map_table dl_map_table;
 	raw_spinlock_t ul_map_tbl_lock;
 	raw_spinlock_t dl_map_tbl_lock;
-	struct axc_buf_head tx_buf_head;
-	struct axc_buf_head rx_buf_head;
+	struct axc_buf_head *tx_buf_head;
+	struct axc_buf_head *rx_buf_head;
 	/* Ethernet data structures per framer */
 	struct cpri_eth_priv *eth_priv;
 	/* VSS data structures per framer */
@@ -893,5 +880,16 @@ extern int sfp_raw_write(struct sfp_dev *sfp, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
 int sfp_raw_read(struct sfp_dev *sfp, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
+
+/* AxC mapping functions */
+int init_framer_axc_param(struct cpri_framer *framer);
+void init_axc_mem_blk(struct cpri_framer *framer,
+			struct axc_mem_info *mblk_info);
+int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg);
+void axc_buf_cleanup(struct cpri_framer *framer);
+int cpri_axc_param_get(struct cpri_framer *framer, unsigned long arg);
+int cpri_axc_param_ctrl(struct cpri_framer *framer, unsigned long arg);
+int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long arg);
+int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction);
 
 #endif /* __CPRI_H */
