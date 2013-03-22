@@ -1,5 +1,5 @@
 config RF_CPRI
-	bool "CPRI"
+	tristate "CPRI"
 	help
 	  If you say yes to this option, support will be included
 	  for CPRI driver

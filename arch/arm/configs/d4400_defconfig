@@ -702,7 +702,7 @@ CONFIG_OF=y
 #
 # Device Tree and Open Firmware support
 #
-# CONFIG_PROC_DEVICETREE is not set
+CONFIG_PROC_DEVICETREE=y
 # CONFIG_OF_SELFTEST is not set
 CONFIG_OF_FLATTREE=y
 CONFIG_OF_EARLY_FLATTREE=y
@@ -867,6 +867,8 @@ CONFIG_PHYLIB=y
 # Enable WiMAX (Networking options) to see the WiMAX drivers
 #
 # CONFIG_WAN is not set
+CONFIG_RF_CPRI=y
+CONFIG_RF_SFP=y
 # CONFIG_ISDN is not set
 
 #

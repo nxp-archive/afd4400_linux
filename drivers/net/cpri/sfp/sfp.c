@@ -629,7 +629,7 @@ err_out:
 	return err;
 }
 
-static int __devexit sfp_remove(struct i2c_client *client)
+static int sfp_remove(struct i2c_client *client)
 {
 	struct sfp_dev *sfp, *sfpdev;
 	struct list_head *pos, *nx;
@@ -676,7 +676,7 @@ static struct i2c_driver sfp_driver = {
 		.owner = THIS_MODULE,
 	},
 	.probe = sfp_probe,
-	.remove = __devexit_p(sfp_remove),
+	.remove = sfp_remove,
 	.id_table = sfp_ids,
 };
 
