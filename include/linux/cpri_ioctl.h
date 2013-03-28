@@ -63,8 +63,8 @@ struct cpri_dev_init_params {
 	__u32 axi_vss_rx_trans_size;
 	__u32 axi_vss_tx_trans_size;
 	__u32 tx_framer_buffer_size;
-	unsigned char k0;
-	unsigned char k1;
+	unsigned int k0;
+	unsigned int k1;
 };
 
 struct sfp_info {
@@ -365,15 +365,12 @@ enum mapping_method {
 struct axc_info {
 	unsigned int id;
 	__u32 flags;
-#define DL_AXCS					(1 << 1)
-#define UL_AXCS					(1 << 2)
-#define AXC_DATA_TYPE_IQ			(1 << 4)
-#define AXC_DATA_TYPE_VSS			(1 << 5)
-#define AXC_OVERSAMPLING_2X			(1 << 6)
-#define AXC_CONVERSION_9E2_EN			(1 << 7)
-#define AXC_TX_ROUNDING_EN			(1 << 8)
-#define AXC_INTERLEAVING_EN			(1 << 9)
-#define AXC_IQ_FORMAT_2				(1 << 10)
+#define AXC_DATA_TYPE_IQ			(1 << 1)
+#define AXC_DATA_TYPE_VSS			(1 << 2)
+#define AXC_OVERSMAPLING			(1 << 3)
+#define AXC_92E_CONVERSION			(1 << 4)
+#define AXC_INTERLEAVING			(1 << 5)
+#define AXC_TX_ROUNDING				(1 << 6)
 	enum mapping_method map_method;
 	unsigned int buffer_size;
 	unsigned int buffer_threshold;
@@ -381,7 +378,7 @@ struct axc_info {
 	__u8 axc_start_W;
 	__u8 axc_start_B;
 	unsigned int S;
-	unsigned char K;
+	unsigned int K;
 	unsigned int Na;
 	unsigned int Ns;
 	__u8 sample_width;
@@ -405,7 +402,6 @@ enum axc_ctrl_op {
 struct cpri_axc_ctrl {
 	enum axc_ctrl_op op;
 	unsigned int axc_id;
-	unsigned int direction;
 };
 
 struct cpri_vss_init_params {

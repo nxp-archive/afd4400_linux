@@ -3,5 +3,4 @@ cpri_driver-objs := cpri.o \
 		cpri_ioctl.o\
 		cpri_an.o \
 		cpri_eth.o \
-		cpri_axc.o \
 		cpri_cw.o

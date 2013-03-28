@@ -245,17 +245,13 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 		sizeof(struct cpri_dev_init_params));
 }
 
-static int cpri_init_framer(struct cpri_framer *framer)
+static void cpri_init_framer(struct cpri_framer *framer)
 {
-	int ret;
 	struct cpri_dev_init_params *param = &framer->framer_param;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_common_regs __iomem *cregs = framer->cpri_dev->regs;
 
 
-	ret = init_framer_axc_param(framer);
-	if (ret != 0)
-		return ret;
 	if (param->ctrl_flags & CPRI_DAISY_CHAINED)
 		cpri_reg_set(&framer->regs_lock,
 				&regs->cpri_auxctrl,
@@ -449,7 +445,6 @@ static int cpri_init_framer(struct cpri_framer *framer)
 			&regs->cpri_tvssaxisize,
 			AXI_TRANSAC_SIZE_MASK,
 			param->axi_vss_tx_trans_size);
-	return 0;
 }
 
 static void cpri_set_test_mode(unsigned int mode, struct cpri_framer *framer)
@@ -601,9 +596,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		err = cpri_init_framer(framer);
-		if (err < 0)
-			goto out;
+		cpri_init_framer(framer);
 
 		break;
 
@@ -855,31 +848,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		cpri_reset_bfn(framer);
 
 		break;
-	case CPRI_SET_AXC_PARAM:
-		err = cpri_axc_param_set(framer, arg);
-		if (err < 0)
-			goto out;
-		break;
-	case CPRI_GET_AXC_PARAM:
-		err = cpri_axc_param_get(framer, arg);
-		if (err < 0)
-			goto out;
-		break;
-	case CPRI_MAP_INIT_AXC:
-		err = cpri_axc_map_tbl_init(framer, arg);
-		if (err < 0)
-			goto out;
-		break;
-	case CPRI_CTRL_AXC:
-		err = cpri_axc_param_ctrl(framer, arg);
-		if (err < 0)
-			goto out;
-		break;
-	case CPRI_MAP_CLEAR_AXC:
-		err = cpri_axc_map_tbl_flush(framer, arg);
-		if (err < 0)
-			goto out;
-		break;
+
 	default:
 		err = cpri_autoneg_ioctl(framer, cmd, arg);
 		if (err < 0)
