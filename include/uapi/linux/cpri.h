@@ -1,5 +1,5 @@
 /*
- * include/linux/cpri_ioctl.h
+ * include/uapi/linux/cpri.h
  * CPRI device driver
  * Author: Freescale semiconductor, Inc.
  *
@@ -11,8 +11,8 @@
  * option) any later version.
  */
 
-#ifndef __CPRI_IOCTL_H
-#define __CPRI_IOCTL_H
+#ifndef __UAPI_CPRI_H
+#define __UAPI_CPRI_H
 
 struct cpri_map_offsets {
 	__u8 rx_map_offset_hf;

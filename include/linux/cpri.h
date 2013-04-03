@@ -20,9 +20,9 @@
 #include <linux/etherdevice.h>
 #include <linux/bitops.h>
 
+#include <uapi/linux/cpri.h>
 #include <linux/sfp.h>
 #include <linux/cpri_eth.h>
-#include <linux/cpri_ioctl.h>
 
 struct axc_rx_param {
 	unsigned int axc_rx_param_flag;
