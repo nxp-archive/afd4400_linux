@@ -206,30 +206,6 @@ static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 	return IRQ_HANDLED;
 }
 
-static int register_framer_irqs_gpio(unsigned int pin, const char *label,
-		irqreturn_t (*handler) (int, void*), struct cpri_framer *framer)
-{
-	int ret, irq;
-
-	ret = gpio_request_one(pin, GPIOF_IN, label);
-	if (ret)
-		goto err_request_gpio_failed;
-
-	ret = irq = gpio_to_irq(pin);
-	if (ret < 0)
-		goto err_get_irq_num_failed;
-
-	ret = request_irq(irq, handler, 0, label, framer);
-	if (ret)
-		goto err_request_irq_failed;
-
-err_request_irq_failed:
-err_get_irq_num_failed:
-	gpio_free(pin);
-err_request_gpio_failed:
-	return ret;
-}
-
 static int cpri_register_framer_irqs(struct cpri_framer *framer)
 {
 	int err;
@@ -297,67 +273,14 @@ static void cpri_configure_irq_events(struct cpri_framer *framer)
 
 int process_framer_irqs(struct device_node *child, struct cpri_framer *framer)
 {
-	int rc = 0;
 
 	/* Get the IRQ lines and register them per framer */
-	if (of_get_property(child, "interrupts", NULL)) {
-		framer->irq_rx_t = irq_of_parse_and_map(child, 0);
-		framer->irq_tx_t = irq_of_parse_and_map(child, 1);
-		framer->irq_rx_c = irq_of_parse_and_map(child, 2);
-		framer->irq_tx_c = irq_of_parse_and_map(child, 3);
+	framer->irq_rx_t = irq_of_parse_and_map(child, 0);
+	framer->irq_tx_t = irq_of_parse_and_map(child, 1);
+	framer->irq_rx_c = irq_of_parse_and_map(child, 2);
+	framer->irq_tx_c = irq_of_parse_and_map(child, 3);
 
-		if (cpri_register_framer_irqs(framer) < 0)
-			return rc;
-
-	} else {
-
-		if (of_get_property(child, "cpri-int-rxt", NULL)) {
-			framer->irq_rx_t =
-				of_get_named_gpio(child, "cpri-int-rxt", 0);
-			rc = register_framer_irqs_gpio(framer->irq_rx_t,
-				"rxcontrol interrupt", cpri_rxcontrol, framer);
-			if (rc < 0)
-				goto out;
-		}
-
-		if (of_get_property(child, "cpri-int-txt", NULL)) {
-			framer->irq_rx_t =
-				of_get_named_gpio(child, "cpri-int-txt", 0);
-			rc = register_framer_irqs_gpio(framer->irq_tx_t,
-				"txcontrol interrupt", cpri_txcontrol, framer);
-			if (rc < 0)
-				goto err_txt;
-		}
-
-		if (of_get_property(child, "cpri-int-rxc", NULL)) {
-			framer->irq_rx_t =
-				of_get_named_gpio(child, "cpri-int-rxc", 0);
-			rc = register_framer_irqs_gpio(framer->irq_rx_c,
-			"rxtiming interrupt", cpri_rxtiming, framer);
-			if (rc < 0)
-				goto err_rxc;
-		}
-
-		if (of_get_property(child, "cpri-int-txc", NULL)) {
-			framer->irq_rx_t =
-				of_get_named_gpio(child, "cpri-int-txc", 0);
-			rc = register_framer_irqs_gpio(framer->irq_tx_c,
-				"txtiming interrupt", cpri_txtiming, framer);
-			if (rc < 0)
-				goto err_txc;
-		}
-	}
-
-	return 0;
-
-err_txc:
-	free_irq(gpio_to_irq(framer->irq_rx_c), framer);
-err_rxc:
-	free_irq(gpio_to_irq(framer->irq_tx_t), framer);
-err_txt:
-	free_irq(gpio_to_irq(framer->irq_rx_t), framer);
-out:
-	return rc;
+	return cpri_register_framer_irqs(framer);
 }
 
 /* Framer state update during error events. This update is used
@@ -550,36 +473,6 @@ static int cpri_register_irq(struct cpri_dev *cpdev)
 	return err;
 }
 
-static int cpri_register_irq_gpio(struct cpri_dev *cpdev)
-{
-	int ret, irq;
-
-	ret = gpio_request_one(cpdev->irq_err, GPIOF_IN, "error interrupt");
-	if (ret)
-		goto err_request_gpio_failed;
-
-	ret = irq = gpio_to_irq(cpdev->irq_err);
-	if (ret < 0)
-		goto err_get_irq_num_failed;
-
-	ret = request_irq(irq, cpri_err_handler, 0, "error interrupt", cpdev);
-	if (ret)
-		goto err_request_irq_failed;
-
-	/* Initialise tasklet dynamically for bottom-half
-	 * so that it can be be scheduled when event occurs
-	 */
-	cpdev->err_tasklet = kmalloc(sizeof(struct tasklet_struct),
-				GFP_KERNEL);
-	tasklet_init(cpdev->err_tasklet, cpri_err_tasklet,
-		(unsigned long) cpdev);
-
-err_request_irq_failed:
-err_get_irq_num_failed:
-	gpio_free(cpdev->irq_err);
-err_request_gpio_failed:
-	return ret;
-}
 
 static int cpri_probe(struct platform_device *pdev)
 {
@@ -625,31 +518,17 @@ static int cpri_probe(struct platform_device *pdev)
 
 	raw_spin_lock_init(&cpri_dev->lock);
 
-	if (of_get_property(np, "interrupts", NULL)) {
-		cpri_dev->irq_gen1 = irq_of_parse_and_map(np, 0);
-		cpri_dev->irq_gen2 = irq_of_parse_and_map(np, 1);
-		cpri_dev->irq_gen3 = irq_of_parse_and_map(np, 2);
-		cpri_dev->irq_gen4 = irq_of_parse_and_map(np, 3);
-		cpri_dev->irq_err = irq_of_parse_and_map(np, 4);
-
-		/* Setup cpri device interrupts */
-		if (cpri_register_irq(cpri_dev) < 0) {
-			dev_err(dev, "cpri dev irq init failure\n");
-			goto err_mem;
-		}
-
-	} else if (of_get_property(np, "cpri-int-err", NULL)) {
-		cpri_dev->irq_err = of_get_named_gpio(np, "cpri-int-err", 0);
-
-		if (cpri_register_irq_gpio(cpri_dev) < 0) {
-			dev_err(dev, "cpri dev gpio irq init failure\n");
-			goto err_mem;
-		}
-
-	} else {
-		dev_err(dev, "cpri interrupt node not found\n");
+	cpri_dev->irq_gen1 = irq_of_parse_and_map(np, 0);
+	cpri_dev->irq_gen2 = irq_of_parse_and_map(np, 1);
+	cpri_dev->irq_gen3 = irq_of_parse_and_map(np, 2);
+	cpri_dev->irq_gen4 = irq_of_parse_and_map(np, 3);
+	cpri_dev->irq_err = irq_of_parse_and_map(np, 4);
+	/* Setup cpri device interrupts */
+	if (cpri_register_irq(cpri_dev) < 0) {
+		dev_err(dev, "cpri dev irq init failure\n");
 		goto err_mem;
 	}
+
 
 	/* Allocating dynamic major and minor nos for framer interface */
 	rc = alloc_chrdev_region(&devt, 0,
