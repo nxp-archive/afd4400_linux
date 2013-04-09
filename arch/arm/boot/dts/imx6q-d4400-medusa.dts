@@ -1,0 +1,162 @@
+/*
+ * Copyright 2013 Freescale Semiconductor, Inc.
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+
+/include/ "imx6q-arm2.dts"
+
+/ {
+	model = "Freescale i.MX6 d4400-medusa evaluation Board";
+	compatible = "fsl,imx6q-d4400-medusa", "fsl,imx6q";
+
+
+	soc {
+
+        aips-bus@02100000 { /* AIPS-2 */
+
+            weim-bus@08000000 {
+
+                nor_flash@08000000 {
+                    compatible = "cfi-flash";
+                    bank-width = <2>;
+                    /* This location refer 64MB of NOR Flash memory*/
+                    reg = <0x08000000 0x04000000>;
+                    #address-cells = <1>;
+                    #size-cells = <1>;
+                    status = "okay";
+
+                    partition@00000000 {
+                        /* This location must not be altered */
+                        /* NOR U-Boot Image-512KB */
+                        reg = <0x00000000 0x00080000>;
+                        label = "bootloader";
+                        read-only;
+                    };
+                    partition@00080000 {
+                        /* 128KB of env variables*/
+                        reg = <0x00080000 0x00020000>;
+                        label = "environment";
+                    };
+                    partition@000A0000 {
+                        /* 128KB of redundant env variables*/
+                        reg = <0x000A0000 0x00020000>;
+                        label = "redundant-environment";
+                    };
+                    partition@000C0000 {
+                        /* 4 MB for Linux Kernel Image */
+                        reg = <0x000C0000 0x00400000>;
+                        label = "kernel";
+                    };
+                    partition@04C0000 {
+                        /* 40MB for JFFS2 based Root file System */
+                        reg = <0x004C0000 0x02800000>;
+                        label = "filesystem";
+                    };
+                    partition@2CC0000 {
+                        /* 1MB of Device Tree */
+                        reg = <0x02CC0000 0x00100000>;
+                        label = "devicetree";
+                    };
+                    partition@2DC0000 {
+                        /* 18MB User Space*/
+                        reg = <0x02DC0000 0x01240000>;
+                        label = "user_space";
+                    };
+                };
+
+                medusa_fpga: medusa_fpga@0C000000 {
+                    compatible = "simple-bus";
+                    /* This location refer 64MB of WEIM Bus memory*/
+                    reg = <0x0C000000 0x04000000>;
+                    #address-cells = <1>;
+                    #size-cells = <1>;
+                    ranges;
+
+                    #interrupt-cells = <3>;
+                    interrupt-parent = <&medusa_fpga>;
+
+                    interrupt-map-mask = <0 0xf 0xfff 0xf>;
+                    interrupt-map = <0x0 0 103 0x4 &gpio4 23 0x04>, /* CPRI 1 framer 1 Rx timing */
+                            <0x0 0 105 0x4 &gpio4 25 0x04>, /* CPRI 1 framer 1 Tx timing */
+                            <0x0 0 107 0x4 &gpio4 22 0x04>, /* CPRI 1 framer 1 Tx control */
+                            <0x0 0 109 0x4 &gpio4 24 0x04>, /* CPRI 1 framer 1 Rx control */
+                            <0x0 0 111 0x4 &gpio4 30 0x04>, /* CPRI 1 Error */
+                            <0x0 0 138 0x4 &gpio5 14 0x04>, /* JESD Rx1 */
+                            <0x0 0 151 0x4 &gpio5 17 0x04>, /* JESD Tx1 */
+                            <0x0 0 222 0x4 &gpio4 27 0x04>, /* eTSEC group0 Rx */
+                            <0x0 0 223 0x4 &gpio5 11 0x04>, /* eTSEC group0 Tx */
+                            <0x0 0 224 0x4 &gpio4 26 0x04>; /* eTSEC group0 error */
+
+                    cpri@0x0C100000 {
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        compatible = "fsl,d4400-cpri";
+                        id = <1>;
+                        ranges;
+                        reg = <0x0C107E00 0x400>;
+                        status = "okay";
+                        interrupts = <0 99 0x4>,
+                                 <0 100 0x4>,
+                                 <0 101 0x4>,
+                                 <0 102 0x4>,
+                                 <0 111 0x4>;
+
+                        framer0@0x0C100000 {
+                            reg = <0x0C100000 0x8000>;
+                            framer-id = <1>;
+                            max-axcs = <24>;
+                            memblk-rx = <0xD200000 0x1800 0xD201800 0x1800>;
+                            memblk-tx = <0xD203000 0x1800 0xD204800 0x1800>;
+                            local-mac-address = [ 00 00 AB CD 21 AB ];
+                            interrupts = <0 103 0x4>,
+                                     <0 105 0x4>,
+                                     <0 107 0x4>,
+                                     <0 109 0x4>;
+                            sfp-handle = <&cpriphy0>;
+                        };
+                        framer1@0x0C108000 {
+                            reg = <0x0C108000 0x8000>;
+                            framer-id = <2>;
+                            max-axcs = <24>;
+                            memblk-rx = <0xD300000 0x1800 0xD301800 0x1800>;
+                            memblk-tx = <0xD303000 0x1800 0xD304800 0x1800>;
+                            local-mac-address = [ 00 00 AB CD 21 CD ];
+                            interrupts = <0 104 0x4>,
+                                     <0 106 0x4>,
+                                     <0 108 0x4>,
+                                     <0 110 0x4>;
+                            sfp-handle = <&cpriphy1>;
+                        };
+                    };
+                };
+            };
+        };
+		pca954x@70 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			cpriphy0: sfp@0 {
+				compatible = "fsl,sfp";
+				reg = <0>;
+				max-addr = <0x2>;
+				eeprom = <0x50>;
+				diagnostics = <0x51>;
+			};
+
+			cpriphy1: sfp@1 {
+				compatible = "fsl,sfp";
+				reg = <1>;
+				max-addr = <0x2>;
+				eeprom = <0x50>;
+				diagnostics = <0x51>;
+			};
+		};
+
+	};
+};
