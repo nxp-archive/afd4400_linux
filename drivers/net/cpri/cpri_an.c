@@ -30,6 +30,34 @@
 
 static u8 txhfcnt;
 
+void linkrate_autoneg_reset(struct cpri_framer *framer)
+{
+	struct device *dev = framer->cpri_dev->dev;
+	u32 *gcr_regs;
+	u32 value;
+
+	/*XXX: This code is temporary, GCR driver will export function for
+	 * Auto neg reset and PHY link rate config.
+	 */
+	/* temporary code added to check with GCR0 register values */
+#define MEDUSA_BASE	0x0C000000
+#define GCR_REG_SIZE	0x1000
+#define GCR0		0x000B8000
+#define CPRI1		1
+#define CPRI2		2
+#define AUTONEG_RESET_VAL 0xa
+	gcr_regs = ioremap_nocache((MEDUSA_BASE + GCR0), GCR_REG_SIZE);
+	value = readl(gcr_regs);
+	dev_info(dev, "gcr0 val: 0x%x\n", value);
+	value |= AUTONEG_RESET_VAL;
+	writel(value, gcr_regs);
+	value = readl(gcr_regs);
+	dev_info(dev, "gcr0 updated val: 0x%x\n", value);
+	iounmap(gcr_regs);
+	/* end here */
+
+}
+
 static void set_delay_config(struct cpri_framer *framer)
 {
 	struct cpri_delays_raw_cfg *cfg = &framer->delay_cfg;
@@ -472,13 +500,17 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 			if (rproto_ver == tproto_ver) {
 				result->common_prot_ver  = tproto_ver;
 				err = 0;
-				dev_dbg(dev, "proto ver autoneg successful\n");
+				dev_info(dev, "%d:%d protocol autoneg success",
+						framer->cpri_dev->dev_id,
+						framer->id);
 				break;
 			}
 		}
 		dev_dbg(dev, "proto ver autoneg in progress\n");
 	}
 
+	if (framer->timer_expiry_events == TEVENT_PROTVER_SETUP_TEXPIRED)
+		dev_info(dev, "proto ver autoneg timer expired\n");
 	if (err != 0)
 		framer->stats.proto_auto_neg_failures++;
 
@@ -635,6 +667,7 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	init_timer(&linerate_timer);
 	linerate_timer.function = linerate_setup_timer_expiry_hndlr;
 	linerate_timer.data = (unsigned long) framer;
+	linkrate_autoneg_reset(framer);
 
 #if 0
 	/* Init and set highest possible line rate for serdes only when
@@ -666,10 +699,10 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 
 		/* Enable framer clock */
 		if (framer->id)
-			cpri_reg_clear(&framer->cpri_dev->lock,
+			cpri_reg_set(&framer->cpri_dev->lock,
 				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
 		else
-			cpri_reg_clear(&framer->cpri_dev->lock,
+			cpri_reg_set(&framer->cpri_dev->lock,
 				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
 
 		/* Start timer */
@@ -923,6 +956,10 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 		break;
 
 	case CPRI_INIT_AUTONEG_PARAM:
+		if (param->eth_rates != NULL) {
+			kfree(param->eth_rates);
+			param->eth_rates = NULL;
+		}
 		if (copy_from_user(param, (struct cpri_autoneg_params *)ioargp,
 				sizeof(struct cpri_autoneg_params)) != 0) {
 			err = -EFAULT;
@@ -945,8 +982,6 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 
 		param->eth_rates = buf;
 		set_autoneg_param(framer, param);
-
-		kfree(buf);
 		break;
 
 	case CPRI_GET_AUTONEG_PARAM:

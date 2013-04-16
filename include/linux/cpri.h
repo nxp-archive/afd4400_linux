@@ -157,33 +157,34 @@ struct sfp_dev {
 
 struct cpri_common_regs {
 	u32 cpri_ctrlclk;	/* 0x7E00 - CPRI Control Clocks */
-	u32 reserved0[(0x7e10 - 0x7e00) / sizeof(u32)];
-	u32 cpri_intctrl[4];	/* 0x7E10 to 0x7E20 - CPRI Interrupt Control */
-	u32 reserved1[(0x7E50 - 0x7E20) / sizeof(u32)];
+	u32 reserved0[3];
+	u32 cpri_intctrl[5];	/* 0x7E10 to 0x7E20 - CPRI Interrupt Control */
+	u32 reserved1[11];
 	u32 cpri_rcpuctrlinten;	/* 0x7E50 - CPRI Rx CPU Ctrl Interrupt En */
 	u32 cpri_tcpuctrlinten;	/* 0x7E54 - CPRI Tx CPU Ctrl Interrupt En */
 	u32 cpri_rgensync;	/* 0x7E58 - Gen Rx Sync */
 	u32 cpri_tgensync;	/* 0x7E5C - Gen Transmit Sync */
+	u32 reserved2[13];
 	u32 cpri_errstatus;	/* 0x7E94 - CPRI Err Status */
-	u32 reserved2[(0x7eb8 - 0x7e94) / sizeof(u32)];
+	u32 reserved3[8];
 	u32 cpri_remresetoutputctrl; /* 0x7EB8 - CPRI Rem Reset Output Ctrl */
 };
 
 struct cpri_framer_regs {
 	/* Framer registers */
-	u32 reserved[(0x4 - 0x0) / sizeof(u32)];
+	u32 reserved;
 	u32 cpri_status;	/* 0x4  - Status */
 	u32 cpri_config;	/* 0x8  - Configuration */
-	u32 reserved0[(0x1c - 0x8) / sizeof(u32)];
+	u32 reserved0[4];
 	u32 cpri_lcv;		/* 0x1C - Rx Line Code Violation Count */
 	u32 cpri_bfn;		/* 0x20 - Recovered BFN Counter */
 	u32 cpri_hfn;		/* 0x24 - Recovered HFN Counter */
-	u32 reserved1[(0x2c - 0x24) / sizeof(u32)];
+	u32 reserved1;
 	u32 cpri_hwreset;	/* 0x2C - HW Reset from Control Word */
-	u32 reserved2[(0x3c - 0x2c) / sizeof(u32)];
+	u32 reserved2[3];
 	u32 cpri_cmconfig;	/* 0x3C - Control & Management Config */
 	u32 cpri_cmstatus;	/* 0x40 - Control & Management Status */
-	u32 reserved3[(0x48 - 0x40) / sizeof(u32)];
+	u32 reserved3;
 	u32 cpri_rdelay;	/* 0x48 - Rx Delay */
 	u32 cpri_rnddelay;	/* 0x4C - Round Trip Delay */
 	u32 cpri_exdelaycfg;	/* 0x50 - Extended Delay Measur Conf */
@@ -191,121 +192,121 @@ struct cpri_framer_regs {
 	u32 cpri_tprotver;	/* 0x58 - Tx Protocol Version */
 	u32 cpri_tscrseed;	/* 0x5C - Tx Scrambler Seed */
 	u32 cpri_rscrseed;	/* 0x60 - Rx Scrambler Seed */
-	u32 reserved4[(0x6c - 0x60) / sizeof(u32)];
+	u32 reserved4[2];
 	u32 cpri_tx_control;	/* 0x6C - Tx Control */
-	u32 reserved5[(0x80 - 0x6c) / sizeof(u32)];
+	u32 reserved5[4];
 	u32 cpri_serdescfg;	/* 0x80 - SerDes Interface Config */
-	u32 reserved6[(0xc0 - 0x80) / sizeof(u32)];
+	u32 reserved6[15];
 	u32 cpri_mapcfg;	/* 0xC0 - Mapping Configuration */
-	u32 reserved7[(0xd0 - 0xc0) / sizeof(u32)];
+	u32 reserved7[3];
 	u32 cpri_maptblcfg;	/* 0xD0 - Mapping Table Config */
-	u32 reserved8[(0xe4 - 0xd0) / sizeof(u32)];
+	u32 reserved8[4];
 	u32 cpri_rmapoffset;	/* 0xE4 - RX AxC Container Map Block Off */
 	u32 cpri_tmapoffset;	/* 0xE8 - TX AxC Container Map Block Off */
-	u32 reserved9[(0xf0 - 0xe8) / sizeof(u32)];
+	u32 reserved9;
 	u32 cpri_tstartoffset;	/* 0xF0 - Off for TX Start Sync Output */
-	u32 reserved10[(0x100 - 0xF0) / sizeof(u32)];
+	u32 reserved10[3];
 	u32 cpri_riqbufstatus[2]; /* 0x100 to 0x104 - Map Buf RX Status */
-	u32 reserved11[(0x120 - 0x104) / sizeof(u32)];
+	u32 reserved11[6];
 	u32 cpri_tiqbufstatus[2]; /* 0x120 tp 0x124 - Map Buf TX Status */
-	u32 reserved12[(0x1c0 - 0x124) / sizeof(u32)];
+	u32 reserved12[38];
 	u32 cpri_rmapsmplcfg;	/* 0x1C0 - CPRI Rx AxC Sample Width Config */
 	u32 cpri_tmapsmplcfg;	/* 0x1C4 - CPRI Tx AxC Sample Width Config */
-	u32 reserved13[(0x1d0 - 0x1c4) / sizeof(u32)];
+	u32 reserved13[2];
 	u32 cpri_r1mapkselect;	/* 0x1D0 - CPRI Rx K Selection Reg1 */
 	u32 cpri_r2mapkselect;	/* 0x1D4 - CPRI Rx K Selection Reg2 */
-	u32 reserved14[(0x1e0 - 0x1d4) / sizeof(u32)];
+	u32 reserved14[2];
 	u32 cpri_t1mapkselect;	/* 0x1E0 - CPRI Tx K Selection Reg1 */
 	u32 cpri_t2mapkselect;	/* 0x1E4 - CPRI Tx K Selection Reg2 */
-	u32 reserved15[(0x200 - 0x1e4) / sizeof(u32)];
+	u32 reserved15[6];
 	u32 cpri_rethstatus;	/* 0x200 - Eth Receive Status */
-	u32 reserved16[(0x208 - 0x200) / sizeof(u32)];
+	u32 reserved16;
 	u32 cpri_ethcfg1;	/* 0x208 - Eth Feat En/Dis and Trig En Bits */
 	u32 cpri_ethcfg2;	/* 0x20C - Ethernet Miscellaneous Config */
 	u32 cpri_rethctrl;	/* 0x210 - Ethernet RX Packet Discard */
-	u32 reserved17[(0x228 - 0x210) / sizeof(u32)];
+	u32 reserved17[5];
 	u32 cpri_rethexstatus;	/* 0x228 - Ethernet RX External Status */
 	u32 cpri_ethaddrmsb;	/* 0x22C - Ethernet 16 MSB of MAC Address */
 	u32 cpri_ethaddrlsb;	/* 0x230 - Ethernet 32 LSB of MAC Address */
 	u32 cpri_ethhashtbl;	/* 0x234 - Eth Hash Tbl to Filt Mult Traf */
-	u32 reserved18[(0x244 - 0x234) / sizeof(u32)];
+	u32 reserved18[3];
 	u32 cpri_ethcfg3;	/* 0x244 - Ethernet Configuration 3 */
 	u32 cpri_rethframercnt;	/* 0x248 - Ethernet Receive Frame Counter */
 	u32 cpri_tethcntframer;	/* 0x24C - Ethernet Transmit Frame Counter */
 	u32 cpri_rethdmamismcnt;/* 0x250 - Eth RX DMAC Mismatch Frame Counter*/
-	u32 reserved19[(0x300 - 0x250) / sizeof(u32)];
+	u32 reserved19[43];
 	u32 cpri_rhdlcstatus;	/* 0x300 - HDLC Receive Status */
-	u32 reserved20[(0x308 - 0x300) / sizeof(u32)];
+	u32 reserved20;
 	u32 cpri_hdlccfg1;	/* 0x308 - HDLC Diff Feat En/Dis & Trig En */
 	u32 cpri_hdlccfg2;	/* 0x30C - HDLC Miscellaneous Configuration */
 	u32 cpri_rhdlcctrl;	/* 0x310 - HDLC RX Packet Discard */
-	u32 reserved21[(0x328 - 0x310) / sizeof(u32)];
+	u32 reserved21[5];
 	u32 cpri_rhdlcexstatus;	/* 0x328 - HDLC RX External Status */
-	u32 reserved22[(0x344 - 0x328) / sizeof(u32)];
+	u32 reserved22[6];
 	u32 cpri_hdlccfg3;	/* 0x344 - HDLC Configuration 3 */
 	u32 cpri_rhdlcframecnt;	/* 0x348 - HDLC Receive Frame Counter */
 	u32 cpri_thdlcframecnt;	/* 0x34C - HDLC Transmit Frame Counter */
 	/* DMA registers */
-	u32 reserved23[(0x40c - 0x34c) / sizeof(u32)];
+	u32 reserved23[47];
 	u32 cpri_rvssaxisize;	/* 0x40C - Rx VSS AXI Transaction Size */
 	u32 cpri_tvssaxisize;	/* 0x410 - Tx VSS AXI Transaction Size */
-	u32 reserved24[(0x46c - 0x410) / sizeof(u32)];
+	u32 reserved24[22];
 	u32 cpri_rvssbufsize;	/* 0x46C - Rx VSS Buf Size */
 	u32 cpri_tvssbufsize;	/* 0x470 - Tx VSS Buf Size */
 	u32 cpri_rethbufsize;	/* 0x474 - Rx Eth Buf Size */
 	u32 cpri_rhdlcbufsize;	/* 0x478 - Rx HDLC Buf Size */
-	u32 reserved25[(0x494 - 0x478) / sizeof(u32)];
+	u32 reserved25[6];
 	u32 cpri_rethbdringsize; /* 0x494 - Rx Eth BD Ring Size */
 	u32 cpri_tethbdringsize; /* 0x498 - Tx Eth BD Ring Size */
 	u32 cpri_rhdlcbdringsize; /* 0x49C - Rx HDLC BD Ring Size */
 	u32 cpri_thdlcbdringsize; /* 0x4A0 - Tx HDLC BD Ring Size */
-	u32 reserved26[(0x4a8 - 0x4a0) / sizeof(u32)];
+	u32 reserved26;
 	u32 cpri_rgenmode;	/* 0x4A8 - Rx Gen CPRI Mode */
 	u32 cpri_tgenmode;	/* 0x4AC - Tx Gen CPRI Mode */
-	u32 reserved27[(0x4b8 - 0x4aC) / sizeof(u32)];
+	u32 reserved27[2];
 	u32 cpri_tbufsize;	/* 0x4B8 - Tx CPRI Framer Buf Size */
 	u32 cpri_tctrlinserttb1; /* 0x4BC - Tx Ctrl Tbl Insert En 1 */
 	u32 cpri_tctrlinserttb2; /* 0x4C0 - Tx Ctrl Tbl Insert En 2 */
-	u32 reserved28[(0x4c8 - 0x4c0) / sizeof(u32)];
+	u32 reserved28;
 	u32 cpri_timer_cfg;	/* 0x4C8 - Timer Configuration */
 	u32 cpri_rframepulsewidth; /* 0x4CC - Rx Frame Pulse Width */
 	u32 cpri_tframepulsewidth; /* 0x4D0 - Tx Frame Pulse Width */
-	u32 reserved29[(0x510 - 0x4d0) / sizeof(u32)];
+	u32 reserved29[15];
 	u32 cpri_rvssbaddr;	/* 0x510 - Rx VSS Base Address */
 	u32 cpri_rvssbaddrmsb;	/* 0x514 - Rx VSS Base Address MSB */
-	u32 reserved30[(0x520 - 0x514) / sizeof(u32)];
+	u32 reserved30[2];
 	u32 cpri_tvssbaddr;	/* 0x520 - Tx VSS Base Address */
 	u32 cpri_tvssbaddrmsb;	/* 0x524 - Tx VSS Base Address MSB */
-	u32 reserved31[(0x530 - 0x524) / sizeof(u32)];
+	u32 reserved31[2];
 	u32 cpri_rethbdringbaddr; /* 0x530 - Rx Ethernet BD Ring Base Add */
 	u32 cpri_rethbdringbaddrmsb; /* 0x534 - Rx Eth BD Ring baddr MSB */
-	u32 reserved32[(0x540 - 0x534) / sizeof(u32)];
+	u32 reserved32[2];
 	u32 cpri_tethbdringbaddr; /* 0x540 - Tx Eth BD Ring baddr */
 	u32 cpri_tethbdringbaddrmsb; /* 0x544 - ,, MSB */
-	u32 reserved33[(0x550 - 0x544) / sizeof(u32)];
+	u32 reserved33[2];
 	u32 cpri_rhdlcbdringbaddr; /* 0x550 - Rx HDLC BD Ring Base Addr */
 	u32 cpri_rhdlcbdringbaddrmsb; /* 0x554 - ,, MSB */
-	u32 reserved34[(0x560 - 0x554) / sizeof(u32)];
+	u32 reserved34[2];
 	u32 cpri_thdlcbdringbaddr; /* 0x560 - Tx HDLC BD Ring Base Addr */
 	u32 cpri_thdlcbdringbaddrmsb; /* 0x564 - ,, MSB */
-	u32 reserved35[(0x5f0 - 0x564) / sizeof(u32)];
+	u32 reserved35[34];
 	u32 cpri_auxctrl;	/* 0x5F0 - CPRI Aux Control */
-	u32 reserved36[(0x600 - 0x5f0) / sizeof(u32)];
+	u32 reserved36[3];
 	/* Control registers */
 	u32 cpri_rctrl;		/* 0x600 - Rx Control */
 	u32 cpri_tctrl;		/* 0x604 - Tx Control */
 	u32 cpri_raxcctrl;	/* 0x608 - Rx AxC Control */
-	u32 reserved37[(0x610 - 0x608) / sizeof(u32)];
+	u32 reserved37;
 	u32 cpri_taxcctrl;	/* 0x610 - Tx AxC Control */
-	u32 reserved38[(0x64c - 0x610) / sizeof(u32)];
+	u32 reserved38[14];
 	u32 cpri_rvssthresh;	/* 0x64C - Tx VSS Threshold */
 	u32 cpri_tvssthresh;	/* 0x650 Tx Eth Coal Threshold */
 	u32 cpri_rethcoalthresh; /* 0x654 - Rx Ethx Coalx Threshold */
 	u32 cpri_tethcoalthresh; /* 0x658 - - Rx VSS Threshold */
-	u32 reserved39[(0x660 - 0x658) / sizeof(u32)];
+	u32 reserved39;
 	u32 cpri_rctrltiminginten; /* 0x660 - CPRI Rx Ctrl & Timing Int En */
 	u32 cpri_tctrltiminginten; /* 0x664 - CPRI Tx Ctrl & Timing Int En */
-	u32 reserved40[(0x66c - 0x664) / sizeof(u32)];
+	u32 reserved40;
 	u32 cpri_eccerrindicateen; /* 0x66C - CPRI ECC Error Indication En */
 	u32 cpri_errinten;	/* 0x670 - CPRI Error Interrupt En */
 	u32 cpri_timeren;	/* 0x674 - Timer Enable */
@@ -313,7 +314,7 @@ struct cpri_framer_regs {
 	u32 cpri_tethwriteptr;	/* 0x67C - Tx Ethernet Write Ptr Ring */
 	u32 cpri_rhdlcwriteptr;	/* 0x680 - Rx HDLC Write Ptr Ring */
 	u32 cpri_thdlcwriteptr;	/* 0x684 - Tx HDLC Write Ptr Ring */
-	u32 reserved41[(0x6a0 - 0x684) / sizeof(u32)];
+	u32 reserved41[6];
 	u32 cpri_rctrlattrib;	/* 0x6A0 - Rx Ctrl Attribute Register */
 	u32 cpri_rctrldata0;	/* 0x6A4 - Rx Ctrl Data register 0 */
 	u32 cpri_rctrldata1;	/* 0x6A8 - Rx Ctrl Data register 1*/
@@ -324,17 +325,17 @@ struct cpri_framer_regs {
 	u32 cpri_tctrldata1;	/* 0x6BC - Tx Ctrl Data register 1 */
 	u32 cpri_tctrldata2;	/* 0x6C0 - Tx Ctrl Data Register 2 */
 	u32 cpri_tctrldata3;	/* 0x6C4 - Tx Ctrl Data Register 3 */
-	u32 reserved42[(0x700 - 0x6c4) / sizeof(u32)];
-	u32 cpri_raxcparam[24];	/* 0x700 to 0x75F - Rx Ant Carrier Param */
-	u32 reserved43[(0x780 - 0x75f) / sizeof(u32)];
+	u32 reserved42[14];
+	u32 cpri_raxcparam[24];	/* 0x700 to 0x75C - Rx Ant Carrier Param */
+	u32 reserved43[8];
 	u32 cpri_raxcparammsb[24];	/* 0x780 to 0x7DC  - ,, MSB */
-	u32 reserved44[(0x900 - 0x7dc) / sizeof(u32)];
-	u32 cpri_taxcparam[24];	/* 0x900 to 0x95F - Tx Ant Carrier Param */
-	u32 reserved45[(0x980 - 0x95f) / sizeof(u32)];
-	u32 cpri_taxcparammsb[24]; /* 0x980 to 0x9DF - ,, Param MSB */
-	u32 reserved46[(0xb00 - 0x9df) / sizeof(u32)];
-	u32 cpri_auxmask;	/* 0xB00 to 0xBFC - Aux Interface Mask */
-	u32 reserved47[(0xc00 - 0xbfc) / sizeof(u32)];
+	u32 reserved44[72];
+	u32 cpri_taxcparam[24];	/* 0x900 to 0x95C - Tx Ant Carrier Param */
+	u32 reserved45[8];
+	u32 cpri_taxcparammsb[24]; /* 0x980 to 0x9DC - ,, Param MSB */
+	u32 reserved46[72];
+	u32 cpri_auxmask[8];	/* 0xB00 to 0xBFC - Aux Interface Mask */
+	u32 reserved47[56];
 	u32 cpri_tcfgmemaddr0;	/* 0xC00 - Tx Config Memory Address */
 	u32 cpri_tcfgmemaddr1;	/* 0xC04 - Tx Config Memory Address */
 	u32 cpri_rcfgmemaddr0;	/* 0xC08 - Rx Config Memory Data */
@@ -350,7 +351,7 @@ struct cpri_framer_regs {
 	u32 cpri_tcfgmemaddr;	/* 0xC30 - Tx Config Memory Address */
 	u32 cpri_rcfgmemaddr;	/* 0xC34 - Rx Config Memory Address */
 	u32 cpri_ethfwdctrl;	/* 0xc38 - CPRI Eth Forward Inter Ctrl */
-	u32 reserved48[(0xc40 - 0xc38) / sizeof(u32)];
+	u32 reserved48;
 	u32 cpri_auxcwdmask[8];	/* 0xC40-0xC5C - CPRI Aux Interface CWM */
 	u32 cpri_auxcwdmasken;	/* 0xC60 - Aux Interface CWM En */
 	u32 cpri_auxcwd130mask;	/* 0xC64 - Aux Interface CW 130 Mask*/
@@ -359,15 +360,14 @@ struct cpri_framer_regs {
 	u32 cpri_framediffstatus; /* 0xC70 - Frame Diff Status */
 	u32 cpri_framediffdriftstatus; /* 0xC74 - Frame Diff Drift Status */
 	/* Status registers */
-	u32 reserved49[(0xd10 - 0xc74) / sizeof(u32)];
+	u32 reserved49[38];
 	u32 cpri_rvssbufdispl;	/* 0xD10 - Rx VSS Bufx Displacement */
 	u32 cpri_tvssbufdispl;	/* 0xD14 - Tx VSS Bufxr Displacement */
-	u32 cpri_rethbufdesc[2]; /* 0xD18 and 0xD1F - Rx Ethx Buf Descriptor*/
-	u32 reserved50[(0xd20 - 0xd1f) / sizeof(u32)];
-	u32 cpri_tethbufdesc[2]; /* 0xD20 and 0xD27 - Tx Ethx Buf Descriptor */
+	u32 cpri_rethbufdesc[2]; /* 0xD18 and 0xD1C - Rx Ethx Buf Descriptor*/
+	u32 cpri_tethbufdesc[2]; /* 0xD20 and 0xD24 - Tx Ethx Buf Descriptor */
 	u32 cpri_rethrdptrring;	/* 0xD28 - Rx Ethernet Read Ptr Ring */
 	u32 cpri_tethrdptrring;	/* 0xD2C - Tx Eth Read Ptr Ring */
-	u32 cpri_rhdlcbufdesc[2]; /* 0xD30 &  0xD37 - Rx HDLC Buf Descriptor */
+	u32 cpri_rhdlcbufdesc[2]; /* 0xD30 &  0xD34 - Rx HDLC Buf Descriptor */
 	u32 cpri_thdlcbufdesc[2]; /* 0xD38 & 0xD3C - Tx HDLC Buf Descriptor */
 	u32 cpri_rhdlcrdptrring; /* 0xD40 - Rx HDLC Read Pointer Ring */
 	u32 cpri_thdlcrdptrring; /* 0xD44 - Txt HDLC Read Pointer Ring */
@@ -380,13 +380,13 @@ struct cpri_framer_regs {
 	u32 cpri_rstatus;	/* 0xD60 - Rx Status */
 	u32 cpri_tstatus;	/* 0xD64 - Tx Status  */
 	u32 cpri_multibiteccerrstatus; /* 0xD68 - Multi Bit ECC Error Status */
-	u32 reserved51[(0xd70 - 0xd68) / sizeof(u32)];
+	u32 reserved51;
 	u32 cpri_thfnctr;	/* 0xD70 - CPRI Tx HFN Counter */
 	u32 cpri_tbfnctr;	/* 0xD74 - CPRI Tx BFN Counter */
-	u32 reserved52[(0xF00 - 0xd74) / sizeof(u32)];
+	u32 reserved52[98];
 	u32 cpri_raxciqvspthreshinten;	/* 0xF00 - Rx AxC IQ VSP Thr Int En */
 	u32 cpri_taxciqvspthreshinten; /* 0xF04 - Tx AxC IQ VSP Thr Int En */
-	u32 reserved53[(0xf20 - 0xf04) / sizeof(u32)];
+	u32 reserved53[6];
 	u32 cpri_raxcuruninten;	/* 0xF20 - Rx Ant Carr Underrun Int En */
 	u32 cpri_raxcurunintstatus; /* 0xF24 - Rx Ant Carr Urun Int Status */
 	u32 cpri_taxcoruninten;	/* 0xF28 - Tx Ant Carr Orun Int En */

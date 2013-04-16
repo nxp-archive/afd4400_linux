@@ -473,7 +473,6 @@ static int cpri_register_irq(struct cpri_dev *cpdev)
 	return err;
 }
 
-
 static int cpri_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
@@ -706,6 +705,8 @@ static int cpri_remove(struct platform_device *pdev)
 		cancel_work_sync(&framer->allautoneg_task);
 		device_destroy(cpri_class, framer->dev_t);
 		unregister_chrdev_region(framer->dev_t, 1);
+		if (framer->autoneg_param.eth_rates != NULL)
+			kfree(framer->autoneg_param.eth_rates);
 		kfree(framer);
 	}
 

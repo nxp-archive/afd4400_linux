@@ -28,7 +28,7 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 {
 	unsigned int count;
 	struct hf_ctrl_chans *hf_channels = &(framer->tx_hf_ctrl_chans);
-	struct ctrl_chan **channels;
+	struct ctrl_chan *channels;
 	struct cpri_framer_regs *regs = framer->regs;
 	struct device *dev = framer->cpri_dev->dev;
 	unsigned int i, j;
@@ -45,7 +45,7 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 
 	for (i = 0; i < count; i++) {
 		/* Find control word and select it in CPRInTCTIE */
-		cw = FIND_CW_NUM(channels[i]->chan, channels[i]->word_bitmap);
+		cw = FIND_CW_NUM(channels[i].chan, channels[i].word_bitmap);
 		if (cw <= 79) {
 			if (cw <= 15)
 				mask = 1 << cw;
@@ -81,9 +81,9 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 
 		/* Write data in CPRInTCD0 - CPRInTCD3 */
 		addr = (&regs->cpri_tctrldata0);
-		idx = channels[i]->word_bitmap;
+		idx = channels[i].word_bitmap;
 		for (j = 1; j <= MAX_CWBYTES; j++) {
-			data = channels[i]->words[idx][j-1];
+			data = channels[i].words[idx][j-1];
 			mask = BYTE_MASK << mask;
 			cw_write(&framer->regs_lock, addr, data, mask);
 			mask += SIZE_BYTE;
@@ -120,7 +120,7 @@ static int cpri_read_txctrlword(struct cpri_framer *framer)
 {
 	unsigned int count;
 	struct hf_ctrl_chans *hf_channels = &(framer->tx_hf_ctrl_chans);
-	struct ctrl_chan **channels;
+	struct ctrl_chan *channels;
 	struct cpri_framer_regs *regs = framer->regs;
 	unsigned int i, j;
 	u32 mask = 0, *addr;
@@ -132,7 +132,7 @@ static int cpri_read_txctrlword(struct cpri_framer *framer)
 	for (i = 0; i < count; i++) {
 
 		/* Find control word */
-		cw = FIND_CW_NUM(channels[i]->chan, channels[i]->word_bitmap);
+		cw = FIND_CW_NUM(channels[i].chan, channels[i].word_bitmap);
 
 		/* Write cw address in CPRInTCA */
 		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tctrlattrib,
@@ -144,11 +144,11 @@ static int cpri_read_txctrlword(struct cpri_framer *framer)
 
 		/* Read data From CPRInTCD0 - CPRInTCD3 */
 		addr = (&regs->cpri_tctrldata0);
-		idx = channels[i]->word_bitmap;
+		idx = channels[i].word_bitmap;
 		for (j = 1; j <= MAX_CWBYTES; j++) {
 			mask = BYTE_MASK << mask;
 			data = cw_read(&framer->regs_lock, addr, mask);
-			channels[i]->words[idx][j-1] = data;
+			channels[i].words[idx][j-1] = data;
 			mask += SIZE_BYTE;
 			if (j % SIZE_REGBYTES == 0) {
 				addr++;
@@ -165,7 +165,7 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 {
 	unsigned int count;
 	struct hf_ctrl_chans *hf_channels = &(framer->rx_hf_ctrl_chans);
-	struct ctrl_chan **channels;
+	struct ctrl_chan *channels;
 	struct cpri_framer_regs *regs = framer->regs;
 	unsigned int i, j;
 	u32 mask = 0, *addr;
@@ -176,7 +176,7 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 
 	for (i = 0; i < count; i++) {
 		/* Find control word */
-		cw = FIND_CW_NUM(channels[i]->chan, channels[i]->word_bitmap);
+		cw = FIND_CW_NUM(channels[i].chan, channels[i].word_bitmap);
 
 		/* Write cw address in CPRInRCA */
 		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_rctrlattrib,
@@ -184,11 +184,11 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 
 		/* Read data From CPRInRCD0 - CPRInRCD3 */
 		addr = (&regs->cpri_rctrldata0);
-		idx = channels[i]->word_bitmap;
+		idx = channels[i].word_bitmap;
 		for (j = 1; j <= MAX_CWBYTES; j++) {
 			mask = BYTE_MASK << mask;
 			data = cw_read(&framer->regs_lock, addr, mask);
-			channels[i]->words[idx][j-1] = data;
+			channels[i].words[idx][j-1] = data;
 			mask += SIZE_BYTE;
 			if (j % SIZE_REGBYTES == 0) {
 				addr++;
@@ -204,7 +204,7 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 int set_txethrate(u8 eth_rate, struct cpri_framer *framer)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan **eth_chan;
+	struct ctrl_chan *eth_chan;
 	struct device *dev = framer->cpri_dev->dev;
 	unsigned int count;
 	int err = 0;
@@ -221,9 +221,9 @@ int set_txethrate(u8 eth_rate, struct cpri_framer *framer)
 	}
 
 	hf_channels->channels = eth_chan;
-	hf_channels->channels[0]->chan = 2;
-	hf_channels->channels[0]->words[CWIDX_ETHPTR][WDOFF_B0] = eth_rate;
-	hf_channels->channels[0]->word_bitmap = WORD_IDX3;
+	hf_channels->channels[0].chan = 2;
+	hf_channels->channels[0].words[CWIDX_ETHPTR][WDOFF_B0] = eth_rate;
+	hf_channels->channels[0].word_bitmap = WORD_IDX3;
 
 	if (cpri_write_txctrlword(framer) < 0) {
 		dev_err(dev, "TxCW write failed: ethernet rate not set\n");
@@ -240,7 +240,7 @@ int set_txethrate(u8 eth_rate, struct cpri_framer *framer)
 int get_txethrate(struct cpri_framer *framer, u8 *eth_rate)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan **eth_chan;
+	struct ctrl_chan *eth_chan;
 	struct device *dev = framer->cpri_dev->dev;
 	unsigned int count;
 	int err = 0;
@@ -257,8 +257,8 @@ int get_txethrate(struct cpri_framer *framer, u8 *eth_rate)
 	}
 
 	hf_channels->channels = eth_chan;
-	hf_channels->channels[0]->chan = 2;
-	hf_channels->channels[0]->word_bitmap = WORD_IDX3;
+	hf_channels->channels[0].chan = 2;
+	hf_channels->channels[0].word_bitmap = WORD_IDX3;
 
 	if (cpri_read_txctrlword(framer) < 0) {
 		dev_err(dev, "TxCW read failed: ethernet rate not read\n");
@@ -266,7 +266,7 @@ int get_txethrate(struct cpri_framer *framer, u8 *eth_rate)
 		goto out;
 	}
 
-	*eth_rate = hf_channels->channels[0]->words[CWIDX_ETHPTR][WDOFF_B0];
+	*eth_rate = hf_channels->channels[0].words[CWIDX_ETHPTR][WDOFF_B0];
 
 out:
 	kfree(eth_chan);
@@ -279,7 +279,7 @@ out:
 int set_txprotver(enum cpri_prot_ver ver, struct cpri_framer *framer)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan **prtover_chan;
+	struct ctrl_chan *prtover_chan;
 	struct device *dev = framer->cpri_dev->dev;
 	unsigned int count;
 	int err = 0;
@@ -296,9 +296,9 @@ int set_txprotver(enum cpri_prot_ver ver, struct cpri_framer *framer)
 	}
 
 	hf_channels->channels = prtover_chan;
-	hf_channels->channels[0]->chan = 2;
-	hf_channels->channels[0]->words[CWIDX_PROTVER][WDOFF_B0] = (u8)ver;
-	hf_channels->channels[0]->word_bitmap = WORD_IDX0;
+	hf_channels->channels[0].chan = 2;
+	hf_channels->channels[0].words[CWIDX_PROTVER][WDOFF_B0] = (u8)ver;
+	hf_channels->channels[0].word_bitmap = WORD_IDX0;
 
 	if (cpri_write_txctrlword(framer) < 0) {
 		dev_err(dev, "TxCW write failed: proto ver not set\n");
@@ -316,7 +316,7 @@ int get_txprotver(struct cpri_framer *framer,
 			enum cpri_prot_ver *prot_ver)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan **prtover_chan;
+	struct ctrl_chan *prtover_chan;
 	struct device *dev = framer->cpri_dev->dev;
 	int err = 0;
 	unsigned int count;
@@ -334,8 +334,8 @@ int get_txprotver(struct cpri_framer *framer,
 	}
 
 	hf_channels->channels = prtover_chan;
-	hf_channels->channels[0]->chan = 2;
-	hf_channels->channels[0]->word_bitmap = WORD_IDX0;
+	hf_channels->channels[0].chan = 2;
+	hf_channels->channels[0].word_bitmap = WORD_IDX0;
 
 	if (cpri_read_txctrlword(framer) < 0) {
 		dev_err(dev, "TxCW read failed: proto ver not read\n");
@@ -343,7 +343,7 @@ int get_txprotver(struct cpri_framer *framer,
 		goto out;
 	}
 
-	ver = hf_channels->channels[0]->words[CWIDX_PROTVER][WDOFF_B0];
+	ver = hf_channels->channels[0].words[CWIDX_PROTVER][WDOFF_B0];
 	*prot_ver = (ver == 1) ? VER_1 : VER_2;
 
 out:
@@ -357,7 +357,7 @@ out:
 int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan **eth_chan;
+	struct ctrl_chan *eth_chan;
 	struct device *dev = framer->cpri_dev->dev;
 	unsigned int count;
 	int err = 0;
@@ -374,8 +374,8 @@ int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate)
 	}
 
 	hf_channels->channels = eth_chan;
-	hf_channels->channels[0]->chan = 2;
-	hf_channels->channels[0]->word_bitmap = WORD_IDX3;
+	hf_channels->channels[0].chan = 2;
+	hf_channels->channels[0].word_bitmap = WORD_IDX3;
 
 	if (cpri_read_rxctrlword(framer) < 0) {
 		dev_err(dev, "RxCW read failed: ethernet rate not read\n");
@@ -383,7 +383,7 @@ int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate)
 		goto out;
 	}
 
-	*eth_rate = hf_channels->channels[0]->words[CWIDX_ETHPTR][WDOFF_B0];
+	*eth_rate = hf_channels->channels[0].words[CWIDX_ETHPTR][WDOFF_B0];
 
 out:
 	kfree(eth_chan);
@@ -396,7 +396,7 @@ out:
 int get_rxprotver(struct cpri_framer *framer, enum cpri_prot_ver *prot_ver)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan **prtover_chan;
+	struct ctrl_chan *prtover_chan;
 	struct device *dev = framer->cpri_dev->dev;
 	int err = 0;
 	unsigned int count;
@@ -414,8 +414,8 @@ int get_rxprotver(struct cpri_framer *framer, enum cpri_prot_ver *prot_ver)
 	}
 
 	hf_channels->channels = prtover_chan;
-	hf_channels->channels[0]->chan = 2;
-	hf_channels->channels[0]->word_bitmap = WORD_IDX0;
+	hf_channels->channels[0].chan = 2;
+	hf_channels->channels[0].word_bitmap = WORD_IDX0;
 
 
 	if (cpri_read_rxctrlword(framer) < 0) {
@@ -424,7 +424,7 @@ int get_rxprotver(struct cpri_framer *framer, enum cpri_prot_ver *prot_ver)
 		goto out;
 	}
 
-	ver = hf_channels->channels[0]->words[CWIDX_PROTVER][WDOFF_B0];
+	ver = hf_channels->channels[0].words[CWIDX_PROTVER][WDOFF_B0];
 	*prot_ver = (ver == 1) ? VER_1 : VER_2;
 
 out:

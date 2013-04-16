@@ -425,7 +425,7 @@ struct ctrl_chan {
 };
 
 struct hf_ctrl_chans {
-	struct ctrl_chan  **channels;
+	struct ctrl_chan  *channels;
 	unsigned int channel_count;
 	unsigned int hf;
 };
