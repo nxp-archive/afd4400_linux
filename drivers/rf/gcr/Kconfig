@@ -1,0 +1,14 @@
+#
+# GCR Configuration
+#
+
+menuconfig GCR_DEV
+	tristate "GCR Configuration support "
+	help
+	  GCR are genral purpose control registers used to
+	  configure dma channels for data transfer to and
+	  from VSP with CPRI/JESD.
+
+if GCR_DEV
+
+endif # GCR_DEV

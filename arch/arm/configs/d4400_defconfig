@@ -1402,6 +1402,8 @@ CONFIG_CLKSRC_MMIO=y
 # CONFIG_MEMORY is not set
 # CONFIG_IIO is not set
 # CONFIG_PWM is not set
+CONFIG_RF=y
+CONFIG_GCR_DEV=y
 
 #
 # File systems
