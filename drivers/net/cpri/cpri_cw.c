@@ -23,6 +23,29 @@ static u8 cw_read(raw_spinlock_t *lock, u32 *addr, u32 mask)
 	return (u8) cpri_reg_get_val(lock, addr, mask);
 }
 
+void clear_control_tx_table(struct cpri_framer *framer)
+{
+	u32 value = 0, i;
+	struct cpri_framer_regs *regs = framer->regs;
+
+	for (i = 0; i <= MAX_TCTA_ADDR; i++) {
+		value = i;
+		value = value << TCTA_ADDR_OFFSET;
+		value |= TCT_WRITE_MASK;
+		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tctrlattrib,
+				MASK_ALL, value);
+
+		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrldata0,
+			MASK_ALL);
+		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrldata1,
+			MASK_ALL);
+		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrldata2,
+			MASK_ALL);
+		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrldata3,
+			MASK_ALL);
+	}
+}
+
 /* Write transmit control word */
 static int cpri_write_txctrlword(struct cpri_framer *framer)
 {

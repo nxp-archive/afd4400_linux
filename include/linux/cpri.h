@@ -729,6 +729,8 @@ struct cpri_framer {
 /* Transmit Control Attribute Register (CPRInTCA)*/
 #define TCT_ADDR_MASK				0x3FC00
 #define TCT_WRITE_MASK				0x40000
+#define MAX_TCTA_ADDR				255
+#define TCTA_ADDR_OFFSET			10
 /* ----------- Register masks - End ---------------- */
 
 /* Control word constants */
@@ -879,6 +881,7 @@ void cpri_autoneg_all(struct work_struct *work);
 int set_txethrate(u8 eth_rate, struct cpri_framer *framer);
 int get_txethrate(struct cpri_framer *framer, u8 *eth_rate);
 int set_txprotver(enum cpri_prot_ver ver, struct cpri_framer *framer);
+void clear_control_tx_table(struct cpri_framer *framer);
 int get_txprotver(struct cpri_framer *framer,
 			enum cpri_prot_ver *prot_ver);
 int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate);
