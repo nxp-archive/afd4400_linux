@@ -34,29 +34,27 @@
 
 #include <linux/cpri.h>
 
-static void cpri_reg_write_bulk(raw_spinlock_t *lock, u32 *base,
-		u32 offset, unsigned int length, u32 *buf)
+static void cpri_reg_write_bulk(raw_spinlock_t *lock, void *base,
+		u32 offset, unsigned int length, u32 value)
 {
 	int i;
 	u32 mask = MASK_ALL;
 
-	for (i = 0; i < offset; i++)
-		base++;
+	base = (char *)base + offset;
 
 	for (i = 0; i < length; i++) {
-		cpri_reg_set_val(lock, base, mask, buf[i]);
+		cpri_reg_set_val(lock, base, mask, value);
 		base++;
 	}
 }
 
-static void cpri_reg_read_bulk(raw_spinlock_t *lock, u32 *base,
+static void cpri_reg_read_bulk(raw_spinlock_t *lock, void *base,
 		u32 offset, unsigned int length, u32 *buf)
 {
 	int i;
 	u32 mask = MASK_ALL;
 
-	for (i = 0; i < offset; i++)
-		base++;
+	base = (char *)base + offset;
 
 	for (i = 0; i < length; i++) {
 		buf[i] = cpri_reg_get_val(lock, base, mask);
@@ -68,8 +66,7 @@ static void cpri_reset_bfn(struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 
-	cpri_reg_set(&framer->regs_lock,
-			&regs->cpri_tx_control,
+	cpri_reg_set(&framer->regs_lock, &regs->cpri_tx_control,
 			TX_RESET_BFN_MASK);
 }
 
@@ -83,8 +80,7 @@ static void cpri_fill_framer_stats(struct cpri_framer *framer)
 	 * autoneg state machine. Rest of the stats are updated here
 	 */
 	stats->rx_line_coding_violation = cpri_reg_get_val(&framer->regs_lock,
-							&regs->cpri_lcv,
-							CNT_LCV_MASK);
+						&regs->cpri_lcv, CNT_LCV_MASK);
 }
 
 static void fill_sfp_info(struct cpri_framer *framer,
@@ -479,8 +475,7 @@ static void cpri_set_test_mode(unsigned int mode, struct cpri_framer *framer)
 				TX_TRANSPARENT_MODE_MASK);
 }
 
-static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl,
-		struct cpri_framer *framer, unsigned long *arg)
+static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_map_offsets map_sync_offset;
@@ -490,7 +485,7 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl,
 		(ctrl->ctrl_mask | DEV_START_UL)) {
 
 		if (copy_from_user(&map_sync_offset,
-				(struct cpri_map_offsets *)arg,
+				(struct cpri_map_offsets *)ctrl->ctrl_data,
 				sizeof(struct cpri_map_offsets)) != 0)
 			return -EFAULT;
 	}
@@ -573,17 +568,23 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 {
 	struct cpri_framer *framer = fp->private_data;
 	struct device *dev = framer->cpri_dev->dev;
-	struct cpri_dev_info info;
-	struct cpri_reg_write_buf wreg;
-	struct cpri_reg_read_buf rreg;
-	struct sfp_reg_write_buf sfp_wreg;
-	struct sfp_reg_read_buf sfp_rreg;
-	struct cpri_dev_ctrl devctrl;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_common_regs __iomem *comm_regs = framer->cpri_dev->regs;
-	int err = 0, count;
-	void __user *ioargp = (void __user *)arg;
+	struct cpri_dev_ctrl devctrl;
+	struct cpri_dev_info info;
 
+	struct cpri_reg_write_buf wreg;
+	struct cpri_reg *wregset;
+	struct cpri_reg_read_buf rreg;
+	u32 *buf = NULL;
+
+	struct sfp_reg_write_buf sfp_wreg;
+	struct cpri_reg *sfp_wregset;
+	struct sfp_reg_read_buf sfp_rreg;
+	u8 *sfp_buf = NULL;
+
+	int err = 0, count, i;
+	void __user *ioargp = (void __user *)arg;
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
 		dev_err(dev, "invalid case, CMD=%d\n", cmd);
@@ -614,7 +615,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		cpri_dev_ctrl(&devctrl, framer, ioargp);
+		cpri_dev_ctrl(&devctrl, framer);
 
 		break;
 
@@ -663,8 +664,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		cpri_fill_framer_stats(framer);
 
 		if (copy_to_user((struct cpri_dev_stats *)ioargp,
-				&framer->stats,
-				sizeof(struct cpri_dev_stats))) {
+			&framer->stats, sizeof(struct cpri_dev_stats))) {
 			err = -EFAULT;
 			goto out;
 		}
@@ -682,15 +682,19 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		cpri_reg_read_bulk(&framer->regs_lock, (u32 *)regs,
-			rreg.start_offset, rreg.count,
-			(u32 *)&rreg.reg_buff);
+		buf = kzalloc(sizeof(u32) * rreg.count, GFP_KERNEL);
 
-		if (copy_to_user(ioargp, (struct cpri_reg_read_buf *)&rreg,
-				sizeof(struct cpri_reg_read_buf))) {
+		cpri_reg_read_bulk(&framer->regs_lock, (u32 *)regs,
+			rreg.start_offset, rreg.count, (u32 *)buf);
+
+		if (copy_to_user((u32 *)rreg.reg_buff, (u32 *)buf,
+				sizeof(u32) * rreg.count)) {
 			err = -EFAULT;
+			kfree(buf);
 			goto out;
 		}
+
+		kfree(buf);
 
 		break;
 
@@ -703,20 +707,20 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 		count = wreg.count;
 
-		wreg.regs = kmalloc((sizeof(struct cpri_reg) * count),
+		wregset = kmalloc((sizeof(struct cpri_reg) * count),
 					GFP_KERNEL);
 
-		if (copy_from_user(wreg.regs, (struct cpri_reg *) ioargp,
+		if (copy_from_user(wregset, (struct cpri_reg *) wreg.regs,
 				(sizeof(struct cpri_reg) * count)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
 
-		while (count) {
+		for (i = 0; i < count; i++) {
 			cpri_reg_write_bulk(&framer->regs_lock, (u32 *)regs,
-				wreg.regs->offset, 1, (u32 *)&wreg.regs->value);
-			wreg.regs++;
-			count--;
+				wregset[i].offset, 1, wregset[i].value);
+
+			wregset++;
 		}
 
 		break;
@@ -728,14 +732,19 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		cpri_reg_read_bulk(&framer->cpri_dev->lock, (u32 *)comm_regs,
-			rreg.start_offset, rreg.count, (u32 *) &rreg.reg_buff);
+		buf = kzalloc(sizeof(u32) * rreg.count, GFP_KERNEL);
 
-		if (copy_to_user(ioargp, (struct cpri_reg_read_buf *)&rreg,
-				sizeof(struct cpri_reg_read_buf))) {
+		cpri_reg_read_bulk(&framer->regs_lock, (u32 *)comm_regs,
+			rreg.start_offset, rreg.count, (u32 *)buf);
+
+		if (copy_to_user((u32 *)rreg.reg_buff, (u32 *)buf,
+				sizeof(u32) * rreg.count)) {
 			err = -EFAULT;
+			kfree(buf);
 			goto out;
 		}
+
+		kfree(buf);
 
 		break;
 
@@ -748,21 +757,21 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 		count = wreg.count;
 
-		wreg.regs = kmalloc((sizeof(struct cpri_reg) * count),
+		wregset = kmalloc((sizeof(struct cpri_reg) * count),
 					GFP_KERNEL);
 
-		if (copy_from_user(wreg.regs, (struct cpri_reg *) ioargp,
+		if (copy_from_user(wregset, (struct cpri_reg *) wreg.regs,
 				(sizeof(struct cpri_reg) * count)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
 
-		while (count) {
+		for (i = 0; i < count; i++) {
 			cpri_reg_write_bulk(&framer->regs_lock,
-				(u32 *)comm_regs, wreg.regs->offset,
-				1, (u32 *)&wreg.regs->value);
-			wreg.regs++;
-			count--;
+				(u32 *)comm_regs, wregset[i].offset,
+				1, wregset[i].value);
+
+			wregset++;
 		}
 
 		break;
@@ -774,14 +783,19 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		sfp_raw_read(framer->sfp_dev, (u8 *)&sfp_rreg.reg_buff,
-			sfp_rreg.start_offset, sfp_rreg.count, SFP_MEM_EEPROM);
+		sfp_buf = kzalloc(sizeof(u8) * sfp_rreg.count, GFP_KERNEL);
 
-		if (copy_to_user(ioargp, (struct sfp_reg_read_buf *)&sfp_rreg,
-				sizeof(struct sfp_reg_read_buf))) {
+		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
+			sfp_rreg.count, SFP_MEM_EEPROM);
+
+		if (copy_to_user(sfp_rreg.reg_buff, buf,
+				sizeof(u8) * rreg.count)) {
 			err = -EFAULT;
+			kfree(sfp_buf);
 			goto out;
 		}
+
+		kfree(sfp_buf);
 
 		break;
 
@@ -792,14 +806,19 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		sfp_raw_read(framer->sfp_dev, (u8 *)&sfp_rreg.reg_buff,
-			sfp_rreg.start_offset, sfp_rreg.count, SFP_MEM_DIAG);
+		sfp_buf = kzalloc(sizeof(u8) * sfp_rreg.count, GFP_KERNEL);
 
-		if (copy_to_user(ioargp, (struct sfp_reg_read_buf *)&sfp_rreg,
-				sizeof(struct sfp_reg_read_buf))) {
+		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
+			sfp_rreg.count, SFP_MEM_DIAG);
+
+		if (copy_to_user(sfp_rreg.reg_buff, buf,
+				sizeof(u8) * rreg.count)) {
 			err = -EFAULT;
+			kfree(sfp_buf);
 			goto out;
 		}
+
+		kfree(sfp_buf);
 
 		break;
 
@@ -813,27 +832,28 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 		count = sfp_wreg.count;
 
-		sfp_wreg.regs = kmalloc((sizeof(struct sfp_reg) * count),
+		sfp_wregset = kmalloc((sizeof(struct sfp_reg) * count),
 					GFP_KERNEL);
 
-		if (copy_from_user(sfp_wreg.regs, (struct sfp_reg *) ioargp,
+		if (copy_from_user(sfp_wregset,
+				(struct sfp_reg *) sfp_wreg.regs,
 				(sizeof(struct sfp_reg) * count)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
 
-		while (count) {
+		for (i = 0; i < count; i++) {
 			sfp_raw_write(framer->sfp_dev,
-				(u8 *)&sfp_wreg.regs->value,
-				sfp_wreg.regs->offset, 1, SFP_MEM_DIAG);
-			sfp_wreg.regs++;
-			count--;
+				(u8 *)&sfp_wregset[i].value,
+				sfp_wregset[i].offset, 1, SFP_MEM_DIAG);
+			wregset++;
 		}
 
 		break;
 
 	case CPRI_BFN_RESET:
 		cpri_reset_bfn(framer);
+
 		break;
 	case CPRI_SET_AXC_PARAM:
 		err = cpri_axc_param_set(framer, arg);
@@ -864,12 +884,13 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		err = cpri_autoneg_ioctl(framer, cmd, arg);
 		if (err < 0)
 			goto out;
+
 		break;
 	}
 
 	return 0;
 
 out:
-	dev_err(dev, "IOCTL error\n");
+	dev_err(dev, "IOCTL failure\n");
 	return err;
 }

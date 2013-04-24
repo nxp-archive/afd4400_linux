@@ -174,9 +174,4 @@ struct sfp {
 #define SFP_EEPROM_NODE_NAME		"eeprom"
 #define SFP_DIAG_NODE_NAME		"diagnostics"
 
-enum mem_type {
-	SFP_MEM_EEPROM = 0,
-	SFP_MEM_DIAG
-};
-
 #endif /* __SFP_H_ */

@@ -221,13 +221,13 @@ struct cpri_reg_write_buf {
 
 struct sfp_reg_read_buf {
 	__u8 start_offset;
-	__u32 *reg_buff;
+	__u8 *reg_buff;
 	int count;
 };
 
 struct sfp_reg {
-	__u32 offset;
-	__u32 value;
+	__u8 offset;
+	__u8 value;
 };
 
 struct sfp_reg_write_buf {
@@ -456,6 +456,11 @@ enum recfg_cmd {
 	CPRI_INTERFACE_RECONFIG_SETUP_REQ,
 	CPRI_AXC_MAPPING_RECONFIG_INIT_REQ,
 	CPRI_AXC_MAPPING_RECONFIG_SETUP_REQ
+};
+
+enum mem_type {
+	SFP_MEM_EEPROM = 0,
+	SFP_MEM_DIAG
 };
 
 /* AxC mapping direction flags */

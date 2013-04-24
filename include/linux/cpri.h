@@ -105,7 +105,7 @@ struct vss_buf_ctrl {
 };
 
 struct cpri_dev {
-	unsigned long dev_id;
+	unsigned int dev_id;
 	char *dev_name;
 	struct cpri_common_regs __iomem *regs;
 	struct device *dev;
@@ -118,7 +118,7 @@ struct cpri_dev {
 	struct tasklet_struct *err_tasklet;
 	unsigned int framers;
 	struct list_head list;
-	struct cpri_framer *framer[];
+	struct cpri_framer **framer;
 };
 
 struct sfp_dev {
@@ -157,6 +157,7 @@ struct cpri_common_regs {
 
 struct cpri_framer_regs {
 	/* Framer registers */
+	u32 reserved[(0x4 - 0x0) / sizeof(u32)];
 	u32 cpri_status;	/* 0x4  - Status */
 	u32 cpri_config;	/* 0x8  - Configuration */
 	u32 reserved0[(0x1c - 0x8) / sizeof(u32)];
@@ -380,7 +381,7 @@ struct cpri_framer_regs {
 
 struct cpri_framer {
 	/* Overall data structures per framer */
-	unsigned long id;
+	unsigned int id;
 	struct cpri_framer_regs __iomem *regs;
 	struct cpri_dev *cpri_dev;
 	struct cdev cdev;
@@ -779,6 +780,7 @@ static inline void cpri_reg_set_val(raw_spinlock_t *lock,
 	register u32 cnt = 0;
 
 	cnt = ffs(mask);
+	cnt--;
 
 	raw_spin_lock_irqsave(lock, flags);
 	tmp = cpri_read(addr);
@@ -789,14 +791,14 @@ static inline void cpri_reg_set_val(raw_spinlock_t *lock,
 }
 
 static inline u32 cpri_reg_get_val(raw_spinlock_t *lock,
-				const void __iomem *addr,
-				u32 mask)
+			const void __iomem *addr, u32 mask)
 {
 	u32 val;
 	unsigned long flags;
 	register u32 cnt = 0;
 
 	cnt = ffs(mask);
+	cnt--;
 
 	raw_spin_lock_irqsave(lock, flags);
 	val = cpri_read(addr);
@@ -811,8 +813,7 @@ struct cpri_reg_data {
 };
 
 static inline void cpri_reg_vset_val(raw_spinlock_t *lock,
-				void __iomem *addr,
-				struct cpri_reg_data *data)
+			void __iomem *addr, struct cpri_reg_data *data)
 {
 	u32 tmp = 0;
 	u32 mask, val;
@@ -829,6 +830,7 @@ static inline void cpri_reg_vset_val(raw_spinlock_t *lock,
 		cnt = 0;
 
 		cnt = ffs(mask);
+		cnt--;
 
 		tmp |= mask;
 		tmp &= (~mask  | (val << cnt));

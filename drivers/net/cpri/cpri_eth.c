@@ -1347,17 +1347,16 @@ int cpri_eth_of_init(struct platform_device *ofdev,
 	priv = netdev_priv(ndev);
 
 	memset(priv, 0, sizeof(*priv));
-
 	priv->ofdev = ofdev;
 	priv->ndev = ndev;
 	netif_napi_add(ndev, &priv->napi, cpri_eth_poll, CPRI_ETH_NAPI_WEIGHT);
-
 	/* Initialize few fields in the BD; the rest are
 	 * initialized in cpri_eth_alloc_skb_resources()
 	 */
 	priv->tx_bd = kzalloc(sizeof(struct cpri_eth_tx_bd), GFP_KERNEL);
 	if (!priv->tx_bd) {
 		err = -ENOMEM;
+		netdev_err(ndev, "Failed to allocate tx bd\n");
 		goto tx_alloc_failed;
 	}
 	priv->tx_bd->tx_bd_ring_size = CPRI_ETH_DEF_TX_RING_SIZE;
@@ -1366,15 +1365,14 @@ int cpri_eth_of_init(struct platform_device *ofdev,
 	priv->rx_bd = kzalloc(sizeof(struct cpri_eth_rx_bd), GFP_KERNEL);
 	if (!priv->rx_bd) {
 		err = -ENOMEM;
+		netdev_err(ndev, "Failed to allocate rx bd\n");
 		goto rx_alloc_failed;
 	}
 	priv->rx_bd->rx_bd_ring_size = CPRI_ETH_DEF_RX_RING_SIZE;
 	raw_spin_lock_init(&priv->rx_bd->rxlock);
-
 	INIT_WORK(&priv->reset_task, cpri_eth_reset_task);
 	INIT_WORK(&priv->error_task, cpri_eth_error_task);
 	tasklet_init(&priv->tasklet, cpri_eth_tx_cleanup, (unsigned long)priv);
-
 	priv->flags = CPRI_ETH_DEF_FLAGS;
 	priv->rx_buffer_size = CPRI_ETH_DEF_RX_BUF_SIZE;
 	priv->tx_start_thresh = CPRI_ETH_DEF_TX_START_THRESH;
@@ -1385,7 +1383,6 @@ int cpri_eth_of_init(struct platform_device *ofdev,
 
 	raw_spin_lock_init(&priv->initlock);
 	raw_spin_lock_init(&priv->statslock);
-
 	return 0;
 
 rx_alloc_failed:
@@ -1482,7 +1479,7 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	int err = 0;
 
 	err = cpri_eth_of_init(ofdev, &ndev, frnode);
-	if (!err)
+	if (err < 0)
 		return err;
 
 	priv = netdev_priv(ndev);

@@ -845,12 +845,15 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 				unsigned long arg)
 {
 	struct cpri_autoneg_params *param = &framer->autoneg_param;
+	struct cpri_autoneg_params autoneg_param;
 	struct cpri_autoneg_output *output = &framer->autoneg_output;
 	enum autoneg_cmd an_cmd;
 	enum recfg_cmd recfg_cmd;
 	struct device *dev = framer->cpri_dev->dev;
 	void __user *ioargp = (void __user *)arg;
 	unsigned long timer_dur;
+	unsigned int count;
+	unsigned int *buf;
 	int err = 0;
 
 	switch (cmd) {
@@ -894,9 +897,7 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 		/* This command is used when application controls
 		 * individual stages of autonegotiation
 		 */
-		timer_dur = jiffies + framer->l1_expiry_dur_sec * HZ;
-		framer->l1_timer.expires = timer_dur;
-		add_timer(&framer->l1_timer);
+		del_timer_sync(&framer->l1_timer);
 
 		break;
 
@@ -914,21 +915,44 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 		break;
 
 	case CPRI_INIT_AUTONEG_PARAM:
-		if (copy_from_user(param,
-			(struct cpri_autoneg_params *)ioargp,
-			sizeof(struct cpri_autoneg_params)) != 0) {
+		if (copy_from_user(param, (struct cpri_autoneg_params *)ioargp,
+				sizeof(struct cpri_autoneg_params)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
+
+		count = param->eth_rates_count;
+
+		buf = kzalloc((sizeof(unsigned int) * count), GFP_KERNEL);
+
+		if (copy_from_user(buf, (unsigned int *)param->eth_rates,
+				sizeof(unsigned int) * count) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+
+		param->eth_rates = buf;
 
 		set_autoneg_param(framer, param);
 
 		break;
 
 	case CPRI_GET_AUTONEG_PARAM:
-		if (copy_to_user(ioargp,
-			(struct cpri_autoneg_params *)param,
-			sizeof(struct cpri_autoneg_params))) {
+		if (copy_from_user(&autoneg_param,
+				(struct cpri_autoneg_params *)ioargp,
+				sizeof(struct cpri_autoneg_params))) {
+			err = -EFAULT;
+			goto out;
+		}
+
+		if (copy_to_user((struct cpri_autoneg_params *)ioargp, param,
+				sizeof(struct cpri_autoneg_params))) {
+			err = -EFAULT;
+			goto out;
+		}
+
+		if (copy_to_user(autoneg_param.eth_rates, param->eth_rates,
+			(sizeof(unsigned int) * param->eth_rates_count))) {
 			err = -EFAULT;
 			goto out;
 		}

@@ -107,17 +107,6 @@ static int sfp_eeprom_write(struct sfp_dev *sfp, u8 *buf,
 	return -ETIMEDOUT;
 }
 
-/**
- * sfp_raw_write - raw write to eeprom
- * @sfp:	sfp device connected to a cpri
- * @buf:	contains data to be written to eeprom
- * @offset:	eeprom offset
- * @count:	no of bytes to write
- * @type:	eeprom/diagnostics block selection
- *
- * This function returns no of bytes written to sfp
- *
- */
 int sfp_raw_write(struct sfp_dev *sfp,
 		u8 *buf,
 		u8 offset,
@@ -248,17 +237,6 @@ static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 	return -ETIMEDOUT;
 }
 
-/**
- * sfp_raw_read -  raw read from eeprom
- * @sfp:	sfp device connected to a cpri
- * @buf:	buffer in which the eeprom data copied
- * @offset:	eeprom offset
- * @count:	no of bytes to to read
- * @type:	eeprom/diagnostics block selection
- *
- * This function returns no of bytes read from sfp
- *
- */
 int sfp_raw_read(struct sfp_dev *sfp,
 		u8 *buf,
 		u8 offset,
@@ -309,14 +287,6 @@ static unsigned long long do_bdata_sanity_check(struct sfp *info)
 	return csum;
 }
 
-/**
- * read_sfp_info - read sfp eeprom and fill the sfp_info
- * @sfp:	sfp device structure passed from probe
- *
- * This function shall communicate with sfp and fill
- * first 128 byte info from the eeprom. This data
- * is also checked for integrity.
- */
 static int read_sfp_info(struct sfp_dev *sfp)
 {
 	struct device *dev = &(sfp->client[0]->dev);
@@ -371,10 +341,6 @@ static irqreturn_t prs_handler(int irq, void *cookie)
 	return IRQ_HANDLED;
 }
 
-/**
- * get_attached_sfp_dev - get the sfp device connected to a cpri framer
- * @sfp_dev_node	: sfp device node passed from cpri driver
- */
 struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node)
 {
 	struct sfp_dev *sfp_dev = NULL;
@@ -390,22 +356,12 @@ struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node)
 }
 EXPORT_SYMBOL(get_attached_sfp_dev);
 
-/**
- * set_sfp_txdisable - set tx disable pin of sfp transceiver
- * @sfp:	sfp handle passed by cpri driver
- * @value:	value to set on the gpio line
- */
 void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value)
 {
 	gpio_set_value(sfp->tx_disable, value);
 }
 EXPORT_SYMBOL(set_sfp_txdisable);
 
-/**
- * config_gpio_out - configure required sfp line as gpio output
- * @pin:	gpio pin number
- * @label:	label used by gpio subsystem
- */
 static int config_gpio_out(unsigned int pin, const char *label)
 {
 	return gpio_request_one(pin, GPIOF_DIR_OUT, label);
@@ -552,23 +508,15 @@ static int sfp_probe(struct i2c_client *client,
 	sfp->id = (u32) of_get_property(child, "reg", NULL);
 
 	/* Getting eeprom mem interface address */
-	child = of_find_node_by_name(node, SFP_EEPROM_NODE_NAME);
-	if (!child) {
-		dev_err(dev, "eeprom node not found\n");
-		goto err_struct;
-	}
+	addr = (unsigned int) of_get_property(client->dev.of_node,
+				"eeprom", NULL);
 	sfp->client[0] = client;
-	addr = (unsigned short) of_property_read_u32(child, "reg", NULL);
 	sfp->client[0]->addr = addr;
 
 	/* Getting diagnostic mem interface address */
-	child = of_find_node_by_name(node, SFP_DIAG_NODE_NAME);
-	if (!child) {
-		dev_err(dev, "diagnostics node not found\n");
-		goto err_struct;
-	}
-	addr = (unsigned short) of_property_read_u32(child, "reg", NULL);
-	sfp->client[1] = i2c_new_dummy(client->adapter,	addr);
+	addr = (unsigned int) of_get_property(client->dev.of_node,
+					"diagnostics", NULL);
+	sfp->client[1] = i2c_new_dummy(client->adapter, addr);
 	if (!sfp->client[1]) {
 		dev_err(dev, "addr 0x%02x unavailable\n", client->addr + 1);
 		err = -EADDRINUSE;
@@ -614,6 +562,8 @@ static int sfp_probe(struct i2c_client *client,
 
 	/* Set the client data for this i2c transceiver device */
 	i2c_set_clientdata(client, sfp);
+
+	dev_info(dev, "probe successfull\n");
 
 	return 0;
 
