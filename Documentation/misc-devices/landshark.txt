@@ -1,0 +1,50 @@
+Kernel driver landshark
+=======================
+
+Supported chips:
+Freescale Medusa, DFE4400
+
+Data sheet:
+Not freely available
+
+Author:
+Arpit Goel <B44344@freescale.com>
+
+Description
+-----------
+
+Lansdshark is a memory allocator providing dyanmic memory management for
+non-cacheable memory. Memory to be used for Landshark is decided at boot,
+boot parameters for Linux boot are modified to hide landshark memory from
+kernel. At linux boot landshark kernel driver parses device tree entry
+and stores that information for future use. This memory is further used by
+user space library to allocate memory to requesting threads/processes.
+
+Boot Parameters
+---------------
+setenv bootargs 'root=/dev/ram rw console=ttymxc3,115200 ramdisk_size=600000
+		mem=1024M rootfstype=ext2 earlyprintk'
+
+"mem" parameter in bootargs specifies total memory visible to kernel at boot
+time.
+
+Device Tree Entry
+-----------------
+
+landshark@0d100000 { /* LandShark */
+	compatible = "fsl,landshark";
+	address = <0x0d100000>;
+	length = <0x00004000>;
+	status = "okay";
+}
+
+address
+-------
+
+Specifies the start of Physical Memory address to be used for Landshark
+
+length
+------
+
+Specifies the length of Physical Memory available for Landshark
+
