@@ -856,13 +856,13 @@ static int cpri_remove(struct platform_device *pdev)
 }
 
 static struct of_device_id cpri_match[] = {
-	{.compatible = "fsl,cpri",},
+	{.compatible = "fsl,d4400-cpri",},
 	{},
 };
 
 static struct platform_driver cpri_driver = {
 	.driver = {
-		.name = "fsl-cpri",
+		.name = "cpri",
 		.owner = THIS_MODULE,
 		.of_match_table = cpri_match,
 	},
