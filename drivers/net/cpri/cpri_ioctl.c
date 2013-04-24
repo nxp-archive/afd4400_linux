@@ -44,7 +44,7 @@ static void cpri_reg_write_bulk(raw_spinlock_t *lock, void *base,
 
 	for (i = 0; i < length; i++) {
 		cpri_reg_set_val(lock, base, mask, value);
-		base++;
+		base += (sizeof(u32));
 	}
 }
 
@@ -58,7 +58,7 @@ static void cpri_reg_read_bulk(raw_spinlock_t *lock, void *base,
 
 	for (i = 0; i < length; i++) {
 		buf[i] = cpri_reg_get_val(lock, base, mask);
-		base++;
+		base += (sizeof(u32));
 	}
 }
 
@@ -91,6 +91,10 @@ static void fill_sfp_info(struct cpri_framer *framer,
 
 	status = sfp_raw_read(framer->sfp_dev, (u8 *)&info->type,
 			0, sizeof(struct sfp), SFP_MEM_EEPROM);
+	if (status < 0) {
+		dev_err(framer->cpri_dev->dev, "SFP read error");
+		return;
+	}
 
 	dev_info->sfp_info.type = info->type;
 	dev_info->sfp_info.ext_type = info->ext_type;
@@ -237,7 +241,8 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 					RECOVERED_HFN_CNT_MASK);
 
 	/* SFP info */
-	fill_sfp_info(framer, info);
+	if (framer->sfp_dev != NULL)
+		fill_sfp_info(framer, info);
 
 	/* Current framer param settings */
 	memcpy((struct cpri_dev_init_params *)&info->init_params,
@@ -245,7 +250,7 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 		sizeof(struct cpri_dev_init_params));
 }
 
-static void cpri_init_framer(struct cpri_framer *framer)
+static int cpri_init_framer(struct cpri_framer *framer)
 {
 	struct cpri_dev_init_params *param = &framer->framer_param;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
@@ -445,6 +450,7 @@ static void cpri_init_framer(struct cpri_framer *framer)
 			&regs->cpri_tvssaxisize,
 			AXI_TRANSAC_SIZE_MASK,
 			param->axi_vss_tx_trans_size);
+	return 0;
 }
 
 static void cpri_set_test_mode(unsigned int mode, struct cpri_framer *framer)
@@ -475,9 +481,8 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_map_offsets map_sync_offset;
 
-
-	if ((ctrl->ctrl_mask | DEV_START_DL) ||
-		(ctrl->ctrl_mask | DEV_START_UL)) {
+	if ((ctrl->ctrl_mask & DEV_START_DL) ||
+		(ctrl->ctrl_mask & DEV_START_UL)) {
 
 		if (copy_from_user(&map_sync_offset,
 				(struct cpri_map_offsets *)ctrl->ctrl_data,
@@ -485,7 +490,7 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 			return -EFAULT;
 	}
 
-	if (ctrl->ctrl_mask | DEV_START_DL) {
+	if (ctrl->ctrl_mask & DEV_START_DL) {
 
 		/* Enable Tx */
 		cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
@@ -511,7 +516,7 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 		framer->framer_state = OPERATIONAL;
 		framer->dev_flags |= CPRI_DATA_MODE;
 
-	} else if (ctrl->ctrl_mask | DEV_START_UL) {
+	} else if (ctrl->ctrl_mask & DEV_START_UL) {
 
 		/* Enable Rx */
 		cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
@@ -531,7 +536,7 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 		framer->framer_state = OPERATIONAL;
 		framer->dev_flags |= CPRI_DATA_MODE;
 
-	} else if (ctrl->ctrl_mask | DEV_STANDBY) {
+	} else if (ctrl->ctrl_mask & DEV_STANDBY) {
 
 		framer->framer_state = STANDBY;
 
@@ -574,11 +579,11 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	u32 *buf = NULL;
 
 	struct sfp_reg_write_buf sfp_wreg;
-	struct cpri_reg *sfp_wregset;
+	struct sfp_reg *sfp_wregset;
 	struct sfp_reg_read_buf sfp_rreg;
 	u8 *sfp_buf = NULL;
 
-	int err = 0, count, i;
+	int err, count, i;
 	void __user *ioargp = (void __user *)arg;
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
@@ -587,7 +592,6 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	}
 
 	switch (cmd) {
-
 	case CPRI_INIT_DEV:
 		if (copy_from_user(&(framer->framer_param),
 				(struct cpri_dev_init_params *)ioargp,
@@ -596,7 +600,9 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		cpri_init_framer(framer);
+		err = cpri_init_framer(framer);
+		if (err < 0)
+			goto out;
 
 		break;
 
@@ -643,8 +649,9 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case CPRI_GET_INFO:
-		cpri_fill_framer_info(&info, framer);
+		memset(&info, 0, sizeof(struct cpri_dev_info));
 
+		cpri_fill_framer_info(&info, framer);
 		if (copy_to_user((struct cpri_dev_info *)ioargp, &info,
 				sizeof(struct cpri_dev_info))) {
 			err = -EFAULT;
@@ -676,6 +683,10 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		buf = kzalloc(sizeof(u32) * rreg.count, GFP_KERNEL);
+		if (!buf) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		cpri_reg_read_bulk(&framer->regs_lock, (u32 *)regs,
 			rreg.start_offset, rreg.count, (u32 *)buf);
@@ -688,7 +699,6 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		kfree(buf);
-
 		break;
 
 	case CPRI_WRITE_REG:
@@ -699,23 +709,26 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		count = wreg.count;
-
 		wregset = kmalloc((sizeof(struct cpri_reg) * count),
 					GFP_KERNEL);
+		if (!wregset) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		if (copy_from_user(wregset, (struct cpri_reg *) wreg.regs,
 				(sizeof(struct cpri_reg) * count)) != 0) {
 			err = -EFAULT;
+			kfree(wregset);
 			goto out;
 		}
 
 		for (i = 0; i < count; i++) {
 			cpri_reg_write_bulk(&framer->regs_lock, (u32 *)regs,
-				wregset[i].offset, 1, wregset[i].value);
-
-			wregset++;
+				(wregset + i)->offset, 1, (wregset + i)->value);
 		}
 
+		kfree(wregset);
 		break;
 
 	case CPRI_READ_REG_COMMON:
@@ -726,6 +739,10 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		buf = kzalloc(sizeof(u32) * rreg.count, GFP_KERNEL);
+		if (!buf) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		cpri_reg_read_bulk(&framer->regs_lock, (u32 *)comm_regs,
 			rreg.start_offset, rreg.count, (u32 *)buf);
@@ -752,21 +769,25 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 		wregset = kmalloc((sizeof(struct cpri_reg) * count),
 					GFP_KERNEL);
+		if (!wregset) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		if (copy_from_user(wregset, (struct cpri_reg *) wreg.regs,
 				(sizeof(struct cpri_reg) * count)) != 0) {
 			err = -EFAULT;
+			kfree(wregset);
 			goto out;
 		}
 
 		for (i = 0; i < count; i++) {
 			cpri_reg_write_bulk(&framer->regs_lock,
-				(u32 *)comm_regs, wregset[i].offset,
-				1, wregset[i].value);
-
-			wregset++;
+				(u32 *)comm_regs, (wregset + i)->offset,
+				1, (wregset + i)->value);
 		}
 
+		kfree(wregset);
 		break;
 
 	case SFP_READ_REG:
@@ -777,6 +798,10 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		sfp_buf = kzalloc(sizeof(u8) * sfp_rreg.count, GFP_KERNEL);
+		if (!sfp_buf) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
 			sfp_rreg.count, SFP_MEM_EEPROM);
@@ -789,7 +814,6 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		kfree(sfp_buf);
-
 		break;
 
 	case SFP_READ_DIAG_REG:
@@ -800,6 +824,10 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		sfp_buf = kzalloc(sizeof(u8) * sfp_rreg.count, GFP_KERNEL);
+		if (!sfp_buf) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
 			sfp_rreg.count, SFP_MEM_DIAG);
@@ -812,7 +840,6 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		kfree(sfp_buf);
-
 		break;
 
 	case SFP_WRITE_REG:
@@ -824,24 +851,28 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		count = sfp_wreg.count;
-
 		sfp_wregset = kmalloc((sizeof(struct sfp_reg) * count),
 					GFP_KERNEL);
+		if (!sfp_wregset) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		if (copy_from_user(sfp_wregset,
 				(struct sfp_reg *) sfp_wreg.regs,
 				(sizeof(struct sfp_reg) * count)) != 0) {
 			err = -EFAULT;
+			kfree(sfp_wregset);
 			goto out;
 		}
 
 		for (i = 0; i < count; i++) {
 			sfp_raw_write(framer->sfp_dev,
-				(u8 *)&sfp_wregset[i].value,
-				sfp_wregset[i].offset, 1, SFP_MEM_DIAG);
-			wregset++;
+				&(sfp_wregset + i)->value,
+				(sfp_wregset + i)->offset, 1, SFP_MEM_DIAG);
 		}
 
+		kfree(sfp_wregset);
 		break;
 
 	case CPRI_BFN_RESET:

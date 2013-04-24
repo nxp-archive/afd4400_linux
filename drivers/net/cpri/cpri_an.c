@@ -254,8 +254,10 @@ static void update_bf_data(struct cpri_framer *framer)
 	}
 }
 
-static int cpri_setup_vendor_autoneg(struct cpri_framer *framer)
+void cpri_setup_vendor_autoneg(struct work_struct *work)
 {
+	struct cpri_framer *framer = container_of(work, struct cpri_framer,
+						vendorautoneg_task);
 	enum cpri_prot_ver tx_prot_ver, rx_prot_ver;
 	u8 tx_eth_rate, rx_eth_rate;
 
@@ -269,7 +271,6 @@ static int cpri_setup_vendor_autoneg(struct cpri_framer *framer)
 		framer->framer_state = PROT_VER_MISMATCH;
 		/* TBD: Notify  user */
 		framer->stats.vendor_config_failures++;
-		return -ENOLINK;
 	}
 
 	/* Check Tx/Rx eth rate */
@@ -279,13 +280,10 @@ static int cpri_setup_vendor_autoneg(struct cpri_framer *framer)
 		framer->framer_state = ETHLINK_RATE_MISMATCH;
 		/* TBD: Notify  user */
 		framer->stats.vendor_config_failures++;
-		return -ENOLINK;
 	}
 
 	/* Setup ethernet DMA here */
 	cpri_eth_enable(framer);
-
-	return 0;
 }
 
 static int check_ethrate(struct cpri_framer *framer, int count)
@@ -352,8 +350,10 @@ static void eth_setup_timer_expiry_hndlr(unsigned long ptr)
 	 /* TBD: Notify user */
 }
 
-static int cpri_eth_autoneg(struct cpri_framer *framer)
+void cpri_eth_autoneg(struct work_struct *work)
 {
+	struct cpri_framer *framer = container_of(work, struct cpri_framer,
+						ethautoneg_task);
 	struct cpri_autoneg_params *param = &(framer->autoneg_param);
 	struct timer_list eth_setup_timer;
 	struct cpri_framer_regs *regs = framer->regs;
@@ -375,6 +375,8 @@ static int cpri_eth_autoneg(struct cpri_framer *framer)
 	eth_setup_timer.expires = jiffies + (param->cnm_timeout) * HZ;
 	add_timer(&eth_setup_timer);
 
+	framer->timer_expiry_events = 0;
+
 	for (i = param->eth_rates_count; i >= 1 ; i--) {
 		err = check_ethrate(framer, i);
 		if (err == -ENOLINK)
@@ -393,7 +395,6 @@ out_fail:
 
 out_pass:
 	del_timer_sync(&eth_setup_timer);
-	return err;
 }
 
 static void proto_setup_timer_expiry_hndlr(unsigned long ptr)
@@ -406,8 +407,10 @@ static void proto_setup_timer_expiry_hndlr(unsigned long ptr)
 	/* TBD: Notify user */
 }
 
-static int cpri_proto_ver_autoneg(struct cpri_framer *framer)
+void cpri_proto_ver_autoneg(struct work_struct *work)
 {
+	struct cpri_framer *framer = container_of(work, struct cpri_framer,
+						protoautoneg_task);
 	struct cpri_autoneg_params *param = &(framer->autoneg_param);
 	struct cpri_autoneg_output *result = &(framer->autoneg_output);
 	struct cpri_framer_regs  __iomem *regs = framer->regs;
@@ -433,18 +436,18 @@ static int cpri_proto_ver_autoneg(struct cpri_framer *framer)
 	/* Turn ON Tx */
 	cpri_reg_set(&framer->regs_lock, &regs->cpri_config, CONF_TX_EN_MASK);
 
-	while (framer->timer_expiry_events == TEVENT_PROTVER_SETUP_TEXPIRED) {
+	framer->timer_expiry_events = 0;
+
+	while (framer->timer_expiry_events != TEVENT_PROTVER_SETUP_TEXPIRED) {
 
 		/* Update the received scramble seed value */
 		result->rx_scramble_seed_val =
 			cpri_reg_get_val(&framer->regs_lock,
-						&regs->cpri_rscrseed,
-						SCR_SEED_MASK);
+				&regs->cpri_rscrseed, SCR_SEED_MASK);
 
 		/* Get last set proto ver */
 		pver = cpri_reg_get_val(&framer->regs_lock,
-						&regs->cpri_tprotver,
-						PROTO_VER_MASK);
+				&regs->cpri_tprotver, PROTO_VER_MASK);
 		tproto_ver = (pver == 1) ? VER_1 : VER_2;
 
 		/* Check whether two HF passed */
@@ -466,23 +469,20 @@ static int cpri_proto_ver_autoneg(struct cpri_framer *framer)
 		} else {
 			/* No reg so reading from CW */
 			get_rxprotver(framer, &rproto_ver);
-
 			if (rproto_ver == tproto_ver) {
 				result->common_prot_ver  = tproto_ver;
 				err = 0;
-				dev_info(dev, "proto ver autoneg successful\n");
+				dev_dbg(dev, "proto ver autoneg successful\n");
 				break;
 			}
 		}
-		dev_info(dev, "proto ver autoneg in progress\n");
+		dev_dbg(dev, "proto ver autoneg in progress\n");
 	}
 
 	if (err != 0)
 		framer->stats.proto_auto_neg_failures++;
 
 	del_timer_sync(&proto_setup_timer);
-
-	return err;
 }
 
 static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
@@ -518,8 +518,7 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 	txhfcnt = 0;
 	for (i = 0; i < 10; i++) {
 		txhfcnt = (u8) cpri_reg_get_val(&framer->regs_lock,
-					&regs->cpri_thfnctr,
-					TX_HFN_COUNTER_MASK);
+				&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
 		if (txhfcnt >= 1)
 			break;
 		dev_info(dev, "waiting for 1 HF to sent out\n");
@@ -537,17 +536,15 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 static int check_hfnsync(struct cpri_framer *framer, enum cpri_link_rate rate)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
-	struct device *dev = framer->cpri_dev->dev;
 	u32 hfn_sync_acheived;
 
 	/* Check hfn sync status */
-	while (framer->timer_expiry_events == TEVENT_LINERATE_SETUP_TEXPIRED) {
+	while (framer->timer_expiry_events != TEVENT_LINERATE_SETUP_TEXPIRED) {
 		hfn_sync_acheived = cpri_reg_get_val(&framer->regs_lock,
 					&regs->cpri_status, RX_HFN_STATE_MASK);
 		if (hfn_sync_acheived)
 			return 0;
 
-		dev_info(dev, "waiting for HFSYNC\n");
 		msleep(20);
 	}
 
@@ -557,7 +554,9 @@ static int check_hfnsync(struct cpri_framer *framer, enum cpri_link_rate rate)
 static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
+#if 0
 	struct cpri_autoneg_params *param = &(framer->autoneg_param);
+#endif
 	struct device *dev = framer->cpri_dev->dev;
 	u32 rai_cleared;
 	int err = 0;
@@ -566,12 +565,14 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 	 * Set Tx protocol ver ? Set Tx seed ?
 	 * Identify channels and what data to send ?
 	 */
+	cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
+				CONF_RX_EN_MASK);
 
 	do {
 		/* Turn ON Tx for 'tx_on_dur_sec' */
 		cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
 				CONF_TX_EN_MASK);
-
+#if 0
 		/* Enable SFP Tx */
 		set_sfp_txdisable(framer->sfp_dev, 1);
 
@@ -585,7 +586,7 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 		set_sfp_txdisable(framer->sfp_dev, 0);
 
 		schedule_timeout_interruptible(param->tx_off_time * HZ);
-
+#endif
 		/* TBD: check whether REC signal received
 		 * Need to handle LOS here
 		 * LOS will go down when REC signal is recieved
@@ -613,8 +614,10 @@ static void linerate_setup_timer_expiry_hndlr(unsigned long ptr)
 	framer->framer_state = LINK_RATE_SETUP_TIMER_EXPIRED;
 }
 
-static int cpri_linkrate_autoneg(struct cpri_framer *framer)
+void cpri_linkrate_autoneg(struct work_struct *work)
 {
+	struct cpri_framer *framer = container_of(work, struct cpri_framer,
+						lineautoneg_task);
 	struct cpri_autoneg_params *param = &(framer->autoneg_param);
 	struct cpri_common_regs __iomem *common_regs = framer->cpri_dev->regs;
 	struct device *dev = framer->cpri_dev->dev;
@@ -644,6 +647,8 @@ static int cpri_linkrate_autoneg(struct cpri_framer *framer)
 #endif
 
 	for (rate = high; rate >= low; rate--) {
+		dev_dbg(dev, "trying new link rate\n");
+#if 0
 		/* Disable framer clock */
 		if (framer->id)
 			cpri_reg_clear(&framer->cpri_dev->lock,
@@ -651,6 +656,7 @@ static int cpri_linkrate_autoneg(struct cpri_framer *framer)
 		else
 			cpri_reg_clear(&framer->cpri_dev->lock,
 				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
+#endif
 
 		/* TBD: serdes_cfg to be called here - Configure SerDes
 		 * for new link rate
@@ -672,26 +678,29 @@ static int cpri_linkrate_autoneg(struct cpri_framer *framer)
 		add_timer(&linerate_timer);
 
 		/* check for sync acheived */
-		if (check_linesync(framer, rate) == 0) {
+		err = check_linesync(framer, rate);
+		if (err == 0) {
 			err = cpri_stable(framer, rate);
 			break;
 		}
 
 		/* timer will be destroyed for every new line rate */
 		del_timer_sync(&linerate_timer);
-		dev_info(dev, "trying next link rate\n");
+		framer->timer_expiry_events = 0;
 	}
 
 	del_timer_sync(&linerate_timer);
 
-	if (err != 0)
+	if (err != 0) {
 		framer->stats.l1_auto_neg_failures++;
-
-	return err;
+		dev_err(dev, "line rate autoneg failed\n");
+	}
 }
 
-static int cpri_autoneg_all(struct cpri_framer *framer)
+void cpri_autoneg_all(struct work_struct *work)
 {
+	struct cpri_framer *framer = container_of(work, struct cpri_framer,
+						allautoneg_task);
 	enum cpri_state *state = &(framer->framer_state);
 	struct device *dev = framer->cpri_dev->dev;
 	struct net_device *ndev = framer->eth_priv->ndev;
@@ -700,11 +709,15 @@ static int cpri_autoneg_all(struct cpri_framer *framer)
 
 	*state = STANDBY;
 
+	framer->timer_expiry_events = 0;
+
 	while (*state != L1TIMER_EXPIRED) {
 		/* do line rate autoneg */
-		err = cpri_linkrate_autoneg(framer);
-		if (err != 0)
-			return err;
+		cpri_linkrate_autoneg(&framer->lineautoneg_task);
+		if (*state != LINE_RATE_AUTONEG) {
+			err = -ENOLINK;
+			goto out;
+		}
 
 		/* Transition 2 */
 		timer_dur = jiffies + framer->l1_expiry_dur_sec * HZ;
@@ -712,20 +725,22 @@ static int cpri_autoneg_all(struct cpri_framer *framer)
 		add_timer(&framer->l1_timer);
 
 		/* do proto ver autoneg */
-		err = cpri_proto_ver_autoneg(framer);
-		if (err != 0) {
+		cpri_proto_ver_autoneg(&framer->protoautoneg_task);
+		if (*state != PROT_VER_AUTONEG) {
 			err = -ENOLINK;
 			goto out;
 		}
+
 		/* do eth rate autoneg */
-		err = cpri_eth_autoneg(framer);
-		if (err != 0) {
+		cpri_eth_autoneg(&framer->ethautoneg_task);
+		if (*state != ETHLINK_AUTONEG) {
 			err = -ENOLINK;
 			goto out_passive;
 		}
+
 		/* do vendor config autoneg */
-		err = cpri_setup_vendor_autoneg(framer);
-		if (err != 0) {
+		cpri_setup_vendor_autoneg(&framer->vendorautoneg_task);
+		if ((*state != PASSIVELINK) && (*state != VENDOR_CONFIG)) {
 			err = -ENOLINK;
 			goto out;
 		} else {
@@ -765,8 +780,6 @@ out_passive:
 out:
 	/* Transition 6 or 14 or error in individual anutoneg phase */
 	del_timer_sync(&framer->l1_timer);
-
-	return err;
 }
 
 static int process_reconfig_cmd(enum recfg_cmd cmd, struct cpri_framer *framer)
@@ -813,24 +826,19 @@ static int process_autoneg_cmd(enum autoneg_cmd cmd, struct cpri_framer *framer)
 
 	switch (cmd) {
 	case CPRI_DO_LINE_RATE_AUTONEG:
-		if (cpri_linkrate_autoneg(framer) != 0)
-			retval = -EFAULT;
+		schedule_work(&framer->lineautoneg_task);
 		break;
 	case CPRI_DO_PROTOCOL_AUTONEG:
-		if (cpri_proto_ver_autoneg(framer) != 0)
-			retval = -EFAULT;
+		schedule_work(&framer->protoautoneg_task);
 		break;
 	case CPRI_DO_CNM_AUTONEG:
-		if (cpri_eth_autoneg(framer) != 0)
-			retval = -EFAULT;
+		schedule_work(&framer->ethautoneg_task);
 		break;
 	case CPRI_DO_VENDOR_AUTONEG:
-		if (cpri_setup_vendor_autoneg(framer) != 0)
-			retval = -EFAULT;
+		schedule_work(&framer->vendorautoneg_task);
 		break;
 	case CPRI_DO_AUTONEG_ALL:
-		if (cpri_autoneg_all(framer) != 0)
-			retval = -EFAULT;
+		schedule_work(&framer->allautoneg_task);
 		break;
 	default:
 		retval = -EINVAL;
@@ -854,7 +862,7 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 	unsigned long timer_dur;
 	unsigned int count;
 	unsigned int *buf;
-	int err = 0;
+	int err;
 
 	switch (cmd) {
 	case CPRI_START_AUTONEG:
@@ -922,19 +930,23 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 		}
 
 		count = param->eth_rates_count;
-
 		buf = kzalloc((sizeof(unsigned int) * count), GFP_KERNEL);
+		if (!buf) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		if (copy_from_user(buf, (unsigned int *)param->eth_rates,
 				sizeof(unsigned int) * count) != 0) {
 			err = -EFAULT;
+			kfree(buf);
 			goto out;
 		}
 
 		param->eth_rates = buf;
-
 		set_autoneg_param(framer, param);
 
+		kfree(buf);
 		break;
 
 	case CPRI_GET_AUTONEG_PARAM:
@@ -977,7 +989,9 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 			goto out;
 		}
 		set_delay_config(framer);
+
 		break;
+
 	case CPRI_GET_RAWDELAY:
 		if (copy_to_user(ioargp,
 			(struct cpri_delays_raw *)&framer->delay_out,
@@ -985,6 +999,7 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 			err = -EFAULT;
 			goto out;
 		}
+
 		break;
 
 	default:

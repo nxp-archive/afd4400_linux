@@ -345,11 +345,16 @@ struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node)
 {
 	struct sfp_dev *sfp_dev = NULL;
 
+	if (list_empty(&sfp_dev_list))
+		return NULL;
+
 	raw_spin_lock(&sfp_list_lock);
+
 	list_for_each_entry(sfp_dev, &sfp_dev_list, list) {
 		if (sfp_dev_node == sfp_dev->dev_node)
 			break;
 	}
+
 	raw_spin_unlock(&sfp_list_lock);
 
 	return sfp_dev;
@@ -660,6 +665,6 @@ static void __exit sfp_exit(void)
 }
 module_exit(sfp_exit);
 
-MODULE_DESCRIPTION("SFP EEPROM DRIVER");
+MODULE_DESCRIPTION("SFP DRIVER");
 MODULE_AUTHOR("Freescale Semiconductor, Inc");
 MODULE_LICENSE("GPL");

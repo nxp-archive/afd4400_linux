@@ -121,7 +121,6 @@ struct vss_buf_ctrl {
 
 struct cpri_dev {
 	unsigned int dev_id;
-	char *dev_name;
 	struct cpri_common_regs __iomem *regs;
 	struct device *dev;
 	raw_spinlock_t lock;
@@ -420,6 +419,11 @@ struct cpri_framer {
 	/* Autoneg data structures per framer*/
 	struct cpri_autoneg_params autoneg_param;
 	struct cpri_autoneg_output autoneg_output;
+	struct work_struct lineautoneg_task;
+	struct work_struct protoautoneg_task;
+	struct work_struct ethautoneg_task;
+	struct work_struct vendorautoneg_task;
+	struct work_struct allautoneg_task;
 	/* Delay data structures */
 	struct cpri_delays_raw_cfg delay_cfg;
 	struct cpri_delays_raw delay_out;
@@ -865,6 +869,11 @@ void l1_timer_expiry_hndlr(unsigned long ptr);
 /* Autoneg prototypes */
 int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 			unsigned long arg);
+void cpri_linkrate_autoneg(struct work_struct *work);
+void cpri_proto_ver_autoneg(struct work_struct *work);
+void cpri_eth_autoneg(struct work_struct *work);
+void cpri_setup_vendor_autoneg(struct work_struct *work);
+void cpri_autoneg_all(struct work_struct *work);
 
 /* Control word function prototypes */
 int set_txethrate(u8 eth_rate, struct cpri_framer *framer);

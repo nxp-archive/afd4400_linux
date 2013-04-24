@@ -37,19 +37,13 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 	int err = 0;
 
 	count = hf_channels->channel_count;
-	channels = &(hf_channels->channels[0]);
+	channels = hf_channels->channels;
 
 	/* Enable cw insertion */
 	cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
 			TX_CW_INSERT_EN_MASK);
 
 	for (i = 0; i < count; i++) {
-
-		if (channels[i] == NULL) {
-			dev_err(dev, "Invalid channel container\n");
-			err = -ENOMEM;
-			goto out;
-		}
 		/* Find control word and select it in CPRInTCTIE */
 		cw = FIND_CW_NUM(channels[i]->chan, channels[i]->word_bitmap);
 		if (cw <= 79) {
@@ -128,20 +122,15 @@ static int cpri_read_txctrlword(struct cpri_framer *framer)
 	struct hf_ctrl_chans *hf_channels = &(framer->tx_hf_ctrl_chans);
 	struct ctrl_chan **channels;
 	struct cpri_framer_regs *regs = framer->regs;
-	struct device *dev = framer->cpri_dev->dev;
 	unsigned int i, j;
 	u32 mask = 0, *addr;
 	u8 cw, idx, data;
 
 	count = hf_channels->channel_count;
-	channels = &(hf_channels->channels[0]);
+	channels = hf_channels->channels;
 
 	for (i = 0; i < count; i++) {
 
-		if (channels[i] == NULL) {
-			dev_err(dev, "Invalid channel container\n");
-			return -ENOMEM;
-		}
 		/* Find control word */
 		cw = FIND_CW_NUM(channels[i]->chan, channels[i]->word_bitmap);
 
@@ -178,20 +167,14 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 	struct hf_ctrl_chans *hf_channels = &(framer->rx_hf_ctrl_chans);
 	struct ctrl_chan **channels;
 	struct cpri_framer_regs *regs = framer->regs;
-	struct device *dev = framer->cpri_dev->dev;
 	unsigned int i, j;
 	u32 mask = 0, *addr;
 	u8 cw, idx, data;
 
 	count = hf_channels->channel_count;
-	channels = &(hf_channels->channels[0]);
+	channels = hf_channels->channels;
 
 	for (i = 0; i < count; i++) {
-
-		if (channels[i] == NULL) {
-			dev_err(dev, "Invalid channel container\n");
-			return -ENOMEM;
-		}
 		/* Find control word */
 		cw = FIND_CW_NUM(channels[i]->chan, channels[i]->word_bitmap);
 
@@ -221,26 +204,33 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 int set_txethrate(u8 eth_rate, struct cpri_framer *framer)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan *eth_chan[1];
+	struct ctrl_chan **eth_chan;
 	struct device *dev = framer->cpri_dev->dev;
+	unsigned int count;
 	int err = 0;
-
-	eth_chan[0] = kzalloc(sizeof(struct ctrl_chan), GFP_KERNEL);
 
 	raw_spin_lock(&framer->tx_cwt_lock);
 
 	hf_channels = &(framer->tx_hf_ctrl_chans);
-	hf_channels->channels = &eth_chan[0];
+	hf_channels->channel_count = 1;
+	count = hf_channels->channel_count;
+	eth_chan = kzalloc(sizeof(struct ctrl_chan) * count, GFP_KERNEL);
+	if (!eth_chan) {
+		dev_err(dev, "TxCW write failed: ethernet rate not set\n");
+		return -ENOMEM;
+	}
+
+	hf_channels->channels = eth_chan;
 	hf_channels->channels[0]->chan = 2;
 	hf_channels->channels[0]->words[CWIDX_ETHPTR][WDOFF_B0] = eth_rate;
 	hf_channels->channels[0]->word_bitmap = WORD_IDX3;
-	hf_channels->channel_count = 1;
 
 	if (cpri_write_txctrlword(framer) < 0) {
-		dev_err(dev, "MEM error, not able to set control word\n");
+		dev_err(dev, "TxCW write failed: ethernet rate not set\n");
 		err = -ENOMEM;
 	}
 
+	kfree(eth_chan);
 	raw_spin_unlock(&framer->tx_cwt_lock);
 
 	return err;
@@ -250,22 +240,28 @@ int set_txethrate(u8 eth_rate, struct cpri_framer *framer)
 int get_txethrate(struct cpri_framer *framer, u8 *eth_rate)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan *eth_chan[1];
+	struct ctrl_chan **eth_chan;
 	struct device *dev = framer->cpri_dev->dev;
+	unsigned int count;
 	int err = 0;
-
-	eth_chan[0] = kzalloc(sizeof(struct ctrl_chan), GFP_KERNEL);
 
 	raw_spin_lock(&framer->tx_cwt_lock);
 
 	hf_channels = &(framer->tx_hf_ctrl_chans);
-	hf_channels->channels = &eth_chan[0];
+	hf_channels->channel_count = 1;
+	count = hf_channels->channel_count;
+	eth_chan = kzalloc(sizeof(struct ctrl_chan) * count, GFP_KERNEL);
+	if (!eth_chan) {
+		dev_err(dev, "TxCW read failed: ethernet rate not read\n");
+		return -ENOMEM;
+	}
+
+	hf_channels->channels = eth_chan;
 	hf_channels->channels[0]->chan = 2;
 	hf_channels->channels[0]->word_bitmap = WORD_IDX3;
-	hf_channels->channel_count = 1;
 
 	if (cpri_read_txctrlword(framer) < 0) {
-		dev_err(dev, "MEM error, not able to get control word\n");
+		dev_err(dev, "TxCW read failed: ethernet rate not read\n");
 		err = -ENOMEM;
 		goto out;
 	}
@@ -273,6 +269,7 @@ int get_txethrate(struct cpri_framer *framer, u8 *eth_rate)
 	*eth_rate = hf_channels->channels[0]->words[CWIDX_ETHPTR][WDOFF_B0];
 
 out:
+	kfree(eth_chan);
 	raw_spin_unlock(&framer->tx_cwt_lock);
 
 	return err;
@@ -282,26 +279,33 @@ out:
 int set_txprotver(enum cpri_prot_ver ver, struct cpri_framer *framer)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan *prtover_chan[1];
+	struct ctrl_chan **prtover_chan;
 	struct device *dev = framer->cpri_dev->dev;
+	unsigned int count;
 	int err = 0;
-
-	prtover_chan[0] = kzalloc(sizeof(struct ctrl_chan), GFP_KERNEL);
 
 	raw_spin_lock(&framer->tx_cwt_lock);
 
 	hf_channels = &(framer->tx_hf_ctrl_chans);
-	hf_channels->channels = &prtover_chan[0];
+	hf_channels->channel_count = 1;
+	count = hf_channels->channel_count;
+	prtover_chan = kzalloc(sizeof(struct ctrl_chan) * count, GFP_KERNEL);
+	if (!prtover_chan) {
+		dev_err(dev, "TxCW write failed: proto ver not set\n");
+		return -ENOMEM;
+	}
+
+	hf_channels->channels = prtover_chan;
 	hf_channels->channels[0]->chan = 2;
 	hf_channels->channels[0]->words[CWIDX_PROTVER][WDOFF_B0] = (u8)ver;
 	hf_channels->channels[0]->word_bitmap = WORD_IDX0;
-	hf_channels->channel_count = 1;
 
 	if (cpri_write_txctrlword(framer) < 0) {
-		dev_err(dev, "MEM error, not able to set control word\n");
+		dev_err(dev, "TxCW write failed: proto ver not set\n");
 		err = -ENOMEM;
 	}
 
+	kfree(prtover_chan);
 	raw_spin_unlock(&framer->tx_cwt_lock);
 
 	return err;
@@ -312,30 +316,39 @@ int get_txprotver(struct cpri_framer *framer,
 			enum cpri_prot_ver *prot_ver)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan *prtover_chan[1];
+	struct ctrl_chan **prtover_chan;
 	struct device *dev = framer->cpri_dev->dev;
 	int err = 0;
+	unsigned int count;
 	u8 ver;
-
-	prtover_chan[0] = kzalloc(sizeof(struct ctrl_chan), GFP_KERNEL);
 
 	raw_spin_lock(&framer->tx_cwt_lock);
 
 	hf_channels = &(framer->tx_hf_ctrl_chans);
-	hf_channels->channels = &prtover_chan[0];
+	hf_channels->channel_count = 1;
+	count = hf_channels->channel_count;
+	prtover_chan = kzalloc(sizeof(struct ctrl_chan) * count, GFP_KERNEL);
+	if (!prtover_chan) {
+		dev_err(dev, "TxCW read failed: proto ver not read\n");
+		return -ENOMEM;
+	}
+
+	hf_channels->channels = prtover_chan;
 	hf_channels->channels[0]->chan = 2;
 	hf_channels->channels[0]->word_bitmap = WORD_IDX0;
-	hf_channels->channel_count = 1;
 
 	if (cpri_read_txctrlword(framer) < 0) {
-		dev_err(dev, "MEM error, not able to get control word\n");
+		dev_err(dev, "TxCW read failed: proto ver not read\n");
 		err = -ENOMEM;
+		goto out;
 	}
 
 	ver = hf_channels->channels[0]->words[CWIDX_PROTVER][WDOFF_B0];
-
-	raw_spin_unlock(&framer->tx_cwt_lock);
 	*prot_ver = (ver == 1) ? VER_1 : VER_2;
+
+out:
+	kfree(prtover_chan);
+	raw_spin_unlock(&framer->tx_cwt_lock);
 
 	return err;
 }
@@ -344,22 +357,28 @@ int get_txprotver(struct cpri_framer *framer,
 int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan *eth_chan[1];
+	struct ctrl_chan **eth_chan;
 	struct device *dev = framer->cpri_dev->dev;
+	unsigned int count;
 	int err = 0;
-
-	eth_chan[0] = kzalloc(sizeof(struct ctrl_chan), GFP_KERNEL);
 
 	raw_spin_lock(&framer->tx_cwt_lock);
 
 	hf_channels = &(framer->rx_hf_ctrl_chans);
-	hf_channels->channels = &eth_chan[0];
+	hf_channels->channel_count = 1;
+	count = hf_channels->channel_count;
+	eth_chan = kzalloc(sizeof(struct ctrl_chan) * count, GFP_KERNEL);
+	if (!eth_chan) {
+		dev_err(dev, "RxCW read failed: ethernet rate not read\n");
+		return -ENOMEM;
+	}
+
+	hf_channels->channels = eth_chan;
 	hf_channels->channels[0]->chan = 2;
 	hf_channels->channels[0]->word_bitmap = WORD_IDX3;
-	hf_channels->channel_count = 1;
 
 	if (cpri_read_rxctrlword(framer) < 0) {
-		dev_err(dev, "MEM error, not able to get control word\n");
+		dev_err(dev, "RxCW read failed: ethernet rate not read\n");
 		err = -ENOMEM;
 		goto out;
 	}
@@ -367,6 +386,7 @@ int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate)
 	*eth_rate = hf_channels->channels[0]->words[CWIDX_ETHPTR][WDOFF_B0];
 
 out:
+	kfree(eth_chan);
 	raw_spin_unlock(&framer->tx_cwt_lock);
 
 	return err;
@@ -376,30 +396,40 @@ out:
 int get_rxprotver(struct cpri_framer *framer, enum cpri_prot_ver *prot_ver)
 {
 	struct hf_ctrl_chans *hf_channels;
-	struct ctrl_chan *prtover_chan[1];
+	struct ctrl_chan **prtover_chan;
 	struct device *dev = framer->cpri_dev->dev;
 	int err = 0;
+	unsigned int count;
 	u8 ver;
-
-	prtover_chan[0] = kzalloc(sizeof(struct ctrl_chan), GFP_KERNEL);
 
 	raw_spin_lock(&framer->tx_cwt_lock);
 
 	hf_channels = &(framer->rx_hf_ctrl_chans);
-	hf_channels->channels = &prtover_chan[0];
+	hf_channels->channel_count = 1;
+	count = hf_channels->channel_count;
+	prtover_chan = kzalloc(sizeof(struct ctrl_chan) * count, GFP_KERNEL);
+	if (!prtover_chan) {
+		dev_err(dev, "RxCW read failed: proto ver not read\n");
+		return -ENOMEM;
+	}
+
+	hf_channels->channels = prtover_chan;
 	hf_channels->channels[0]->chan = 2;
 	hf_channels->channels[0]->word_bitmap = WORD_IDX0;
-	hf_channels->channel_count = 1;
+
 
 	if (cpri_read_rxctrlword(framer) < 0) {
-		dev_err(dev, "MEM error, not able to get control word\n");
+		dev_err(dev, "RxCW read failed: proto ver not read\n");
 		err = -ENOMEM;
+		goto out;
 	}
 
 	ver = hf_channels->channels[0]->words[CWIDX_PROTVER][WDOFF_B0];
-
-	raw_spin_unlock(&framer->tx_cwt_lock);
 	*prot_ver = (ver == 1) ? VER_1 : VER_2;
+
+out:
+	kfree(prtover_chan);
+	raw_spin_unlock(&framer->tx_cwt_lock);
 
 	return err;
 }
