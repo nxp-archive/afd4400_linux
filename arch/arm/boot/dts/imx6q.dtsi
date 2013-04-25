@@ -964,7 +964,15 @@
 				interrupts = <0 14 0x04>;
 			};
 
-			ocotp@021bc000 {
+            weim-bus@08000000 {
+                compatible = "simple-bus";
+                #address-cells = <1>;
+                #size-cells = <1>;
+                reg = <0x08000000 0x08000000>;
+                ranges;
+            };
+
+            ocotp@021bc000 {
 				reg = <0x021bc000 0x4000>;
 			};
 
