@@ -157,27 +157,48 @@
                     };
                 };
             };
-        };
-		pca954x@70 {
+		i2c@021a0000 { /* I2C1 */
 			#address-cells = <1>;
 			#size-cells = <0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_i2c1_2>;
+			status = "okay";
 
-			cpriphy0: sfp@0 {
-				compatible = "fsl,sfp";
-				reg = <0>;
-				max-addr = <0x2>;
-				eeprom = <0x50>;
-				diagnostics = <0x51>;
-			};
+			pca954x: pca954x@70 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				 compatible = "pca9547";
+				 reg = <0x70>;
 
-			cpriphy1: sfp@1 {
-				compatible = "fsl,sfp";
-				reg = <1>;
-				max-addr = <0x2>;
-				eeprom = <0x50>;
-				diagnostics = <0x51>;
+				i2c@1 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <1>;
+
+					cpriphy0: sfp@0 {
+						compatible = "fsl,sfp";
+						reg = <0x50>;
+						max-addr = <0x2>;
+						eeprom = <0x50>;
+						diagnostics = <0x51>;
+						};
+					};
+
+				i2c@2 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <2>;
+
+					cpriphy1: sfp@1 {
+						compatible = "fsl,sfp";
+						reg = <0x50>;
+						max-addr = <0x2>;
+						eeprom = <0x50>;
+						diagnostics = <0x51>;
+						};
+					};
+				};
 			};
 		};
-
 	};
 };
