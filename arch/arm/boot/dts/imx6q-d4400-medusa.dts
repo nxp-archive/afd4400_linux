@@ -18,6 +18,27 @@
 
 	soc {
 
+	aips-bus@02000000 { /* AIPS1 */
+
+		spba-bus@02000000 {
+
+			ecspi@02018000 { /* eCSPI5 */
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi5_1>;
+				fsl,spi-num-chipselects = <6>;
+				fsl,spi-bus-num = <5>;
+				cs-gpios = <&gpio1 17 0>,
+					   <&gpio1 19 0>,
+					   <&gpio1 21 0>,
+					   <&gpio1 12 0>;
+				cs-mux = <&gpio4 21 0>;
+			};
+		};
+	};
+
         aips-bus@02100000 { /* AIPS-2 */
 
             weim-bus@08000000 {

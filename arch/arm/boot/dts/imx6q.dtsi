@@ -1,5 +1,5 @@
 /*
- * Copyright 2011 Freescale Semiconductor, Inc.
+ * Copyright 2011, 2013 Freescale Semiconductor, Inc.
  * Copyright 2011 Linaro Ltd.
  *
  * The code contained herein is licensed under the GNU General Public
@@ -590,6 +590,21 @@
 							101 0x100b1	/* MX6Q_PAD_EIM_D17__ECSPI1_MISO */
 							109 0x100b1	/* MX6Q_PAD_EIM_D18__ECSPI1_MOSI */
 							94  0x100b1	/* MX6Q_PAD_EIM_D16__ECSPI1_SCLK */
+						>;
+					};
+				};
+
+				ecspi5 {
+					pinctrl_ecspi5_1: ecspi5grp-1 {
+						fsl,pins = <
+							1563 0x100b1	/* MX6Q_PAD_SD1_CLK__ECSPI5_SCLK */
+							1549 0x100b1	/* MX6Q_PAD_SD1_CMD__ECSPI5_MOSI */
+							1533 0x100b1	/* MX6Q_PAD_SD1_DAT0__ECSPI5_MISO */
+							1529 0x100b1	/* MX6Q_PAD_SD1_DAT1__GPIO_1_17 */ /* SS0 */
+							1559 0x100b1	/* MX6Q_PAD_SD1_DAT2__GPIO_1_19 */ /* SS1 */
+							1545 0x100b1	/* MX6Q_PAD_SD1_DAT3__GPIO_1_21 */ /* SS2 */
+							1588 0x100b1	/* MX6Q_PAD_SD2_DAT3__GPIO_1_12 */ /* SS3 */
+							514 0x100b1	/* MX6Q_PAD_DISP0_DAT0__GPIO_4_21 */ /* MUX */
 						>;
 					};
 				};

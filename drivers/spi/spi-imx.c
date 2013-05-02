@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2007 Freescale Semiconductor, Inc. All Rights Reserved.
+ * Copyright 2004-2007, 2013 Freescale Semiconductor, Inc. All Rights Reserved.
  * Copyright (C) 2008 Juergen Beisert
  *
  * This program is free software; you can redistribute it and/or
@@ -52,6 +52,18 @@
 /* generic defines to abstract from the different register layouts */
 #define MXC_INT_RR	(1 << 0) /* Receive data ready interrupt */
 #define MXC_INT_TE	(1 << 1) /* Transmit FIFO empty interrupt */
+
+/* Sharing same chipselects between 2 different SLAVE on spi5 */
+#define MEDUSA_SPI5_MASTER_BUS_NUMBER	5
+
+#define MEDUSA_SPI5_CS0	0
+#define MEDUSA_SPI5_CS1	1
+#define MEDUSA_SPI5_CS2	2
+#define MEDUSA_SPI5_CS3	3
+#define MEDUSA_SPI5_CS4	4
+#define MEDUSA_SPI5_CS5	5
+
+static int cs_mux;
 
 struct spi_imx_config {
 	unsigned int speed_hz;
@@ -624,12 +636,35 @@ static const struct of_device_id spi_imx_dt_ids[] = {
 static void spi_imx_chipselect(struct spi_device *spi, int is_active)
 {
 	struct spi_imx_data *spi_imx = spi_master_get_devdata(spi->master);
-	int gpio = spi_imx->chipselect[spi->chip_select];
+	int gpio;
+	int dev_toggle_flag = 1;
 	int active = is_active != BITBANG_CS_INACTIVE;
 	int dev_is_lowactive = !(spi->mode & SPI_CS_HIGH);
 
+	/* Sharing same chipselects between 2 different SLAVE on spi5 */
+	if (spi->master->bus_num == MEDUSA_SPI5_MASTER_BUS_NUMBER) {
+		if (spi->chip_select == MEDUSA_SPI5_CS4) {
+			gpio = spi_imx->chipselect[MEDUSA_SPI5_CS0];
+			dev_toggle_flag = 0;
+		} else if (spi->chip_select == MEDUSA_SPI5_CS5) {
+			gpio = spi_imx->chipselect[MEDUSA_SPI5_CS1];
+			dev_toggle_flag = 0;
+		} else {
+			gpio = spi_imx->chipselect[spi->chip_select];
+		}
+	} else {
+		gpio = spi_imx->chipselect[spi->chip_select];
+	}
+
 	if (!gpio_is_valid(gpio))
 		return;
+
+	/* Sharing same chipselects between 2 different SLAVE on spi5 */
+	if ((!((spi->chip_select == MEDUSA_SPI5_CS2) ||
+		(spi->chip_select == MEDUSA_SPI5_CS3))) &&
+		(spi->master->bus_num == MEDUSA_SPI5_MASTER_BUS_NUMBER)) {
+			gpio_set_value(cs_mux, dev_toggle_flag);
+		}
 
 	gpio_set_value(gpio, dev_is_lowactive ^ active);
 }
@@ -684,7 +719,18 @@ static int spi_imx_setupxfer(struct spi_device *spi,
 	config.bpw = t ? t->bits_per_word : spi->bits_per_word;
 	config.speed_hz  = t ? t->speed_hz : spi->max_speed_hz;
 	config.mode = spi->mode;
-	config.cs = spi->chip_select;
+
+	/* Sharing same chipselects between 2 different SLAVE on spi5 */
+	if (spi->master->bus_num == MEDUSA_SPI5_MASTER_BUS_NUMBER) {
+		if (spi->chip_select == MEDUSA_SPI5_CS4)
+			config.cs = MEDUSA_SPI5_CS0;
+		else if (spi->chip_select == MEDUSA_SPI5_CS5)
+			config.cs = MEDUSA_SPI5_CS1;
+		else
+			config.cs = spi->chip_select;
+	} else {
+		config.cs = spi->chip_select;
+	}
 
 	if (!config.speed_hz)
 		config.speed_hz = spi->max_speed_hz;
@@ -733,13 +779,30 @@ static int spi_imx_transfer(struct spi_device *spi,
 static int spi_imx_setup(struct spi_device *spi)
 {
 	struct spi_imx_data *spi_imx = spi_master_get_devdata(spi->master);
-	int gpio = spi_imx->chipselect[spi->chip_select];
+	int gpio;
+
+	/* Sharing same chipselects between 2 different SLAVE on spi5 */
+	if (spi->master->bus_num == MEDUSA_SPI5_MASTER_BUS_NUMBER) {
+		if (spi->chip_select == MEDUSA_SPI5_CS4)
+			gpio = spi_imx->chipselect[MEDUSA_SPI5_CS0];
+		else if (spi->chip_select == MEDUSA_SPI5_CS5)
+			gpio = spi_imx->chipselect[MEDUSA_SPI5_CS1];
+		else
+			gpio = spi_imx->chipselect[spi->chip_select];
+	} else {
+		gpio = spi_imx->chipselect[spi->chip_select];
+	}
 
 	dev_dbg(&spi->dev, "%s: mode %d, %u bpw, %d hz\n", __func__,
 		 spi->mode, spi->bits_per_word, spi->max_speed_hz);
 
 	if (gpio_is_valid(gpio))
 		gpio_direction_output(gpio, spi->mode & SPI_CS_HIGH ? 0 : 1);
+
+	if ((spi->chip_select == MEDUSA_SPI5_CS4) ||
+		(spi->chip_select == MEDUSA_SPI5_CS5))
+		if (spi->master->bus_num == MEDUSA_SPI5_MASTER_BUS_NUMBER)
+			gpio_direction_output(cs_mux, 0);
 
 	spi_imx_chipselect(spi, BITBANG_CS_INACTIVE);
 
@@ -761,7 +824,7 @@ static int spi_imx_probe(struct platform_device *pdev)
 	struct spi_imx_data *spi_imx;
 	struct resource *res;
 	struct pinctrl *pinctrl;
-	int i, ret, num_cs;
+	int i, ret, num_cs, bus_num;
 
 	if (!np && !mxc_platform_info) {
 		dev_err(&pdev->dev, "can't get the platform data\n");
@@ -783,7 +846,15 @@ static int spi_imx_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, master);
 
-	master->bus_num = pdev->id;
+	/* Added for static(from device tree) and dynamic bus num allocation */
+	ret = of_property_read_u32(np, "fsl,spi-bus-num", &bus_num);
+	if (ret < 0) {
+		dev_dbg(&pdev->dev, "can't get bus number from device tree\n");
+		master->bus_num = pdev->id;
+	} else {
+		master->bus_num = bus_num;
+	}
+
 	master->num_chipselect = num_cs;
 
 	spi_imx = spi_master_get_devdata(master);
@@ -801,6 +872,17 @@ static int spi_imx_probe(struct platform_device *pdev)
 		ret = gpio_request(spi_imx->chipselect[i], DRIVER_NAME);
 		if (ret) {
 			dev_err(&pdev->dev, "can't get cs gpios\n");
+			goto out_gpio_free;
+		}
+	}
+
+	/* Sharing same chipselects between 2 different SLAVE on spi5 */
+	if (master->bus_num == MEDUSA_SPI5_MASTER_BUS_NUMBER) {
+		cs_mux = of_get_named_gpio(np, "cs-mux", 0);
+		ret = gpio_request(cs_mux, DRIVER_NAME);
+		if (ret) {
+			gpio_free(cs_mux);
+			dev_err(&pdev->dev, "can't get CS toggle gpio\n");
 			goto out_gpio_free;
 		}
 	}
@@ -924,6 +1006,10 @@ static int spi_imx_remove(struct platform_device *pdev)
 	for (i = 0; i < master->num_chipselect; i++)
 		if (gpio_is_valid(spi_imx->chipselect[i]))
 			gpio_free(spi_imx->chipselect[i]);
+
+	/* Sharing same chipselects between 2 different SLAVE on spi5 */
+	if (master->bus_num == MEDUSA_SPI5_MASTER_BUS_NUMBER)
+		gpio_free(cs_mux);
 
 	spi_master_put(master);
 
