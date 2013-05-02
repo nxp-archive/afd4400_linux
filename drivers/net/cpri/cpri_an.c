@@ -43,7 +43,7 @@ void linkrate_autoneg_reset(struct cpri_framer *framer)
 #define GCR0		0x000B8000
 #define CPRI1		1
 #define CPRI2		2
-#define AUTONEG_RESET_VAL 0xa
+#define AUTONEG_RESET_VAL 0x1a
 	gcr_regs = ioremap_nocache((MEDUSA_BASE + GCR0), GCR_REG_SIZE);
 	value = readl(gcr_regs);
 	value |= AUTONEG_RESET_VAL;
@@ -257,23 +257,30 @@ static void update_bf_data(struct cpri_framer *framer)
 	case RATE2_1228_8M:
 		output->cpri_bf_word_size = BF_W_SIZE_16;
 		output->cpri_bf_iq_datablock_size = BF_IQ_BITS_240;
+		break;
 	case RATE3_2457_6M:
 		output->cpri_bf_word_size = BF_W_SIZE_32;
 		output->cpri_bf_iq_datablock_size = BF_IQ_BITS_480;
+		break;
 	case RATE4_3072_0M:
 		output->cpri_bf_word_size = BF_W_SIZE_40;
 		output->cpri_bf_iq_datablock_size = BF_IQ_BITS_600;
+		break;
 	case RATE5_4915_2M:
 		output->cpri_bf_word_size = BF_W_SIZE_64;
 		output->cpri_bf_iq_datablock_size = BF_IQ_BITS_960;
+		break;
 	case RATE6_6144_0M:
 		output->cpri_bf_word_size = BF_W_SIZE_80;
 		output->cpri_bf_iq_datablock_size = BF_IQ_BITS_1200;
+		break;
 	case RATE7_9830_4M:
 		output->cpri_bf_word_size = BF_W_SIZE_128;
 		output->cpri_bf_iq_datablock_size = BF_IQ_BITS_1920;
+		break;
 	default:
-		dev_err(dev, "Invalid common link rate\n");
+		dev_err(dev, "Invalid common link rate: %d\n",
+				output->common_link_rate);
 	break;
 	}
 }
@@ -590,8 +597,9 @@ static int check_framesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	u32 line_sync_acheived;
 	u32 mask = 0;
+
 	/* Check hfn sync status */
-	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK | RX_LOS_MASK);
+	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK);
 	while (framer->timer_expiry_events != TEVENT_LINERATE_SETUP_TEXPIRED) {
 		line_sync_acheived = cpri_reg_get_val(&framer->regs_lock,
 					&regs->cpri_status, mask);
@@ -744,6 +752,7 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	}
 
 	del_timer_sync(&linerate_timer);
+	update_bf_data(framer);
 
 	if (err != 0) {
 		framer->stats.l1_auto_neg_failures++;

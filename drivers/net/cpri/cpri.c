@@ -606,8 +606,8 @@ static int cpri_probe(struct platform_device *pdev)
 		raw_spin_lock_init(&framer->tx_cwt_lock);
 
 		if (process_framer_irqs(child, framer) < 0) {
-			dev_err(dev, "framer irq registration failed\n");
-			goto err_cdev;
+			framer->dev_flags |= CPRI_NO_EVENT;
+			dev_err(dev, "framer events not supported\n");
 		}
 
 		/* Configure framer events */

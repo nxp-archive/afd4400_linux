@@ -141,6 +141,7 @@ struct cpri_dev_info {
 #define CPRI_PASSIVE_LINK			(1 << 1)
 #define CPRI_TEST_MODE				(1 << 2)
 #define CPRI_DATA_MODE				(1 << 3)
+#define CPRI_NO_EVENT                           (1 << 4)
 	__u32 hw_status;
 #define RX_LOS_STATUS				(1 << 1)
 #define RX_STATE_STATUS				(1 << 2)
