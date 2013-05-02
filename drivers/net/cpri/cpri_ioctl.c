@@ -252,11 +252,15 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 
 static int cpri_init_framer(struct cpri_framer *framer)
 {
+	int ret;
 	struct cpri_dev_init_params *param = &framer->framer_param;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_common_regs __iomem *cregs = framer->cpri_dev->regs;
 
 
+	ret = init_framer_axc_param(framer);
+	if (ret != 0)
+		return ret;
 	if (param->ctrl_flags & CPRI_DAISY_CHAINED)
 		cpri_reg_set(&framer->regs_lock,
 				&regs->cpri_auxctrl,
@@ -583,7 +587,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	struct sfp_reg_read_buf sfp_rreg;
 	u8 *sfp_buf = NULL;
 
-	int err, count, i;
+	int err = 0, count, i;
 	void __user *ioargp = (void __user *)arg;
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
@@ -879,6 +883,17 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		cpri_reset_bfn(framer);
 
 		break;
+	case CPRI_SET_AXC_PARAM:
+	case CPRI_GET_AXC_PARAM:
+	case CPRI_GET_MAP_TABLE:
+	case CPRI_MAP_INIT_AXC:
+	case CPRI_CTRL_AXC:
+	case CPRI_MAP_CLEAR_AXC:
+		err = cpri_axc_ioctl(framer, arg, cmd);
+		if (err < 0)
+			goto out;
+		break;
+
 
 	default:
 		err = cpri_autoneg_ioctl(framer, cmd, arg);

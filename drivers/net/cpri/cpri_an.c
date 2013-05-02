@@ -252,7 +252,9 @@ static void update_bf_data(struct cpri_framer *framer)
 {
 	struct cpri_autoneg_output *output = &(framer->autoneg_output);
 	struct device *dev = framer->cpri_dev->dev;
+	int ret;
 
+	cleanup_segment_table_data(framer);
 	switch (output->common_link_rate) {
 	case RATE2_1228_8M:
 		output->cpri_bf_word_size = BF_W_SIZE_16;
@@ -283,6 +285,9 @@ static void update_bf_data(struct cpri_framer *framer)
 				output->common_link_rate);
 	break;
 	}
+	ret = populate_segment_table_data(framer);
+	if (ret)
+		dev_err(dev, "Segment table population failed\n");
 }
 
 void cpri_setup_vendor_autoneg(struct work_struct *work)

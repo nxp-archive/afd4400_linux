@@ -363,31 +363,59 @@ enum mapping_method {
 	MAPPING_METHOD_3
 };
 
+struct axc_pos {
+	__u8 axc_start_W;
+	__u8 axc_start_B;
+};
+
 struct axc_info {
 	unsigned int id;
 	__u32 flags;
-#define AXC_DATA_TYPE_IQ			(1 << 1)
-#define AXC_DATA_TYPE_VSS			(1 << 2)
-#define AXC_OVERSMAPLING			(1 << 3)
-#define AXC_92E_CONVERSION			(1 << 4)
-#define AXC_INTERLEAVING			(1 << 5)
-#define AXC_TX_ROUNDING				(1 << 6)
+#define DL_AXCS					(1 << 1)
+#define UL_AXCS					(1 << 2)
+#define AXC_DATA_TYPE_IQ			(1 << 4)
+#define AXC_DATA_TYPE_VSS			(1 << 5)
+#define AXC_OVERSAMPLING_2X			(1 << 6)
+#define AXC_CONVERSION_9E2_EN			(1 << 7)
+#define AXC_TX_ROUNDING_EN			(1 << 8)
+#define AXC_INTERLEAVING_EN			(1 << 9)
+#define AXC_IQ_FORMAT_2				(1 << 10)
+#define AXC_FLEXI_POSITION_EN			(1 << 11)
 	enum mapping_method map_method;
 	unsigned int buffer_size;
 	unsigned int buffer_threshold;
 	unsigned int sampling_freq;
-	__u8 axc_start_W;
-	__u8 axc_start_B;
 	unsigned int S;
 	unsigned int K;
 	unsigned int Na;
 	unsigned int Ns;
 	__u8 sample_width;
+	struct axc_pos *pos;
 };
 
 struct axc_config_params {
 	unsigned int axc_count;
 	struct axc_info *axcs;
+	__u32 flags;
+#define DL_AXCS					(1 << 1)
+#define UL_AXCS					(1 << 2)
+#define READ_ALL_AXCS				(1 << 3)
+};
+
+struct subsegment_info {
+	__u32 axc_id;
+	__u8 offset;
+	__u8 map_size;
+};
+
+struct segment_info {
+	struct subsegment_info subsegments[3];
+	__u32 k;
+};
+
+struct axc_map_table_get {
+	__u32 seg_count;
+	struct segment_info *segments;
 	__u32 flags;
 #define DL_AXCS					(1 << 1)
 #define UL_AXCS					(1 << 2)
@@ -403,6 +431,7 @@ enum axc_ctrl_op {
 struct cpri_axc_ctrl {
 	enum axc_ctrl_op op;
 	unsigned int axc_id;
+	unsigned int direction;
 };
 
 struct cpri_vss_init_params {
@@ -542,6 +571,8 @@ enum mem_type {
 #define CPRI_MAP_INIT_AXC			_IOW(CPRI_MAGIC, 33, \
 						unsigned int)
 #define CPRI_MAP_CLEAR_AXC			_IO(CPRI_MAGIC, 34)
+#define CPRI_GET_MAP_TABLE			_IOR(CPRI_MAGIC, 35, \
+						struct axc_map_table_get *)
 
 /* VSS channel configuration and data Tx/Rx IOCTLS */
 #define CPRI_OPEN_VSS				_IOW(CPRI_MAGIC, 40, \

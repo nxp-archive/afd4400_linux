@@ -483,7 +483,7 @@ static int cpri_probe(struct platform_device *pdev)
 	dev_t devt;
 	int cpri_major, cpri_minor;
 	unsigned int framer_id, max_framers;
-	int i, rc = 0;
+	int ret = 0, i, rc = 0;
 
 	if (!np || !of_device_is_available(np)) {
 		rc = -ENODEV;
@@ -587,6 +587,13 @@ static int cpri_probe(struct platform_device *pdev)
 		if (framer->max_axcs < 0) {
 			dev_err(dev, "Failed to get max axc\n");
 			rc = -ENODEV;
+			goto err_chrdev;
+		}
+		dev_info(dev, "max axcs:%d\n", framer->max_axcs);
+		ret = init_axc_mem_blk(framer, child);
+		if (ret) {
+			dev_err(dev, "cpri axc memory init failed\n");
+			ret = -EFAULT;
 			goto err_chrdev;
 		}
 
@@ -697,6 +704,7 @@ static int cpri_remove(struct platform_device *pdev)
 		free_irq(framer->irq_tx_t, framer);
 		free_irq(framer->irq_rx_c, framer);
 		free_irq(framer->irq_tx_c, framer);
+		axc_buf_cleanup(framer);
 		cdev_del(&framer->cdev);
 		cancel_work_sync(&framer->lineautoneg_task);
 		cancel_work_sync(&framer->protoautoneg_task);
