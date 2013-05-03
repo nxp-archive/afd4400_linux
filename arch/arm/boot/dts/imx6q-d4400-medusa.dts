@@ -112,7 +112,12 @@
                             <0x0 0 151 0x4 &gpio5 17 0x04>, /* JESD Tx1 */
                             <0x0 0 222 0x4 &gpio4 27 0x04>, /* eTSEC group0 Rx */
                             <0x0 0 223 0x4 &gpio5 11 0x04>, /* eTSEC group0 Tx */
-                            <0x0 0 224 0x4 &gpio4 26 0x04>; /* eTSEC group0 error */
+                            <0x0 0 224 0x4 &gpio4 26 0x04>, /* eTSEC group0 error */
+			    <0x0 0 252 0x4 &gpio5 7 0x04>, /* VSPA DMA compltn */
+			    <0x0 0 253 0x4 &gpio5 8 0x04>, /* VSPA DMA error */
+			    <0x0 0 254 0x4 &gpio5 9 0x04>, /* VSPA DONE */
+			    <0x0 0 255 0x4 &gpio5 10 0x04>; /* VSPA MSG  */
+
 
                     cpri@0x0C100000 {
                         #address-cells = <1>;
@@ -155,6 +160,18 @@
                             sfp-handle = <&cpriphy1>;
                         };
                     };
+		    vspa@0x0C080000 {
+			    compatible = "fsl,vspa";
+			    reg = <0x0C080000 0x800>;
+			    vsparegstart = <0x0C080000>;
+			    vspareglen	= <0x800>;
+			    vspadev-id	= <0>;
+			    interrupts = <0 252 0x4>,
+				       <0 253 0x4>,
+				       <0 254 0x4>,
+				       <0 255 0x4>;
+			    status = "okay";
+		    };
                 };
             };
 		i2c@021a0000 { /* I2C1 */
