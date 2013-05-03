@@ -568,6 +568,7 @@ struct cpri_framer {
 #define IQ_SYNC_EN_MASK				0x8000
 
 /* CPRInRCIER & CPRInTCIER */
+#define CPRI_INT_COUNT				5
 #define TIMING_INT_LEVEL_MASK			0x80000000
 #define BFN_TIMING_EVENT_EN_MASK		0x00020000
 #define HFN_TIMING_EVENT_EN_MASK		0x00010000
@@ -727,6 +728,10 @@ struct cpri_framer {
 #define SIZE_BYTE				8
 #define BYTE_MASK				0xFF
 #define SIZE_REGBYTES				4
+#define CW_BYTE0				24
+#define CW_BYTE1				16
+#define CW_BYTE2				8
+#define CW_BYTE3				0
 
 static inline u32 cpri_read(const void __iomem *addr)
 {

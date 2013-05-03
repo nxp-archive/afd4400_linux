@@ -275,7 +275,8 @@ enum event_type {
 
 enum cpri_prot_ver {
 	VER_1 = 1,
-	VER_2
+	VER_2,
+	VER_INVALID
 };
 
 enum hdlc_link_rate {

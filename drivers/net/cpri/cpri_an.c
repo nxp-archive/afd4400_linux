@@ -37,7 +37,8 @@ void linkrate_autoneg_reset(struct cpri_framer *framer)
 	/*XXX: This code is temporary, GCR driver will export function for
 	 * Auto neg reset and PHY link rate config.
 	 */
-	/* temporary code added to check with GCR0 register values */
+	/* temporary code added to check with GCR0 register values
+	 */
 #define MEDUSA_BASE	0x0C000000
 #define GCR_REG_SIZE	0x1000
 #define GCR0		0x000B8000
@@ -694,9 +695,9 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	int err = 0;
 	unsigned long timer_dur;
 
+
 	/* Set framer state */
 	framer->framer_state = LINE_RATE_AUTONEG;
-
 	/* Setup line rate timer */
 	init_timer(&linerate_timer);
 	linerate_timer.function = linerate_setup_timer_expiry_hndlr;

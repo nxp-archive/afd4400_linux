@@ -18,9 +18,18 @@ static void cw_write(raw_spinlock_t *lock, u32 *addr, u8 data, u32 mask)
 	cpri_reg_set_val(lock, addr, (u32) data, mask);
 }
 
-static u8 cw_read(raw_spinlock_t *lock, u32 *addr, u32 mask)
+static void set_cw_data(u8 *cw_word, u32 data)
 {
-	return (u8) cpri_reg_get_val(lock, addr, mask);
+	*(cw_word + 0) = ((data >> CW_BYTE0) & BYTE_MASK);
+	*(cw_word + 1) = ((data >> CW_BYTE1) & BYTE_MASK);
+	*(cw_word + 2) = ((data >> CW_BYTE2) & BYTE_MASK);
+	*(cw_word + 3) = ((data >> CW_BYTE3) & BYTE_MASK);
+	return;
+}
+
+static u32 cw_read(raw_spinlock_t *lock, u32 *addr, u32 mask)
+{
+	return cpri_reg_get_val(lock, addr, mask);
 }
 
 void clear_control_tx_table(struct cpri_framer *framer)
@@ -147,7 +156,8 @@ static int cpri_read_txctrlword(struct cpri_framer *framer)
 	struct cpri_framer_regs *regs = framer->regs;
 	unsigned int i, j;
 	u32 mask = 0, *addr;
-	u8 cw, idx, data;
+	u8 cw, idx;
+	u32 data;
 
 	count = hf_channels->channel_count;
 	channels = hf_channels->channels;
@@ -168,15 +178,12 @@ static int cpri_read_txctrlword(struct cpri_framer *framer)
 		/* Read data From CPRInTCD0 - CPRInTCD3 */
 		addr = (&regs->cpri_tctrldata0);
 		idx = channels[i].word_bitmap;
-		for (j = 1; j <= MAX_CWBYTES; j++) {
-			mask = BYTE_MASK << mask;
+		for (j = 0; j <= MAX_CWBYTES; ) {
+			mask = MASK_ALL;
 			data = cw_read(&framer->regs_lock, addr, mask);
-			channels[i].words[idx][j-1] = data;
-			mask += SIZE_BYTE;
-			if (j % SIZE_REGBYTES == 0) {
-				addr++;
-				mask = 0;
-			}
+			set_cw_data(&channels[i].words[idx][j], data);
+			j = j + SIZE_REGBYTES;
+			addr++;
 		}
 	}
 
@@ -192,7 +199,8 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 	struct cpri_framer_regs *regs = framer->regs;
 	unsigned int i, j;
 	u32 mask = 0, *addr;
-	u8 cw, idx, data;
+	u8 cw, idx;
+	u32 data;
 
 	count = hf_channels->channel_count;
 	channels = hf_channels->channels;
@@ -208,15 +216,12 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 		/* Read data From CPRInRCD0 - CPRInRCD3 */
 		addr = (&regs->cpri_rctrldata0);
 		idx = channels[i].word_bitmap;
-		for (j = 1; j <= MAX_CWBYTES; j++) {
-			mask = BYTE_MASK << mask;
+		for (j = 0; j <= MAX_CWBYTES; ) {
+			mask = MASK_ALL;
 			data = cw_read(&framer->regs_lock, addr, mask);
-			channels[i].words[idx][j-1] = data;
-			mask += SIZE_BYTE;
-			if (j % SIZE_REGBYTES == 0) {
-				addr++;
-				mask = 0;
-			}
+			set_cw_data(&channels[i].words[idx][j], data);
+			j = j + SIZE_REGBYTES;
+			addr++;
 		}
 	}
 
@@ -448,7 +453,10 @@ int get_rxprotver(struct cpri_framer *framer, enum cpri_prot_ver *prot_ver)
 	}
 
 	ver = hf_channels->channels[0].words[CWIDX_PROTVER][WDOFF_B0];
-	*prot_ver = (ver == 1) ? VER_1 : VER_2;
+	if ((ver == 1) || (ver == 2))
+		*prot_ver = (ver == 1) ? VER_1 : VER_2;
+	else
+		 *prot_ver = VER_INVALID;
 
 out:
 	kfree(prtover_chan);

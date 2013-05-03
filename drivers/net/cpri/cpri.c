@@ -450,6 +450,12 @@ static irqreturn_t cpri_err_handler(int irq, void *cookie)
 static int cpri_register_irq(struct cpri_dev *cpdev)
 {
 	int err = 0;
+	int loop = 0;
+
+	for (loop = 1; loop < CPRI_INT_COUNT; loop++) {
+		cpri_reg_set_val(&cpdev->lock, &cpdev->regs->cpri_intctrl[loop],
+			BYTE_MASK, 0);
+	}
 
 	/* Handling only the error interrupt (111) */
 	err = request_irq(cpdev->irq_err, cpri_err_handler, 0,
@@ -645,6 +651,8 @@ static int cpri_probe(struct platform_device *pdev)
 			goto err_cdev;
 		}
 	}
+
+	/* enable interrupt here TODO */
 
 	/* Add to the list of cpri devices - this is required
 	 * as the probe is called for multiple cpri complexes
