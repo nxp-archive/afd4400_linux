@@ -201,4 +201,11 @@
 			};
 		};
 	};
+	landshark@0d100000 { /* LandShark */
+		compatible = "fsl,landshark";
+		/*16 KB of OCRAM memory*/
+		address = <0x0d100000>;
+		length = <0x00004000>;
+		status = "okay";
+	};
 };
