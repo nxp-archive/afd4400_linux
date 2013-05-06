@@ -102,6 +102,14 @@
 		interrupt-parent = <&intc>;
 		ranges;
 
+		weim-bus@08000000 {
+		compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0x08000000 0x08000000>;
+			ranges;
+		};
+
 		dma-apbh@00110000 {
 			compatible = "fsl,imx6q-dma-apbh", "fsl,imx28-dma-apbh";
 			reg = <0x00110000 0x2000>;
@@ -584,16 +592,6 @@
 					};
 				};
 
-				ecspi1 {
-					pinctrl_ecspi1_1: ecspi1grp-1 {
-						fsl,pins = <
-							101 0x100b1	/* MX6Q_PAD_EIM_D17__ECSPI1_MISO */
-							109 0x100b1	/* MX6Q_PAD_EIM_D18__ECSPI1_MOSI */
-							94  0x100b1	/* MX6Q_PAD_EIM_D16__ECSPI1_SCLK */
-						>;
-					};
-				};
-
 				ecspi5 {
 					pinctrl_ecspi5_1: ecspi5grp-1 {
 						fsl,pins = <
@@ -679,13 +677,6 @@
 				};
 
 				i2c1 {
-					pinctrl_i2c1_1: i2c1grp-1 {
-						fsl,pins = <
-							137 0x4001b8b1	/* MX6Q_PAD_EIM_D21__I2C1_SCL */
-							196 0x4001b8b1	/* MX6Q_PAD_EIM_D28__I2C1_SDA */
-						>;
-					};
-
 					pinctrl_i2c1_2: i2c1grp-2 {
 						fsl,pins = <
 							1133 0x4001b8b1	/* MX6Q_PAD_CSI0_DAT9__I2C1_SCL */
@@ -699,15 +690,6 @@
 						fsl,pins = <
 							1140 0x1b0b1	/* MX6Q_PAD_CSI0_DAT10__UART1_TXD */
 							1148 0x1b0b1	/* MX6Q_PAD_CSI0_DAT11__UART1_RXD */
-						>;
-					};
-				};
-
-				uart2 {
-					pinctrl_uart2_1: uart2grp-1 {
-						fsl,pins = <
-							183 0x1b0b1	/* MX6Q_PAD_EIM_D26__UART2_TXD */
-							191 0x1b0b1	/* MX6Q_PAD_EIM_D27__UART2_RXD */
 						>;
 					};
 				};
@@ -985,14 +967,6 @@
 				reg = <0x021b8000 0x4000>;
 				interrupts = <0 14 0x04>;
 			};
-
-            weim-bus@08000000 {
-                compatible = "simple-bus";
-                #address-cells = <1>;
-                #size-cells = <1>;
-                reg = <0x08000000 0x08000000>;
-                ranges;
-            };
 
             ocotp@021bc000 {
 				reg = <0x021bc000 0x4000>;

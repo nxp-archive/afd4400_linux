@@ -1,5 +1,5 @@
 /*
- * Copyright 2011 Freescale Semiconductor, Inc.
+ * Copyright 2011-2013 Freescale Semiconductor, Inc.
  * Copyright 2011 Linaro Ltd.
  *
  * The code contained herein is licensed under the GNU General Public
@@ -31,18 +31,10 @@
 		aips-bus@02000000 { /* AIPS1 */
 			iomuxc@020e0000 {
 				pinctrl-names = "default";
-				pinctrl-0 = <&pinctrl_hog>;
-
-				hog {
-					pinctrl_hog: hoggrp {
-						fsl,pins = <
-							176  0x80000000	/* MX6Q_PAD_EIM_D25__GPIO_3_25 */
-						>;
-					};
-				};
 
 				arm2 {
 					pinctrl_usdhc3_arm2: usdhc3grp-arm2 {
+
 						fsl,pins = <
 							1363 0x80000000	/* MX6Q_PAD_NANDF_CS0__GPIO_6_11 */
 							1369 0x80000000 /* MX6Q_PAD_NANDF_CS1__GPIO_6_14 */
