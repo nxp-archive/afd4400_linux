@@ -1,3 +1,19 @@
+/*
+ * include/uapi/linux/gcr.h
+ * GCR device driver
+ * Author: Anand Singh Freescale semiconductor, Inc.
+ *
+ * Copyright 2013 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
+ */
+
+#ifndef __UAPI_GCR_H
+#define __UAPI_GCR_H
+
 #define GCR_MOD_NAME                     "/dev/gcr_dev"
 
 #define GCR_IOC_MAGIC           'G'
@@ -190,5 +206,4 @@ struct  gcr_ctl_parm {
 	unsigned int param;
 };
 
-
-
+#endif
