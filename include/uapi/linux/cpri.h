@@ -239,30 +239,30 @@ struct sfp_reg_write_buf {
 /* Event notification data structures- start */
 struct evt_device_notification_data {
 	__u32 evt_map;
-#define EVENT_AUTO_NEG_DONE			(1 << 1)
-#define EVENT_AUTO_NEG_FAILURE			(1 << 2)
-#define IEVENT_IQ_RX_OVERRUN			(1 << 3)
-#define IEVENT_IQ_TX_UNDERRUN			(1 << 4)
-#define IEVENT_L1_INBAND			(1 << 5)
-#define IEVENT_L1_RESET				(1 << 6)
-#define IEVENT_LINK_ERROR			(1 << 7)
+#define EVT_AUTO_NEG_DONE			(1 << 1)
+#define EVT_AUTO_NEG_FAILURE			(1 << 2)
+#define IEVT_IQ_RX_OVERRUN			(1 << 3)
+#define IEVT_IQ_TX_UNDERRUN			(1 << 4)
+#define IEVT_L1_INBAND				(1 << 5)
+#define IEVT_L1_RESET				(1 << 6)
+#define IEVT_LINK_ERROR				(1 << 7)
 	__u32 evt_data;
-#define L1TIMER_EXPIRED				(1 << 1)
-#define PROT_VER_SETUP_TIMER_EXPIRED		(1 << 2)
-#define CnM_SETUP_TIMER_EXPIRED			(1 << 3)
-#define SERDES_FAILURE				(1 << 4)
+#define EVT_L1TIMER_EXPIRED				(1 << 1)
+#define EVT_PROT_VER_SETUP_TIMER_EXPIRED		(1 << 2)
+#define EVT_CM_SETUP_TIMER_EXPIRED			(1 << 3)
+#define EVT_SERDES_FAILURE				(1 << 4)
 
-#define IEVENT_LLOS				(1 << 1)
-#define IEVENT_LLOF				(1 << 2)
-#define ETHLINK_RATE_MISMATCH			(1 << 3)
-#define PROT_VER_MISMATCH			(1 << 4)
+#define IEVT_LLOS				(1 << 1)
+#define IEVT_LLOF				(1 << 2)
+#define EVT_ETHLINK_RATE_MISMATCH		(1 << 3)
+#define EVT_PROT_VER_MISMATCH			(1 << 4)
 };
 
 struct evt_vss_txrx_data {
 	__u32 evt_map;
-#define IEVENT_VSS_TX_BUF_INDICATION		(1 << 1)
-#define IEVENT_VSS_TX_CHAN_INDICATION		(1 << 2)
-#define IEVENT_VSS_RX_INDICATION		(1 << 3)
+#define IEVT_VSS_TX_BUF_INDICATION		(1 << 1)
+#define IEVT_VSS_TX_CHAN_INDICATION		(1 << 2)
+#define IEVT_VSS_RX_INDICATION			(1 << 3)
 	__u32 buff_idx;
 };
 
@@ -374,6 +374,7 @@ struct axc_info {
 	__u32 flags;
 #define DL_AXCS					(1 << 1)
 #define UL_AXCS					(1 << 2)
+#define READ_ALL_AXCS				(1 << 3)
 #define AXC_DATA_TYPE_IQ			(1 << 4)
 #define AXC_DATA_TYPE_VSS			(1 << 5)
 #define AXC_OVERSAMPLING_2X			(1 << 6)
@@ -398,9 +399,6 @@ struct axc_config_params {
 	unsigned int axc_count;
 	struct axc_info *axcs;
 	__u32 flags;
-#define DL_AXCS					(1 << 1)
-#define UL_AXCS					(1 << 2)
-#define READ_ALL_AXCS				(1 << 3)
 };
 
 struct subsegment_info {
@@ -418,9 +416,6 @@ struct axc_map_table_get {
 	__u32 seg_count;
 	struct segment_info *segments;
 	__u32 flags;
-#define DL_AXCS					(1 << 1)
-#define UL_AXCS					(1 << 2)
-#define READ_ALL_AXCS				(1 << 3)
 };
 
 enum axc_ctrl_op {
