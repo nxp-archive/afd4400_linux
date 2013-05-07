@@ -128,6 +128,7 @@ static int fsl_pq_mdio_write(struct mii_bus *bus, int mii_id, int regnum,
 	struct fsl_pq_mdio_priv *priv = bus->priv;
 	struct fsl_pq_mii __iomem *regs = priv->regs;
 	u32 status;
+	int timeout = 10;
 
 	/* Set the PHY address and the register address we want to write */
 	fsl_mdio_write((mii_id << 8) | regnum, &regs->miimadd);
@@ -136,10 +137,19 @@ static int fsl_pq_mdio_write(struct mii_bus *bus, int mii_id, int regnum,
 	fsl_mdio_write(value, &regs->miimcon);
 
 	/* Wait for the transaction to finish */
+#ifndef __BIG_ENDIAN
+	while((fsl_mdio_read(&regs->miimind) & MIIMIND_BUSY) && timeout--) {
+		udelay(100);
+	}
+	if(0 == timeout)
+		status = 0;
+	else
+		status = 1;
+#else
 	status = spin_event_timeout(!(fsl_mdio_read(&regs->miimind) &
 				MIIMIND_BUSY),
 			MII_TIMEOUT, 0);
-
+#endif
 	return status ? 0 : -ETIMEDOUT;
 }
 
@@ -159,6 +169,7 @@ static int fsl_pq_mdio_read(struct mii_bus *bus, int mii_id, int regnum)
 	struct fsl_pq_mii __iomem *regs = priv->regs;
 	u32 status;
 	u16 value;
+	int timeout = 10;
 
 	/* Set the PHY address and the register address we want to read */
 	fsl_mdio_write(((mii_id << 8) | regnum), &regs->miimadd);
@@ -169,9 +180,19 @@ static int fsl_pq_mdio_read(struct mii_bus *bus, int mii_id, int regnum)
 
 	/* Wait for the transaction to finish, normally less than 100us */
 
+#ifndef __BIG_ENDIAN
+	while((fsl_mdio_read(&regs->miimind) & (MIIMIND_NOTVALID | MIIMIND_BUSY)) && timeout--) {
+		udelay(100);
+	}
+	if(0 == timeout)
+		status = 0;
+	else
+		status = 1;
+#else
 	status = spin_event_timeout(!(fsl_mdio_read(&regs->miimind) &
 				    (MIIMIND_NOTVALID | MIIMIND_BUSY)),
 				    MII_TIMEOUT, 10);
+#endif
 	if (!status)
 		return -ETIMEDOUT;
 
@@ -188,6 +209,7 @@ static int fsl_pq_mdio_reset(struct mii_bus *bus)
 	struct fsl_pq_mdio_priv *priv = bus->priv;
 	struct fsl_pq_mii __iomem *regs = priv->regs;
 	u32 status;
+	int timeout = 10;
 
 	mutex_lock(&bus->mdio_lock);
 
@@ -198,9 +220,19 @@ static int fsl_pq_mdio_reset(struct mii_bus *bus)
 	fsl_mdio_write(MIIMCFG_INIT_VALUE, &regs->miimcfg);
 
 	/* Wait until the bus is free */
+#ifndef __BIG_ENDIAN
+	while((fsl_mdio_read(&regs->miimind) & MIIMIND_BUSY) && timeout--) {
+		udelay(100);
+	}
+	if(0 == timeout)
+		status = 0;
+	else
+		status = 1;
+#else
 	status = spin_event_timeout(!(fsl_mdio_read(&regs->miimind) &
 				MIIMIND_BUSY),
 			MII_TIMEOUT, 0);
+#endif
 
 	mutex_unlock(&bus->mdio_lock);
 
