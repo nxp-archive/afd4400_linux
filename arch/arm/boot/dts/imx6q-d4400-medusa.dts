@@ -173,6 +173,18 @@
 					device_type = "ethernet-phy";
 				};
 			};
+                   vspa@0x0C080000 {
+                           compatible = "fsl,vspa";
+                           reg = <0x0C080000 0x800>;
+                           vsparegstart = <0x0C080000>;
+                           vspareglen  = <0x800>;
+                           vspadev-id  = <0>;
+                           interrupts = <0 252 0x4>,
+                                      <0 253 0x4>,
+                                      <0 254 0x4>,
+                                      <0 255 0x4>;
+                           status = "okay";
+                   };
 		};
 	};
 	aips-bus@02000000 { /* AIPS1 */
