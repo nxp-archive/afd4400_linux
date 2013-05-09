@@ -160,4 +160,6 @@ source "drivers/ipack/Kconfig"
 
 source "drivers/rf/Kconfig"
 
+source "drivers/tbgen/Kconfig"
+
 endmenu
