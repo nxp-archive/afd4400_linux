@@ -162,4 +162,6 @@ source "drivers/rf/Kconfig"
 
 source "drivers/tbgen/Kconfig"
 
+source "drivers/jesd/Kconfig"
+
 endmenu
