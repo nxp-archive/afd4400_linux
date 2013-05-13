@@ -31,88 +31,88 @@ enum jesd_state {
 */
 struct conf_tr {
 	unsigned long sampling_rate;
-	u8 delay; /*Rx/Tx delay*/
-	u32 tran_flg;
-	u32 lanes;
+	__u8 delay; /*Rx/Tx delay*/
+	__u32 tran_flg;
+	__u32 lanes;
 };
 /** @brief \struct ils params
  */
 struct ils_params {
-	u8 device_id;
-	u8 bank_id;
-	u8 lane_0_id;
-	u8 lane_1_id;
-	u8 scrambling_scr;
-	u8 lanes_per_converter_l;
-	u8 octect_per_frame_f;
-	u8 frame_per_mf_k;
-	u8 conv_per_device_m;
-	u8 cs;
-	u8 n;
-	u8 np;
-	u8 s;
-	u8 cf;
-	u8 hd;
-	u8 subclass_ver;
-	u8 jesd_ver;
-	u8 csum_lane_0;
-	u8 csum_lane_1;
+	__u8 device_id;
+	__u8 bank_id;
+	__u8 lane_0_id;
+	__u8 lane_1_id;
+	__u8 scrambling_scr;
+	__u8 lanes_per_converter_l;
+	__u8 octect_per_frame_f;
+	__u8 frame_per_mf_k;
+	__u8 conv_per_device_m;
+	__u8 cs;
+	__u8 n;
+	__u8 np;
+	__u8 s;
+	__u8 cf;
+	__u8 hd;
+	__u8 subclass_ver;
+	__u8 jesd_ver;
+	__u8 csum_lane_0;
+	__u8 csum_lane_1;
 };
 /** @brief irq of mask
  */
 union irq_mask {
 	struct {
-		u32 res0:1;
-		u32 res1:1;
-		u32 pof:1;
-		u32 puf:1;
-		u32 rcof:1;
-		u32 rcuf:1;
-		u32 sfifo:1;
-		u32 res7:1;
-		u32 sysref_rose:1;
-		u32 res9:1;
-		u32 phy_data_lost:1;
-		u32 res10:1;
-		u32 eof:1;
-		u32 emof:1;
-		u32 res17:17;
+		__u32 res0:1;
+		__u32 res1:1;
+		__u32 pof:1;
+		__u32 puf:1;
+		__u32 rcof:1;
+		__u32 rcuf:1;
+		__u32 sfifo:1;
+		__u32 res7:1;
+		__u32 sysref_rose:1;
+		__u32 res9:1;
+		__u32 phy_data_lost:1;
+		__u32 res10:1;
+		__u32 eof:1;
+		__u32 emof:1;
+		__u32 res17:17;
 	} msk;
-	u32 irq_en;
+	__u32 irq_en;
 };
 
 /** @brief irq of vector mask
  */
 union irq_vmsk {
 	struct {
-		u32 cgs:1;
-		u32 fs:1;
-		u32 gcs:1;
-		u32 ils:1;
-		u32 ild:1;
-		u32 unex_k:1;
-		u32 nit_dis:1;
-		u32 bad_dis:1;
-		u32 res23:23;
+		__u32 cgs:1;
+		__u32 fs:1;
+		__u32 gcs:1;
+		__u32 ils:1;
+		__u32 ild:1;
+		__u32 unex_k:1;
+		__u32 nit_dis:1;
+		__u32 bad_dis:1;
+		__u32 res23:23;
 	} vmsk;
-	u32 irq_ven;
+	__u32 irq_ven;
 };
 /** @brief irq of tx transport instance
  */
 union irq_txuserconf {
 	struct {
-		u32 reserved0:1;
-		u32 reserved1:1;
-		u32 unpacker_uf_err_tx:1;
-		u32 wcbuf_of_err_tx:1;
-		u32 wcbuf_uf_err_tx:1;
-		u32 reserved4:1;
-		u32 reserved5:1;
-		u32 sysref_rose_tx:1;
-		u32 sync_received_tx:1;
-		u32 reserved22:22;
+		__u32 reserved0:1;
+		__u32 reserved1:1;
+		__u32 unpacker_uf_err_tx:1;
+		__u32 wcbuf_of_err_tx:1;
+		__u32 wcbuf_uf_err_tx:1;
+		__u32 reserved4:1;
+		__u32 reserved5:1;
+		__u32 sysref_rose_tx:1;
+		__u32 sync_received_tx:1;
+		__u32 reserved22:22;
 	} irq_tx;
-	u32 irq_txconf;
+	__u32 irq_txconf;
 };
 /** @brief irq of rx transport instance
  */
@@ -130,62 +130,62 @@ struct isrconf {
 /** @brief \struct for transport tests
  */
 struct test_set {
-	u8 bipass_8b10:1;
-	u8 reverse_8b10:1;
-	u8 tpl:1;
-	u8 dll:1;
-	u8 s_rst:1;
-	u8 lane_ctrl:1;
+	__u8 bipass_8b10:1;
+	__u8 reverse_8b10:1;
+	__u8 tpl:1;
+	__u8 dll:1;
+	__u8 s_rst:1;
+	__u8 lane_ctrl:1;
 };
 /** @brief \struct for transport pattern gen tests
  */
 struct patgen {
-	u32 rpt_ila:1;
-	u32 init_cgs:2;
-	u32 payload:3;
-	u32 disp:1;
-	u32 opmf:11;
+	__u32 rpt_ila:1;
+	__u32 init_cgs:2;
+	__u32 payload:3;
+	__u32 disp:1;
+	__u32 opmf:11;
 };
 /** @brief \struct for transport tx instance for all tests
  */
 struct conf_tx_tests {
 	struct test_set frmr_tst;
 	struct patgen tx_patgen; /*pattern generator in test modes*/
-	u32 flag; /*for swap*/
+	__u32 flag; /*for swap*/
 };
 /** @brief \struct for transport defrmr test
  */
 struct test_defrmr {
-	u8 que_tst_err:1;
-	u8 rep_data_tst:1;
-	u8 ils_mode:1;
-	u8 loopback:1;
+	__u8 que_tst_err:1;
+	__u8 rep_data_tst:1;
+	__u8 ils_mode:1;
+	__u8 loopback:1;
 };
 /** @brief \struct for transport rx instance for all tests
  */
 struct conf_rx_tests {
 	struct test_defrmr drfmr_tst;
-	u32 flags; /*for swap*/
+	__u32 flags; /*for swap*/
 };
 /** @brief \struct for write register instance of an offset
  */
 struct jesd_wreg {
-	u32 offset;
-	u32 value;
+	__u32 offset;
+	__u32 value;
 };
 /** @brief \struct accumulate all instances of write reg with offsets
  * and update the count for number of instances attached.
  */
 struct jesd_reg_write_buf {
 	struct jesd_wreg *regs;
-	u32 count;
+	__u32 count;
 };
 /** @brief \struct register read
 */
 struct jesd_reg_read_buf {
-	u32 offset;
-	u32 len;
-	u32 *buf;
+	__u32 offset;
+	__u32 len;
+	__u32 *buf;
 };
 /** @brief \struct tansport device info
 */
@@ -193,39 +193,39 @@ struct transport_device_info {
 	enum jesd_state dev_state;
 	struct ils_params ils;
 	struct conf_tr init_params;
-	u32 ilas_len;
+	__u32 ilas_len;
 };
 /** @brief \struct restart timer inputs
  * this inputs shall be from the tbgen
  */
 struct tbgen_params {
-	u32 timer_id;
+	__u32 timer_id;
 };
 /** @brief \struct stats for the device transport
  */
 struct transport_stats {
-	u32 ofpacker;
-	u32 ufpacker;
-	u32 ofrcbuf;
-	u32 ufrcbuf;
-	u32 ofwcbuf;
-	u32 ufwcbuf;
-	u32 ofsfifo;
-	u32 ufsfifo;
-	u32 unpacker;
+	__u32 ofpacker;
+	__u32 ufpacker;
+	__u32 ofrcbuf;
+	__u32 ufrcbuf;
+	__u32 ofwcbuf;
+	__u32 ufwcbuf;
+	__u32 ofsfifo;
+	__u32 ufsfifo;
+	__u32 unpacker;
 };
 /** @brief \struct stats for the device transport lanes
  */
 struct lane_stats {
-	u32 baddis_threshold;
-	u32 nit_threshold;
-	u32 uexk_threshold;
-	u32 frm_sync_error;
-	u32 cgs_error;
-	u32 csum_error;
-	u32 ils_error;
-	u32 skwor;
-	u32 sync_failure_count;
+	__u32 baddis_threshold;
+	__u32 nit_threshold;
+	__u32 uexk_threshold;
+	__u32 frm_sync_error;
+	__u32 cgs_error;
+	__u32 csum_error;
+	__u32 ils_error;
+	__u32 skwor;
+	__u32 sync_failure_count;
 };
 /** @brief \struct stansport stats
 */
