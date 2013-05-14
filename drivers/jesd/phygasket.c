@@ -30,10 +30,8 @@
 #include <linux/input.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <uapi/linux/jesd204.h> /*user and kernel interface header*/
-
-#include "jesd204.h"
-#include "phygasket.h"
+#include <linux/jesd204.h>
+#include <linux/phygasket.h>
 
 struct phygasket_private *phypriv;
 /**@brief inline for set, clear and test bits for 32 bit

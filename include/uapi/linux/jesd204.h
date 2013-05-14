@@ -35,24 +35,46 @@ struct conf_tr {
 	__u32 tran_flg;
 	__u32 lanes;
 };
+
+/** @brief transport flag bit test params -- start
+*/
+#define	RESERVED_BIT_0		0
+#define	MS_OCT_FIRST_VALID	1/*for tx*/
+#define	WCBUF_PROTECT_VALID	2/*for tx*/
+#define	BYP_ACG_VALID		3/*only for tx*/
+#define	BYP_ILAS_VALID		4/*only for tx*/
+#define	L2SIDES_VALID		5/*only for tx*/
+#define	SCR_CTRL_L1_VALID	6/*only for tx*/
+#define	SCR_CTRL_L0_VALID	7/*only for tx*/
+#define	IDLE_SELECT_VALID	8/*common for tx and rx transport*/
+#define	IQ_SWAP_VALID		9/*common for tx and rx transport*/
+#define	PHY_BIT_FIRST_VALID	10/*for rx*/
+#define	TN_CHK_CSUM_VALID	11/*for rx*/
+#define	PHY_OCT_FIRST_VALID	12/*for rx*/
+#define	RCBUF_PROTECT_VALID	13/*for rx*/
+#define	RESERVED_BIT_14		14
+#define	RESERVED_BIT_15		15
+#define	NO_TRANSPORT_EVENTS	16
+/*trans_flg end*/
+
 /** @brief \struct ils params
  */
 struct ils_params {
 	__u8 device_id;
 	__u8 bank_id;
-	__u8 lane_0_id;
-	__u8 lane_1_id;
+	__u8 lane0_id;
+	__u8 lane1_id;
 	__u8 scrambling_scr;
 	__u8 lanes_per_converter_l;
 	__u8 octect_per_frame_f;
 	__u8 frame_per_mf_k;
 	__u8 conv_per_device_m;
-	__u8 cs;
-	__u8 n;
-	__u8 np;
-	__u8 s;
-	__u8 cf;
-	__u8 hd;
+	__u8 ctrl_bits_per_sample;
+	__u8 control_wrds_per_frame;
+	__u8 converter_resolution;
+	__u8 bits_per_converter;
+	__u8 samples_per_cnvrtr_per_frame;
+	__u8 high_density_enable;
 	__u8 subclass_ver;
 	__u8 jesd_ver;
 	__u8 csum_lane_0;
@@ -256,7 +278,7 @@ struct auto_sync_params {
 #define JESD_SET_LANE_PARAMS	_IOW(JESD204_IOCTL, 0x802, \
 						struct ils_params*)
 #define JESD_SET_ILS_LENGTH	_IOW(JESD204_IOCTL, 0x803, \
-						unsigned char)
+						unsigned int)
 #define JESD_SET_INTERRUPTMASK	_IOW(JESD204_IOCTL, 0x804, \
 						struct isrconf*)
 #define JESD_GET_INTERRUPTMASK	_IOR(JESD204_IOCTL, 0x805, \
@@ -287,5 +309,8 @@ struct auto_sync_params {
 						enum jesd_state*)
 #define JESD_SET_DEVICE_STATE   _IOW(JESD204_IOCTL, 0x814, \
 						enum jesd_state*)
+
+#define JESD_READ_PHYGASKET_REG		_IOR(JESD204_IOCTL, 0x815, \
+						struct jesd_reg_read_buf*)
 /*IOCTL end*/
 #endif

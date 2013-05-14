@@ -34,8 +34,8 @@
 #define MAX_LANES 2
 /** @brief max lanes for transport identifier trans 0 == 1 and trans 1 == 2
 */
-#define TRANPORT_0 1
-#define TRANPORT_1 2
+#define TRANPORT_0 0
+#define TRANPORT_1 1
 /** @brief max lanes for transport identifier trans 0 == 1 and trans 1 == 2
 */
 #define LANEID_FOR_PRIMARY 1
@@ -105,26 +105,6 @@
 #define SYNC_ASSERT_BIT5	5
 
 
-/** @brief transport flag bit test params -- start
-*/
-#define	RESERVED_BIT_0		0
-#define	MS_OCT_FIRST_VALID	1/*for tx*/
-#define	WCBUF_PROTECT_VALID	2/*for tx*/
-#define	BYP_ACG_VALID		3/*only for tx*/
-#define	BYP_ILAS_VALID		4/*only for tx*/
-#define	L2SIDES_VALID		5/*only for tx*/
-#define	SCR_CTRL_L1_VALID	6/*only for tx*/
-#define	SCR_CTRL_L0_VALID	7/*only for tx*/
-#define	IDLE_SELECT_VALID	8/*common for tx and rx transport*/
-#define	IQ_SWAP_VALID		9/*common for tx and rx transport*/
-#define	PHY_BIT_FIRST_VALID	10/*for rx*/
-#define	TN_CHK_CSUM_VALID	11/*for rx*/
-#define	PHY_OCT_FIRST_VALID	12/*for rx*/
-#define	RCBUF_PROTECT_VALID	13/*for rx*/
-#define	RESERVED_BIT_14		14
-#define	RESERVED_BIT_15		15
-#define	RESERVED_BIT_16_31	16/*reserved for future*/
-/*trans_flg end*/
 
 /**@brief isr def's, a linked isr def's*/
 #define	ILS_SUCCESS		1
@@ -206,15 +186,15 @@ struct config_registers_tx {
 	u32 tx_res2;
 	u32 tx_csum_0;
 /*protected tranport 0 region*/
-	u32 tx_reserved1[(0x044 - 0x038) / sizeof(u32)];
+	u32 tx_reserved1[(0x048 - 0x038) / sizeof(u32)];
 	u32 tx_lid_1;
 	u32 tx_res_us_5;
 	u32 tx_res_us_6;
 	u32 tx_csum_1;
-	u32 tx_reserved2[(0x2fc - 0x058) / sizeof(u32)];
+	u32 tx_reserved2[(0x300 - 0x058) / sizeof(u32)];
 /*protected tranport 0 region*/
 	u32 tx_frm_ctrl;
-	u32 tx_reserved3[(0x37f - 0x304) / sizeof(u32)];
+	u32 tx_reserved3[(0x380 - 0x304) / sizeof(u32)];
 	u32 tx_m_en;
 	u32 tx_res3;
 	u32 tx_l_en;
@@ -222,13 +202,13 @@ struct config_registers_tx {
 	u32 tx_scr_ctrl;
 	u32 tx_res5;
 	u32 tx_ln_ctrl;
-	u32 tx_reserved4[(0x3bc - 0x39c) / sizeof(u32)];
+	u32 tx_reserved4[(0x3c0 - 0x39c) / sizeof(u32)];
 	u32 tx_ilas_len;
 	u32 tx_res6;
 	u32 tx_frm_tst;
 	u32 tx_jedec_tst;
 	u32 tx_sdiv;
-	u32 tx_reserved5[(0x3fc - 0x3d4) / sizeof(u32)];
+	u32 tx_reserved5[(0x400 - 0x3d4) / sizeof(u32)];
 	u32 tx_transcontrol;
 	u32 tx_irq_status;
 	u32 tx_irq_enable;
@@ -236,13 +216,13 @@ struct config_registers_tx {
 	u32 tx_sync_delay;
 	u32 tx_diag_sel;
 	u32 tx_diag_data;/* this is a read only register */
-	u32 tx_reserved6[(0x7fc - 0x420) / sizeof(u32)];
+	u32 tx_reserved6[(0x800 - 0x420) / sizeof(u32)];
 };
 /** @brief shall have all the instance for all registers include reserved sets
 * too supported by the ip
 */
 struct config_registers_rx {
-/*r- only*/
+	/*Rceived ILS params from transmitter*/
 	u32 rx_rdid;
 	u32 rx_rbid;
 	u32 rx_rlid_0;
@@ -258,14 +238,14 @@ struct config_registers_rx {
 	u32 rx_res2;
 	u32 rx_rcsum_0;
 	u32 rx_rcomp_csum_0;
-	u32 rx_reserved1[(0x044 - 0x03c) / sizeof(u32)];
+	u32 rx_reserved1[(0x048 - 0x03c) / sizeof(u32)];
 	u32 rx_rlid_1;
-	u32 rx_reserved2[(0x050 - 0x04c) / sizeof(u32)];
+	u32 rx_reserved2[(0x054 - 0x04c) / sizeof(u32)];
 
 	u32 rx_rcsum_1;
 	u32 rx_rcomp_csum_1;
-	u32 rx_reserved3[(0x13c - 0x05c) / sizeof(u32)];
-/*rw*/
+	u32 rx_reserved3[(0x140 - 0x05c) / sizeof(u32)];
+	/* Locally programmed ILS params*/
 	u32 rx_did;
 	u32 rx_bid;
 	u32 rx_lid_0;
@@ -280,7 +260,7 @@ struct config_registers_rx {
 	u32 rx_res3;
 	u32 rx_res4;
 	u32 rx_csum_0;
-	u32 rx_reserved4[(0x1a8 - 0x178) / sizeof(u32)];
+	u32 rx_reserved4[(0x1ac - 0x178) / sizeof(u32)];
 /*dfrmr*/
 	u32 rx_err_count_mon;
 	u32 rx_lane_dskew;
@@ -301,7 +281,7 @@ struct config_registers_rx {
 	u32 rx_sync_ass_msk;
 	u32 rx_threshold_err;
 	u32 rx_lane_en;
-	u32 rx_reserved5[(0x1fc - 0x1f8) / sizeof(u32)];
+	u32 rx_reserved5[(0x200 - 0x1f8) / sizeof(u32)];
 /*misc*/
 	u32 rx_transcontrol;
 	u32 rx_status_reg;
@@ -311,8 +291,40 @@ struct config_registers_rx {
 	u32 rx_rcv_delay;
 	u32 rx_diag_sel;
 	u32 rx_diag_data;/* this is a read only register */
-	u32 rx_reserved6[(0x3ff - 0x220) / sizeof(u32)];
+	u32 rx_reserved6[(0x400 - 0x220) / sizeof(u32)];
 };
+
+/* Tn_KF_ISL*/
+#define MAX_ILAS_LEN_MASK	0xff
+
+/* Tn_DID */
+#define BID_MASK		0x0f
+#define LID_MASK		0x1f
+#define LANES_PER_CONV_MASK	0x1f
+
+#define CS_MASK			0x03
+#define CS_SHIFT		6
+
+#define N_MASK			0x1f
+#define N_SHIFT			0x0
+
+#define SUBCLASS_MASK		0x07
+#define SUBCLASS_SHIFT		5
+
+#define VERSION_MASK		0x07
+#define VERSION_SHIFT		5
+
+#define NP_MASK			0x1f
+#define NP_SHIFT		0
+
+#define S_MASK			0x1f
+#define S_SHIFT			0
+
+#define HD_ENABLE		0x00000080
+
+#define CF_MASK			0x1f
+#define CF_SHIFT		0
+
 /** @brief \struct lanes which belong to a transport
 */
 struct lane_device {
@@ -326,38 +338,32 @@ struct lane_device {
  */
 struct transport_device {
 	char name[32];
-	/*accomidate platform device*/
+	atomic_t ref;
+	u32 flags;
+	u8 mode;
+	enum jesd_state dev_state;
+	u32 transport_type;
+	struct jesd204_dev *jesd_parent;
+	struct tbgen_dev *tbg;
 	struct device *dev;
 	unsigned int identifier;
-	/* device back pointers */
-	struct jesd204_dev *jesd_parent;
-	/*point to the lanes that we hold*/
-	struct lane_device *lane_dev[MAX_LANES];
-	u8 lanes_grabbed;
-	/* this is to tell the mode we are in defaulted to normal mode*/
-	u8 mode;
+	struct lane_device *lane_devs[MAX_LANES];
+	int max_lanes;
+	int active_lanes;
 	/* either of one will be a null pointer */
 	struct config_registers_tx *tx_regs;
 	struct config_registers_rx *rx_regs;
 
 	struct tasklet_struct do_tx_tasklet;
 	struct tasklet_struct do_rx_tasklet;
-	spinlock_t lock_tx_bf; /* for isr*/
-	spinlock_t lock_rx_bf; /* for isr*/
+	spinlock_t lock_tx_bf;
+	spinlock_t lock_rx_bf;
 
-	u32 transport_type; /*flag to know the transport type tx/rx*/
-
-	struct siginfo info;
-	struct task_struct *task;
-	/*depending on the type of transport the delay is configured*/
 	u8 delay;
-	u8 ilsa_len;
-	unsigned long sampling_rate;
-	u32 tranport_flags;
+	u8 ilas_len;
 	struct ils_params ils;
-	u8 lanes_per_transport;
+	unsigned int sampling_rate;
 
-	enum jesd_state dev_state;
 	/* this would yield the details for the error that is occurred when
 	* the jesd state is error state
 	*/
@@ -382,30 +388,26 @@ struct transport_device {
 	struct phygasket *phy;
 	unsigned int lane_id[MAX_LANES + 1];
 
-	struct cdev c_dev;/* char device structure */
-	dev_t devt; /*for mkdev */
-
-	void __iomem *base_address;/* virt. address of the control segment */
+	struct cdev c_dev;
+	dev_t devt;
 
 	wait_queue_head_t isr_wait;
 	wait_queue_head_t to_wait;
 	int sysref_rose;
 	int isr_error;
-	int evnt_jiffs; /* jiffies to max 2*/
-	spinlock_t sysref_lock; /* for sysref rose*/
+	int evnt_jiffs;
+	spinlock_t sysref_lock;
 
-	struct tbgen_dev *tbg;
 };
-/* jesd god device structure instance*/
+
 struct jesd204_dev {
 	struct transport_device *trans_device[TRANSPORT_PER_IP];
 	u8 max_lanes;
 	u8 lanes_grabed;
 	u8 transport_count;
 	u32 trans_type;
-	struct device *dev; /*accomidate platform device*/
+	struct device *dev;
 	struct device_node *node;
-	struct device_node *child;
 	dev_t devt;
 	struct list_head jesd_dev_list;
 };
