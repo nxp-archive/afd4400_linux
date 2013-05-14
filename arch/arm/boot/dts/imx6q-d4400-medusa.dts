@@ -84,8 +84,8 @@
 				<0x0 0 107 0x4 &gpio4 22 0x04>, /* CPRI 1 framer 1 Tx control */
 				<0x0 0 109 0x4 &gpio4 24 0x04>, /* CPRI 1 framer 1 Rx control */
 				<0x0 0 111 0x4 &gpio4 30 0x04>, /* CPRI 1 Error */
-				<0x0 0 138 0x4 &gpio5 14 0x04>, /* JESD Rx1 */
-				<0x0 0 151 0x4 &gpio5 17 0x04>, /* JESD Tx1 */
+				<0x0 0 138 0x4 &gpio5 14 0x08>, /* JESD Rx1 */
+				<0x0 0 151 0x4 &gpio5 17 0x08>, /* JESD Tx1 */
 				<0x0 0 215 0x4 &gpio4 27 0x01>, /* eTSEC group0 Rx */
 				<0x0 0 216 0x4 &gpio5 11 0x01>, /* eTSEC group0 Tx */
 				<0x0 0 217 0x4 &gpio4 26 0x01>; /* eTSEC group0 error */
@@ -213,23 +213,21 @@
 				compatible = "fsl,d4400-jesd204-tx";
 				ranges;
 				reg = <0xC08C000 0x4000>;
-				transtx0@0x0C08C000{
+				transport0@0x0C08C000{
 					reg = <0xC08C000 0x7FC>;
 					trans-type = <1>;
 					trans-id = <0>;
 					phy-gasket = <&phy1>;
-					lane = <2 0 1>;
+					max-lanes = <2>;
 					interrupts = <0 151 0x4>;
 				};
 
-				transtx1@0x0C08C800{
+				transport1@0x0C08C800{
 					reg = <0xC08C800 0x7FC>;
 					trans-type = <1>;
 					trans-id = <1>;
 					phy-gasket = <&phy1>;
-					lane = <0 0 0>;
-				/*irq number for tx to be changed*/
-					interrupts = <0 151 0x4>;
+					max-lanes = <1>;
 				};
 			};
 
@@ -239,23 +237,21 @@
 				compatible = "fsl,d4400-jesd204-rx";
 				ranges;
 				reg = <0x0C090000 0x4000>;
-				transrx0@0x0C090000{
+				transport0@0x0C090000{
 					reg = <0xC090000 0x3FF>;
 					trans-type = <2>;
 					trans-id = <0>;
 					phy-gasket = <&phy1>;
-					lane = <2 0 1>;
+					max-lanes = <2>;
 					interrupts = <0 138 0x4>;
 				};
 
-				transrx1@0x0C090400{
+				transport1@0x0C090400{
 					reg = <0xC090400 0x3FF>;
 					trans-type = <2>;
 					trans-id = <1>;
 					phy-gasket = <&phy1>;
-					lane = <0 0 0>;
-				/*irq number for rx to be changed*/
-					interrupts = <0 138 0x4>;
+					max-lanes = <1>;
 				};
 			};
 		};
