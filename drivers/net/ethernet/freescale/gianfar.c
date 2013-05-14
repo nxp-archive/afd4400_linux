@@ -9,7 +9,7 @@
  * Maintainer: Kumar Gala
  * Modifier: Sandeep Gopalpet <sandeep.kumar@freescale.com>
  *
- * Copyright 2002-2009, 2011 Freescale Semiconductor, Inc.
+ * Copyright 2002-2009, 2011, 2013 Freescale Semiconductor, Inc.
  * Copyright 2007 MontaVista Software, Inc.
  *
  * This program is free software; you can redistribute  it and/or modify it
@@ -87,7 +87,6 @@
 #include <linux/net_tstamp.h>
 
 #include <asm/io.h>
-#include <asm/reg.h>
 #include <asm/irq.h>
 #include <asm/uaccess.h>
 #include <linux/module.h>
@@ -98,8 +97,54 @@
 #include <linux/phy_fixed.h>
 #include <linux/of.h>
 #include <linux/of_net.h>
+#include <linux/of_address.h>
+#include <linux/of_irq.h>
 
 #include "gianfar.h"
+
+/* #defines for using OCRAM for Medusa */
+#ifdef MEDUSA_OCRAM_MEM
+/* 16KB used for GIANFAR */
+#define OCRAM_GIANFAR_TOTAL_LEN (16 * 1024)
+
+#define OCRAM_GIANFAR_BD_LEN 512
+
+#define MEDUSA_TOTAL_TX_BUFF 4
+#define MEDUSA_TOTAL_RX_BUFF 5
+
+#define OCRAM_GIANFAR_TX_LEN (MEDUSA_TOTAL_TX_BUFF *\
+		(DEFAULT_RX_BUFFER_SIZE + RXBUF_ALIGNMENT))
+
+#define OCRAM_GIANFAR_RX_LEN (MEDUSA_TOTAL_RX_BUFF *\
+		(DEFAULT_RX_BUFFER_SIZE + RXBUF_ALIGNMENT))
+
+#define OCRAM_GIANFAR_BD_MEM 0x0d100000
+#define OCRAM_MEM_OFFSET_FPGA 0x0c000000
+
+#define OCRAM_GIANFAR_TX_MEM (OCRAM_GIANFAR_BD_MEM + OCRAM_GIANFAR_BD_LEN)
+#define OCRAM_GIANFAR_RX_MEM (OCRAM_GIANFAR_TX_MEM + OCRAM_GIANFAR_TX_LEN)
+
+
+/* OCRAM Tx/Rx buffer housekeeping */
+struct tsec_ocram {
+	unsigned int status;
+	unsigned int ocram_ptr;
+};
+
+struct rxtxmem {
+	struct tsec_ocram tx_mem_ocram[MEDUSA_TOTAL_TX_BUFF];
+	struct tsec_ocram rx_mem_ocram[MEDUSA_TOTAL_RX_BUFF];
+};
+
+struct rxtxmem rtxm;
+
+enum {
+	OCRAM_BUF_FREE = 0,
+	OCRAM_BUF_ALLOCATED
+};
+
+unsigned int ocram_vaddr;
+#endif
 
 #define TX_TIMEOUT      (1*HZ)
 
@@ -147,6 +192,47 @@ MODULE_AUTHOR("Freescale Semiconductor, Inc");
 MODULE_DESCRIPTION("Gianfar Ethernet Driver");
 MODULE_LICENSE("GPL");
 
+#ifdef MEDUSA_OCRAM_MEM
+/* mem copy to ocram: ensuring 32BIT access always */
+void *memcpy_ocram(void *dst, void *src, unsigned int size)
+{
+	int *temp_dst = dst;
+	int *temp_src = src;
+
+	if (0 == (size%4))
+		size = size/4;
+	else
+		size = (size + 4)/4;
+
+	while (size--)
+		*temp_dst++ = *temp_src++;
+	return dst;
+}
+
+void memset_medusa_io(volatile void __iomem *dst, int c, size_t count)
+{
+	while (count) {
+		count--;
+		iowrite32(c, dst);
+		dst += sizeof(u32);
+	}
+}
+
+int free_ocram_bd(int buff_ptr)
+{
+	int tx_cnt;
+
+	for (tx_cnt = 0; tx_cnt < MEDUSA_TOTAL_TX_BUFF; tx_cnt++) {
+		if ((buff_ptr + OCRAM_MEM_OFFSET_FPGA) ==
+				rtxm.tx_mem_ocram[tx_cnt].ocram_ptr) {
+			rtxm.tx_mem_ocram[tx_cnt].status = OCRAM_BUF_FREE;
+			return 0;
+		}
+	}
+	return -1;
+}
+#endif
+
 static void gfar_init_rxbdp(struct gfar_priv_rx_q *rx_queue, struct rxbd8 *bdp,
 			    dma_addr_t buf)
 {
@@ -154,11 +240,11 @@ static void gfar_init_rxbdp(struct gfar_priv_rx_q *rx_queue, struct rxbd8 *bdp,
 
 	bdp->bufPtr = buf;
 
-	lstatus = BD_LFLAG(RXBD_EMPTY | RXBD_INTERRUPT);
+	lstatus = BD_LFLAG_FSHIFT(RXBD_EMPTY | RXBD_INTERRUPT);
 	if (bdp == rx_queue->rx_bd_base + rx_queue->rx_ring_size - 1)
-		lstatus |= BD_LFLAG(RXBD_WRAP);
+		lstatus |= BD_LFLAG_FSHIFT(RXBD_WRAP);
 
-	eieio();
+	gfar_mem_sync();
 
 	bdp->lstatus = lstatus;
 }
@@ -191,7 +277,7 @@ static int gfar_init_bds(struct net_device *ndev)
 
 		/* Set the last descriptor in the ring to indicate wrap */
 		txbdp--;
-		txbdp->status |= TXBD_WRAP;
+		txbdp->lstatus |= BD_LFLAG_FSHIFT(TXBD_WRAP);
 	}
 
 	for (i = 0; i < priv->num_rx_queues; i++) {
@@ -231,7 +317,9 @@ static int gfar_alloc_skb_resources(struct net_device *ndev)
 	dma_addr_t addr;
 	int i, j, k;
 	struct gfar_private *priv = netdev_priv(ndev);
+#ifndef MEDUSA_OCRAM_MEM
 	struct device *dev = &priv->ofdev->dev;
+#endif
 	struct gfar_priv_tx_q *tx_queue = NULL;
 	struct gfar_priv_rx_q *rx_queue = NULL;
 
@@ -244,10 +332,18 @@ static int gfar_alloc_skb_resources(struct net_device *ndev)
 		priv->total_rx_ring_size += priv->rx_queue[i]->rx_ring_size;
 
 	/* Allocate memory for the buffer descriptors */
+#ifndef MEDUSA_OCRAM_MEM
 	vaddr = dma_alloc_coherent(dev,
 			sizeof(struct txbd8) * priv->total_tx_ring_size +
 			sizeof(struct rxbd8) * priv->total_rx_ring_size,
 			&addr, GFP_KERNEL);
+#else
+	/*Allocate memory from OCRAM*/
+	/*Do FIXED allocation as landshark is not available for kernel*/
+	vaddr = ioremap(OCRAM_GIANFAR_BD_MEM, OCRAM_GIANFAR_TOTAL_LEN);
+	addr = OCRAM_GIANFAR_BD_MEM;
+	ocram_vaddr = (int)vaddr;
+#endif
 	if (!vaddr) {
 		netif_err(priv, ifup, ndev,
 			  "Could not allocate buffer descriptors!\n");
@@ -324,13 +420,23 @@ static void gfar_init_tx_rx_base(struct gfar_private *priv)
 
 	baddr = &regs->tbase0;
 	for (i = 0; i < priv->num_tx_queues; i++) {
+#ifdef MEDUSA_OCRAM_MEM
+		gfar_write(baddr, priv->tx_queue[i]->tx_bd_dma_base
+				- OCRAM_MEM_OFFSET_FPGA);
+#else
 		gfar_write(baddr, priv->tx_queue[i]->tx_bd_dma_base);
+#endif
 		baddr += 2;
 	}
 
 	baddr = &regs->rbase0;
 	for (i = 0; i < priv->num_rx_queues; i++) {
+#ifdef MEDUSA_OCRAM_MEM
+		gfar_write(baddr, priv->rx_queue[i]->rx_bd_dma_base
+				- OCRAM_MEM_OFFSET_FPGA);
+#else
 		gfar_write(baddr, priv->rx_queue[i]->rx_bd_dma_base);
+#endif
 		baddr += 2;
 	}
 }
@@ -612,15 +718,28 @@ static int gfar_of_init(struct platform_device *ofdev, struct net_device **pdev)
 	const u32 *stash;
 	const u32 *stash_len;
 	const u32 *stash_idx;
+#if defined CONFIG_ARM && defined CONFIG_SOC_IMX6Q
+	unsigned int num_tx_qs, num_rx_qs;
+#else
 	unsigned int num_tx_qs, num_rx_qs;
 	u32 *tx_queues, *rx_queues;
+#endif
 
 	if (!np || !of_device_is_available(np))
 		return -ENODEV;
 
 	/* parse the num of tx and rx queues */
+#ifdef CONFIG_ARM
+	of_property_read_u32(np, "fsl,num_tx_queues", &num_tx_qs);
+
+	of_property_read_u32(np, "fsl,num_rx_queues", &num_rx_qs);
+#else
 	tx_queues = (u32 *)of_get_property(np, "fsl,num_tx_queues", NULL);
 	num_tx_qs = tx_queues ? *tx_queues : 1;
+
+	rx_queues = (u32 *)of_get_property(np, "fsl,num_rx_queues", NULL);
+	num_rx_qs = rx_queues ? *rx_queues : 1;
+#endif
 
 	if (num_tx_qs > MAX_TX_QS) {
 		pr_err("num_tx_qs(=%d) greater than MAX_TX_QS(=%d)\n",
@@ -628,9 +747,6 @@ static int gfar_of_init(struct platform_device *ofdev, struct net_device **pdev)
 		pr_err("Cannot do alloc_etherdev, aborting\n");
 		return -EINVAL;
 	}
-
-	rx_queues = (u32 *)of_get_property(np, "fsl,num_rx_queues", NULL);
-	num_rx_qs = rx_queues ? *rx_queues : 1;
 
 	if (num_rx_qs > MAX_RX_QS) {
 		pr_err("num_rx_qs(=%d) greater than MAX_RX_QS(=%d)\n",
@@ -647,7 +763,6 @@ static int gfar_of_init(struct platform_device *ofdev, struct net_device **pdev)
 	priv = netdev_priv(dev);
 	priv->node = ofdev->dev.of_node;
 	priv->ndev = dev;
-
 	priv->num_tx_queues = num_tx_qs;
 	netif_set_real_num_rx_queues(dev, num_rx_qs);
 	priv->num_rx_queues = num_rx_qs;
@@ -737,21 +852,21 @@ static int gfar_of_init(struct platform_device *ofdev, struct net_device **pdev)
 
 	if (model && !strcasecmp(model, "TSEC"))
 		priv->device_flags = FSL_GIANFAR_DEV_HAS_GIGABIT |
-				     FSL_GIANFAR_DEV_HAS_COALESCE |
-				     FSL_GIANFAR_DEV_HAS_RMON |
-				     FSL_GIANFAR_DEV_HAS_MULTI_INTR;
+				FSL_GIANFAR_DEV_HAS_COALESCE |
+				FSL_GIANFAR_DEV_HAS_RMON |
+				FSL_GIANFAR_DEV_HAS_MULTI_INTR;
 
 	if (model && !strcasecmp(model, "eTSEC"))
 		priv->device_flags = FSL_GIANFAR_DEV_HAS_GIGABIT |
-				     FSL_GIANFAR_DEV_HAS_COALESCE |
-				     FSL_GIANFAR_DEV_HAS_RMON |
-				     FSL_GIANFAR_DEV_HAS_MULTI_INTR |
-				     FSL_GIANFAR_DEV_HAS_PADDING |
-				     FSL_GIANFAR_DEV_HAS_CSUM |
-				     FSL_GIANFAR_DEV_HAS_VLAN |
-				     FSL_GIANFAR_DEV_HAS_MAGIC_PACKET |
-				     FSL_GIANFAR_DEV_HAS_EXTENDED_HASH |
-				     FSL_GIANFAR_DEV_HAS_TIMER;
+				FSL_GIANFAR_DEV_HAS_COALESCE |
+				FSL_GIANFAR_DEV_HAS_RMON |
+				FSL_GIANFAR_DEV_HAS_MULTI_INTR |
+				FSL_GIANFAR_DEV_HAS_PADDING |
+				FSL_GIANFAR_DEV_HAS_CSUM |
+				FSL_GIANFAR_DEV_HAS_VLAN |
+				FSL_GIANFAR_DEV_HAS_MAGIC_PACKET |
+				FSL_GIANFAR_DEV_HAS_EXTENDED_HASH |
+				FSL_GIANFAR_DEV_HAS_TIMER;
 
 	ctype = of_get_property(np, "phy-connection-type", NULL);
 
@@ -928,9 +1043,23 @@ static void gfar_init_filer_table(struct gfar_private *priv)
 	}
 }
 
+static void gfar_detect_additional_errata(struct gfar_private *priv)
+{
+	struct device_node *np = priv->ofdev->dev.of_node;
+	struct device *dev = &priv->ofdev->dev;
+	int errata;
+
+	of_property_read_u32(np, "fsl,errata", &errata);
+	priv->errata |= errata;
+
+	dev_dbg(dev, "enabled additional errata workarounds, flags: 0x%x\n",
+			priv->errata);
+}
+
 static void gfar_detect_errata(struct gfar_private *priv)
 {
 	struct device *dev = &priv->ofdev->dev;
+#ifdef CONFIG_PPC
 	unsigned int pvr = mfspr(SPRN_PVR);
 	unsigned int svr = mfspr(SPRN_SVR);
 	unsigned int mod = (svr >> 16) & 0xfff6; /* w/o E suffix */
@@ -955,6 +1084,9 @@ static void gfar_detect_errata(struct gfar_private *priv)
 	if ((pvr == 0x80850010 && mod == 0x80b0 && rev < 0x0020) ||
 	    (pvr == 0x80210020 && mod == 0x8030 && rev == 0x0020))
 		priv->errata |= GFAR_ERRATA_12;
+#else
+	gfar_detect_additional_errata(priv);
+#endif
 
 	if (priv->errata)
 		dev_info(dev, "enabled errata workarounds, flags: 0x%x\n",
@@ -1558,7 +1690,12 @@ static void init_registers(struct net_device *dev)
 
 	/* Zero out the rmon mib registers if it has them */
 	if (priv->device_flags & FSL_GIANFAR_DEV_HAS_RMON) {
-		memset_io(&(regs->rmon), 0, sizeof (struct rmon_mib));
+#ifdef MEDUSA_OCRAM_MEM
+		memset_medusa_io(&(regs->rmon), 0,
+				(sizeof(struct rmon_mib)/sizeof(u32)));
+#else
+		memset_io(&(regs->rmon), 0, sizeof(struct rmon_mib));
+#endif
 
 		/* Mask off the CAM interrupts */
 		gfar_write(&regs->rmon.cam1, 0xffffffff);
@@ -1601,6 +1738,7 @@ static void gfar_halt_nodisable(struct net_device *dev)
 	struct gfar __iomem *regs = NULL;
 	u32 tempval;
 	int i;
+	int timeout = 100;
 
 	for (i = 0; i < priv->num_grps; i++) {
 		regs = priv->gfargrp[i].regs;
@@ -1622,11 +1760,33 @@ static void gfar_halt_nodisable(struct net_device *dev)
 		gfar_write(&regs->dmactrl, tempval);
 
 		do {
+#ifndef CONFIG_PPC
+			while (((gfar_read(&regs->ievent) &
+					(IEVENT_GRSC | IEVENT_GTSC))
+				!= (IEVENT_GRSC | IEVENT_GTSC)) && timeout--)
+				udelay(100);
+
+			if (0 == timeout)
+				ret = 0;
+			else
+				ret = ((gfar_read(&regs->ievent)
+					& (IEVENT_GRSC | IEVENT_GTSC))
+						== (IEVENT_GRSC | IEVENT_GTSC));
+#else
 			ret = spin_event_timeout(((gfar_read(&regs->ievent) &
 				 (IEVENT_GRSC | IEVENT_GTSC)) ==
 				 (IEVENT_GRSC | IEVENT_GTSC)), 1000000, 0);
+#endif
 			if (!ret && !(gfar_read(&regs->ievent) & IEVENT_GRSC))
 				ret = __gfar_is_rx_idle(priv);
+#ifdef MEDUSA_OCRAM_MEM
+			if ((-1 == timeout) && (0 == ret)) {
+				dev_err(&dev->dev,
+				"RESET board"
+				"and ensure FPGA INIT to use TSEC\n");
+				break;
+			}
+#endif
 		} while (!ret);
 	}
 }
@@ -1718,16 +1878,20 @@ static void free_skb_tx_queue(struct gfar_priv_tx_q *tx_queue)
 static void free_skb_rx_queue(struct gfar_priv_rx_q *rx_queue)
 {
 	struct rxbd8 *rxbdp;
+#ifndef MEDUSA_OCRAM_MEM
 	struct gfar_private *priv = netdev_priv(rx_queue->dev);
+#endif
 	int i;
 
 	rxbdp = rx_queue->rx_bd_base;
 
 	for (i = 0; i < rx_queue->rx_ring_size; i++) {
 		if (rx_queue->rx_skbuff[i]) {
+#ifndef MEDUSA_OCRAM_MEM
 			dma_unmap_single(&priv->ofdev->dev,
 					 rxbdp->bufPtr, priv->rx_buffer_size,
 					 DMA_FROM_DEVICE);
+#endif
 			dev_kfree_skb_any(rx_queue->rx_skbuff[i]);
 			rx_queue->rx_skbuff[i] = NULL;
 		}
@@ -1765,11 +1929,15 @@ static void free_skb_resources(struct gfar_private *priv)
 			free_skb_rx_queue(rx_queue);
 	}
 
+#ifdef MEDUSA_OCRAM_MEM
+	iounmap((void *)ocram_vaddr);
+#else
 	dma_free_coherent(&priv->ofdev->dev,
 			  sizeof(struct txbd8) * priv->total_tx_ring_size +
 			  sizeof(struct rxbd8) * priv->total_rx_ring_size,
 			  priv->tx_queue[0]->tx_bd_base,
 			  priv->tx_queue[0]->tx_bd_dma_base);
+#endif
 }
 
 void gfar_start(struct net_device *dev)
@@ -2043,9 +2211,14 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct txbd8 *txbdp, *txbdp_start, *base, *txbdp_tstamp = NULL;
 	u32 lstatus;
 	int i, rq = 0, do_tstamp = 0;
+#ifndef MEDUSA_OCRAM_MEM
 	u32 bufaddr;
+#endif
 	unsigned long flags;
 	unsigned int nr_frags, nr_txbds, length, fcb_length = GMAC_FCB_LEN;
+#ifdef MEDUSA_OCRAM_MEM
+	unsigned int tx_bd = 0, tx_bd_free = 0, num_free_tx_bd = 0;
+#endif
 
 	/* TOE=1 frames larger than 2500 bytes may see excess delays
 	 * before start of transmission.
@@ -2102,6 +2275,27 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	else
 		nr_txbds = nr_frags + 1;
 
+#ifdef MEDUSA_OCRAM_MEM
+	/* Stop Tx if OCRAM MEM is allocated */
+	/* In Medusa only MEDUSA_TOTAL_TX_BUFF Tx BD is available
+	 * verify that if none is free fail gracefully
+	 */
+	for (tx_bd = 0; tx_bd < MEDUSA_TOTAL_TX_BUFF; tx_bd++) {
+		if (OCRAM_BUF_ALLOCATED != rtxm.tx_mem_ocram[tx_bd].status) {
+			if (0 == num_free_tx_bd)
+				tx_bd_free = tx_bd;
+			num_free_tx_bd++;
+		}
+	}
+	if ((0 == num_free_tx_bd) || (nr_txbds > num_free_tx_bd)) {
+		/* no space, stop the queue */
+		netif_tx_stop_queue(txq);
+		dev->stats.tx_fifo_errors++;
+		return NETDEV_TX_BUSY;
+	} else {
+		/*Free buffer available at location tx_bd_free*/
+	}
+#endif
 	/* check if there is space to queue this packet */
 	if (nr_txbds > tx_queue->num_txbdfree) {
 		/* no space, stop the queue */
@@ -2124,10 +2318,10 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	if (nr_frags == 0) {
 		if (unlikely(do_tstamp))
-			txbdp_tstamp->lstatus |= BD_LFLAG(TXBD_LAST |
+			txbdp_tstamp->lstatus |= BD_LFLAG_FSHIFT(TXBD_LAST |
 							  TXBD_INTERRUPT);
 		else
-			lstatus |= BD_LFLAG(TXBD_LAST | TXBD_INTERRUPT);
+			lstatus |= BD_LFLAG_FSHIFT(TXBD_LAST | TXBD_INTERRUPT);
 	} else {
 		/* Place the fragment addresses and lengths into the TxBDs */
 		for (i = 0; i < nr_frags; i++) {
@@ -2136,13 +2330,35 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 			length = skb_shinfo(skb)->frags[i].size;
 
-			lstatus = txbdp->lstatus | length |
-				  BD_LFLAG(TXBD_READY);
+			lstatus = txbdp->lstatus | BD_LFLAG_FSHIFT(length) |
+				  BD_LFLAG_FSHIFT(TXBD_READY);
 
 			/* Handle the last BD specially */
 			if (i == nr_frags - 1)
-				lstatus |= BD_LFLAG(TXBD_LAST | TXBD_INTERRUPT);
+				lstatus |= BD_LFLAG_FSHIFT(TXBD_LAST |
+						TXBD_INTERRUPT);
 
+#ifdef MEDUSA_OCRAM_MEM
+			/*Copy buffer to OCRAM address*/
+			rtxm.tx_mem_ocram[tx_bd_free].status =
+				OCRAM_BUF_ALLOCATED;
+			rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr =
+				(OCRAM_GIANFAR_TX_MEM +
+				tx_bd_free *
+				(DEFAULT_RX_BUFFER_SIZE + RXBUF_ALIGNMENT));
+
+			memcpy_ocram((void *)(ocram_vaddr +
+					(rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr
+					 - OCRAM_GIANFAR_BD_MEM)),
+					&skb_shinfo(skb)->frags[i],
+					length);
+			gfar_mem_sync();
+			txbdp->bufPtr =
+				rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr
+				- OCRAM_MEM_OFFSET_FPGA;
+			txbdp->lstatus = lstatus;
+			tx_bd_free++;
+#else
 			bufaddr = skb_frag_dma_map(&priv->ofdev->dev,
 						   &skb_shinfo(skb)->frags[i],
 						   0,
@@ -2152,6 +2368,7 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 			/* set the TxBD length and buffer pointer */
 			txbdp->bufPtr = bufaddr;
 			txbdp->lstatus = lstatus;
+#endif
 		}
 
 		lstatus = txbdp_start->lstatus;
@@ -2172,7 +2389,7 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 			__skb_pull(skb, GMAC_FCB_LEN);
 			skb_checksum_help(skb);
 		} else {
-			lstatus |= BD_LFLAG(TXBD_TOE);
+			lstatus |= BD_LFLAG_FSHIFT(TXBD_TOE);
 			gfar_tx_checksum(skb, fcb, fcb_length);
 		}
 	}
@@ -2180,7 +2397,7 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (vlan_tx_tag_present(skb)) {
 		if (unlikely(NULL == fcb)) {
 			fcb = gfar_add_fcb(skb);
-			lstatus |= BD_LFLAG(TXBD_TOE);
+			lstatus |= BD_LFLAG_FSHIFT(TXBD_TOE);
 		}
 
 		gfar_tx_vlan(skb, fcb);
@@ -2192,11 +2409,28 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		if (fcb == NULL)
 			fcb = gfar_add_fcb(skb);
 		fcb->ptp = 1;
-		lstatus |= BD_LFLAG(TXBD_TOE);
+		lstatus |= BD_LFLAG_FSHIFT(TXBD_TOE);
 	}
 
+#ifdef MEDUSA_OCRAM_MEM
+	/*Copy buffer to OCRAM address*/
+
+	rtxm.tx_mem_ocram[tx_bd_free].status = OCRAM_BUF_ALLOCATED;
+	rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr =
+		(OCRAM_GIANFAR_TX_MEM + tx_bd_free *
+		(DEFAULT_RX_BUFFER_SIZE + RXBUF_ALIGNMENT));
+
+	memcpy_ocram((int *)(ocram_vaddr
+				+ (rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr
+					- OCRAM_GIANFAR_BD_MEM)) ,
+			skb->data, skb_headlen(skb));
+	txbdp_start->bufPtr = rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr
+		- OCRAM_MEM_OFFSET_FPGA;
+	tx_bd_free++;
+#else
 	txbdp_start->bufPtr = dma_map_single(&priv->ofdev->dev, skb->data,
 					     skb_headlen(skb), DMA_TO_DEVICE);
+#endif
 
 	/* If time stamping is requested one additional TxBD must be set up. The
 	 * first TxBD points to the FCB and must have a data length of
@@ -2205,11 +2439,14 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	 */
 	if (unlikely(do_tstamp)) {
 		txbdp_tstamp->bufPtr = txbdp_start->bufPtr + fcb_length;
-		txbdp_tstamp->lstatus |= BD_LFLAG(TXBD_READY) |
-					 (skb_headlen(skb) - fcb_length);
-		lstatus |= BD_LFLAG(TXBD_CRC | TXBD_READY) | GMAC_FCB_LEN;
+		txbdp_tstamp->lstatus |= BD_LFLAG_FSHIFT(TXBD_READY) |
+					 BD_LFLAG_LSHIFT((skb_headlen(skb)
+							 - fcb_length));
+		lstatus |= BD_LFLAG_FSHIFT(TXBD_CRC | TXBD_READY) |
+				BD_LFLAG_LSHIFT(GMAC_FCB_LEN);
 	} else {
-		lstatus |= BD_LFLAG(TXBD_CRC | TXBD_READY) | skb_headlen(skb);
+		lstatus |= BD_LFLAG_FSHIFT(TXBD_CRC | TXBD_READY) |
+				BD_LFLAG_LSHIFT(skb_headlen(skb));
 	}
 
 	netdev_tx_sent_queue(txq, skb->len);
@@ -2234,11 +2471,14 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	 * some point, the set of architecture-independent barrier functions
 	 * should be expanded to include weaker barriers.
 	 */
-	eieio();
+	/* Replaced PPC specific memory barrier instrution with ARM memory
+	 * barrier instruction.
+	 */
 
 	txbdp_start->lstatus = lstatus;
+	/* force lstatus write before tx_skbuff */
+	gfar_mem_sync();
 
-	eieio(); /* force lstatus write before tx_skbuff */
 
 	tx_queue->tx_skbuff[tx_queue->skb_curtx] = skb;
 
@@ -2263,7 +2503,7 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	/* Tell the DMA to go go go */
-	gfar_write(&regs->tstat, TSTAT_CLEAR_THALT >> tx_queue->qindex);
+	gfar_write(&regs->tstat, (TSTAT_CLEAR_THALT >> tx_queue->qindex));
 
 	/* Unlock priv */
 	spin_unlock_irqrestore(&tx_queue->txlock, flags);
@@ -2498,7 +2738,7 @@ static int gfar_clean_tx_ring(struct gfar_priv_tx_q *tx_queue)
 		lstatus = lbdp->lstatus;
 
 		/* Only clean completed frames */
-		if ((lstatus & BD_LFLAG(TXBD_READY)) &&
+		if ((lstatus & BD_LFLAG_FSHIFT(TXBD_READY)) &&
 		    (lstatus & BD_LENGTH_MASK))
 			break;
 
@@ -2507,9 +2747,12 @@ static int gfar_clean_tx_ring(struct gfar_priv_tx_q *tx_queue)
 			buflen = next->length + GMAC_FCB_LEN + GMAC_TXPAL_LEN;
 		} else
 			buflen = bdp->length;
-
+#ifdef MEDUSA_OCRAM_MEM
+		free_ocram_bd(bdp->bufPtr);
+#else
 		dma_unmap_single(&priv->ofdev->dev, bdp->bufPtr,
 				 buflen, DMA_TO_DEVICE);
+#endif
 
 		if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS)) {
 			struct skb_shared_hwtstamps shhwtstamps;
@@ -2519,17 +2762,21 @@ static int gfar_clean_tx_ring(struct gfar_priv_tx_q *tx_queue)
 			shhwtstamps.hwtstamp = ns_to_ktime(*ns);
 			skb_pull(skb, GMAC_FCB_LEN + GMAC_TXPAL_LEN);
 			skb_tstamp_tx(skb, &shhwtstamps);
-			bdp->lstatus &= BD_LFLAG(TXBD_WRAP);
+			bdp->lstatus &= BD_LFLAG_FSHIFT(TXBD_WRAP);
 			bdp = next;
 		}
 
-		bdp->lstatus &= BD_LFLAG(TXBD_WRAP);
+		bdp->lstatus &= BD_LFLAG_FSHIFT(TXBD_WRAP);
 		bdp = next_txbd(bdp, base, tx_ring_size);
 
 		for (i = 0; i < frags; i++) {
+#ifdef MEDUSA_OCRAM_MEM
+			free_ocram_bd(bdp->bufPtr);
+#else
 			dma_unmap_page(&priv->ofdev->dev, bdp->bufPtr,
-				       bdp->length, DMA_TO_DEVICE);
-			bdp->lstatus &= BD_LFLAG(TXBD_WRAP);
+					bdp->length, DMA_TO_DEVICE);
+#endif
+			bdp->lstatus &= BD_LFLAG_FSHIFT(TXBD_WRAP);
 			bdp = next_txbd(bdp, base, tx_ring_size);
 		}
 
@@ -2591,11 +2838,24 @@ static void gfar_new_rxbdp(struct gfar_priv_rx_q *rx_queue, struct rxbd8 *bdp,
 {
 	struct net_device *dev = rx_queue->dev;
 	struct gfar_private *priv = netdev_priv(dev);
+#ifdef MEDUSA_OCRAM_MEM
+	static int i;
+#else
 	dma_addr_t buf;
+#endif
 
+#ifdef MEDUSA_OCRAM_MEM
+	gfar_init_rxbdp(rx_queue, bdp,
+			(OCRAM_GIANFAR_RX_MEM +
+			(i % MEDUSA_TOTAL_RX_BUFF)*
+			(priv->rx_buffer_size + RXBUF_ALIGNMENT)-
+			OCRAM_MEM_OFFSET_FPGA));
+	i++;
+#else
 	buf = dma_map_single(&priv->ofdev->dev, skb->data,
 			     priv->rx_buffer_size, DMA_FROM_DEVICE);
 	gfar_init_rxbdp(rx_queue, bdp, buf);
+#endif
 }
 
 static struct sk_buff *gfar_alloc_skb(struct net_device *dev)
@@ -2741,6 +3001,11 @@ int gfar_clean_rx_ring(struct gfar_priv_rx_q *rx_queue, int rx_work_limit)
 	int amount_pull;
 	int howmany = 0;
 	struct gfar_private *priv = netdev_priv(dev);
+#ifdef MEDUSA_OCRAM_MEM
+	int bf_ptr;
+#endif /* MEDUSA_OCRAM_MEM */
+	int len, status;
+
 
 	/* Get the first full descriptor */
 	bdp = rx_queue->cur_rx;
@@ -2748,7 +3013,8 @@ int gfar_clean_rx_ring(struct gfar_priv_rx_q *rx_queue, int rx_work_limit)
 
 	amount_pull = (gfar_uses_fcb(priv) ? GMAC_FCB_LEN : 0);
 
-	while (!((bdp->status & RXBD_EMPTY) || (--rx_work_limit < 0))) {
+	while (!((BD_LSTATUS_SSHIFT(bdp->lstatus) & RXBD_EMPTY)
+				|| (--rx_work_limit < 0))) {
 		struct sk_buff *newskb;
 
 		rmb();
@@ -2758,17 +3024,30 @@ int gfar_clean_rx_ring(struct gfar_priv_rx_q *rx_queue, int rx_work_limit)
 
 		skb = rx_queue->rx_skbuff[rx_queue->skb_currx];
 
+#ifdef MEDUSA_OCRAM_MEM
+		bf_ptr = bdp->bufPtr;
+#endif
+		rmb();
+		len = (int)BD_LSTATUS_LSHIFT(bdp->lstatus);
+		status = (int)BD_LSTATUS_SSHIFT(bdp->lstatus);
+#ifdef MEDUSA_OCRAM_MEM
+		memcpy_ocram(skb->data,
+				(void *)(bf_ptr + OCRAM_MEM_OFFSET_FPGA
+					+ ocram_vaddr - OCRAM_GIANFAR_BD_MEM),
+					len);
+#else
 		dma_unmap_single(&priv->ofdev->dev, bdp->bufPtr,
 				 priv->rx_buffer_size, DMA_FROM_DEVICE);
+#endif
 
-		if (unlikely(!(bdp->status & RXBD_ERR) &&
-			     bdp->length > priv->rx_buffer_size))
-			bdp->status = RXBD_LARGE;
+		if (unlikely(!(status & RXBD_ERR) &&
+			     len > priv->rx_buffer_size))
+			bdp->lstatus = BD_LSTATUS_SSHIFT(RXBD_LARGE);
 
 		/* We drop the frame if we failed to allocate a new buffer */
-		if (unlikely(!newskb || !(bdp->status & RXBD_LAST) ||
-			     bdp->status & RXBD_ERR)) {
-			count_errors(bdp->status, dev);
+		if (unlikely(!newskb || !(status & RXBD_LAST) ||
+					status & RXBD_ERR)) {
+			count_errors(BD_LSTATUS_SSHIFT(bdp->lstatus), dev);
 
 			if (unlikely(!newskb))
 				newskb = skb;
@@ -2780,7 +3059,7 @@ int gfar_clean_rx_ring(struct gfar_priv_rx_q *rx_queue, int rx_work_limit)
 			howmany++;
 
 			if (likely(skb)) {
-				pkt_len = bdp->length - ETH_FCS_LEN;
+				pkt_len = len - ETH_FCS_LEN;
 				/* Remove the FCS from the packet length */
 				skb_put(skb, pkt_len);
 				rx_queue->stats.rx_bytes += pkt_len;
@@ -3172,15 +3451,17 @@ static void gfar_set_mac_for_addr(struct net_device *dev, int num,
 
 	macptr += num*2;
 
+	memset(tmpbuf, 0, sizeof(tmpbuf));
+
 	/* Now copy it into the mac registers backwards, cuz
 	 * little endian is silly
 	 */
 	for (idx = 0; idx < ETH_ALEN; idx++)
 		tmpbuf[ETH_ALEN - 1 - idx] = addr[idx];
 
-	gfar_write(macptr, *((u32 *) (tmpbuf)));
+	gfar_write(macptr, (u32) cpu_to_be32(*((int *)tmpbuf)));
 
-	tempval = *((u32 *) (tmpbuf + 4));
+	tempval = (u32)cpu_to_be32(*((int *)(tmpbuf + 4)));
 
 	gfar_write(macptr+1, tempval);
 }

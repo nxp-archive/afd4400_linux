@@ -57,7 +57,7 @@ source "drivers/net/ethernet/freescale/fs_enet/Kconfig"
 
 config FSL_PQ_MDIO
 	tristate "Freescale PQ MDIO"
-	depends on FSL_SOC
+	depends on FSL_SOC || SOC_IMX6Q
 	select PHYLIB
 	---help---
 	  This driver supports the MDIO bus used by the gianfar and UCC drivers.
@@ -84,7 +84,7 @@ config UGETH_TX_ON_DEMAND
 
 config GIANFAR
 	tristate "Gianfar Ethernet"
-	depends on FSL_SOC
+	depends on FSL_SOC || SOC_IMX6Q
 	select FSL_PQ_MDIO
 	select PHYLIB
 	select CRC32

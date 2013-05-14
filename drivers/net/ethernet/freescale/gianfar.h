@@ -9,7 +9,7 @@
  * Maintainer: Kumar Gala
  * Modifier: Sandeep Gopalpet <sandeep.kumar@freescale.com>
  *
- * Copyright 2002-2009, 2011 Freescale Semiconductor, Inc.
+ * Copyright 2002-2009, 2011, 2013 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute  it and/or modify it
  * under  the terms of  the GNU General  Public License as published by the
@@ -90,8 +90,14 @@ extern const char gfar_driver_version[];
 #define MAXGROUPS 0x2
 
 /* These need to be powers of 2 for this driver */
+#define MEDUSA_OCRAM_MEM
+#ifdef MEDUSA_OCRAM_MEM
+#define DEFAULT_TX_RING_SIZE	16
+#define DEFAULT_RX_RING_SIZE	16
+#else
 #define DEFAULT_TX_RING_SIZE	256
 #define DEFAULT_RX_RING_SIZE	256
+#endif
 
 #define GFAR_RX_MAX_RING_SIZE   256
 #define GFAR_TX_MAX_RING_SIZE   256
@@ -396,8 +402,26 @@ extern const char gfar_driver_version[];
 #define ATTRELI_EI_MASK		0x00003fff
 #define ATTRELI_EI(x) (x)
 
-#define BD_LFLAG(flags) ((flags) << 16)
+/* For TX BD, 16b word size accesses are made from TSEC for len and flags*/
+#if defined(__BIG_ENDIAN)
+#define BD_LFLAG_FSHIFT(flags) ((flags) << 16)
+#define BD_LFLAG_LSHIFT(len) (len)
 #define BD_LENGTH_MASK		0x0000ffff
+#else
+#define BD_LFLAG_LSHIFT(len) ((len) << 16)
+#define BD_LFLAG_FSHIFT(flags) (flags)
+#define BD_LENGTH_MASK		0xffff0000
+#endif /* (__BIG_ENDIAN) */
+
+/* For RX BD, 16b word size accesses are made from TSEC for len and status*/
+#if defined(__BIG_ENDIAN)
+#define BD_LSTATUS_LSHIFT(len) (len) /* needed for read ops */
+#define BD_LSTATUS_SSHIFT(status) ((status) >> 16)
+#else
+/* needed for read ops */
+#define BD_LSTATUS_LSHIFT(len) (((len) & BD_LENGTH_MASK) >> 16)
+#define BD_LSTATUS_SSHIFT(flags) (flags)
+#endif /* (__BIG_ENDIAN) */
 
 #define FPR_FILER_MASK	0xFFFFFFFF
 #define MAX_FILER_IDX	0xFF
@@ -526,6 +550,13 @@ extern const char gfar_driver_version[];
 #define RXFCB_PERR_BADL3	0x0008
 
 #define GFAR_INT_NAME_MAX	(IFNAMSIZ + 6)	/* '_g#_xx' */
+
+#ifdef CONFIG_ARM
+#define	gfar_mem_sync() dmb()
+#endif
+#ifdef CONFIG_PPC
+#define	gfar_mem_sync() eioio()
+#endif
 
 struct txbd8
 {
@@ -1141,13 +1172,23 @@ static inline int gfar_has_errata(struct gfar_private *priv,
 static inline u32 gfar_read(volatile unsigned __iomem *addr)
 {
 	u32 val;
-	val = in_be32(addr);
+#ifdef __LITTLE_ENDIAN
+	val = ioread32(addr);
+#endif
+#ifdef __BIG_ENDIAN
+	val = ioread32be(addr);
+#endif
 	return val;
 }
 
 static inline void gfar_write(volatile unsigned __iomem *addr, u32 val)
 {
-	out_be32(addr, val);
+#ifdef __LITTLE_ENDIAN
+	iowrite32(val, addr);
+#endif
+#ifdef __BIG_ENDIAN
+	iowrite32be(val, addr);
+#endif
 }
 
 static inline void gfar_write_filer(struct gfar_private *priv,
