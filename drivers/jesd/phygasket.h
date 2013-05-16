@@ -31,6 +31,7 @@
 #define RX_LOOPBACK 4
 
 struct phy_gasket_regs {
+	u32 reserved0[1023];
 	u32 tx_lane0_ctrl;
 	u32 tx_lane1_ctrl;
 	u32 tx_lane2_ctrl;
@@ -40,7 +41,7 @@ struct phy_gasket_regs {
 	u32 tx_lane6_ctrl;
 	u32 tx_lane7_ctrl;
 	u32 tx_swap;
-	u32 reserved1[(0x103c - 0x1024)/sizeof(u32)];
+	u32 reserved1[(0x1040 - 0x1024)/sizeof(u32)];
 	u32 rx_lane0_ctrl;
 	u32 rx_lane1_ctrl;
 	u32 rx_lane2_ctrl;
@@ -50,24 +51,24 @@ struct phy_gasket_regs {
 	u32 rx_lane6_ctrl;
 	u32 rx_lane7_ctrl;
 	u32 rx_swap;
-	u32 reserved2[(0x107C - 0x1064)/sizeof(u32)];
+	u32 reserved2[(0x1080 - 0x1064)/sizeof(u32)];
 	u32 tx_patgen;
 	u32 tx_softreset;
 	u32 rx_softreset;
-	u32 reserved3[(0x1FFC - 0x108C)/sizeof(u32)];
+	u32 reserved3[(0x2000 - 0x108C)/sizeof(u32)];
 };
 /** @brief phygasket which hold info for the phy gasket
 * this instance is to be used by all the transports
 */
 struct phygasket_private {
-	struct phygasket *phy[MAX_PHYGASKET_IP];
-	/*accomidate platform device*/
-	struct device *dev;
+	spinlock_t lock;
+	struct list_head phy_list;
 };
 
 struct phygasket {
 	u8 init_flag;
-	struct device_node *node;
+	struct device_node *dev_node;
+	struct device *dev;
 	struct phy_gasket_regs *pregs;
 	struct tx_lane_ctrl *tln_ctrl;
 	struct rx_lane_ctrl *rln_ctrl;

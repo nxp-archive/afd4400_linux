@@ -36,7 +36,6 @@
 #include "phygasket.h"
 
 struct phygasket_private *phypriv;
-static struct list_head phy_list = LIST_HEAD_INIT(phy_list);
 /**@brief inline for set, clear and test bits for 32 bit
 */
 static inline void
@@ -89,15 +88,16 @@ void set_rxlanes_loopback(u32 *offset, u8 lane)
 
 struct phygasket *map_phygasket(struct device_node *phy_node)
 {
-	struct phygasket *phy = NULL;
+	struct phygasket *phy = NULL, *phy_tmp;
 
-	list_for_each_entry(phy, &phy_list, list) {
-		if (phy_node == phy->node)
+	list_for_each_entry(phy_tmp, &phypriv->phy_list, list) {
+		if (phy_node == phy_tmp->dev_node) {
+			phy = phy_tmp;
 			break;
+		}
 	}
 	return phy;
 }
-EXPORT_SYMBOL(map_phygasket);
 
 
 int phy_softreset(struct phygasket *phy, u8 device, u8 reset, u8 lane)
@@ -117,7 +117,6 @@ int phy_softreset(struct phygasket *phy, u8 device, u8 reset, u8 lane)
 		return -EINVAL;
 	return 0;
 }
-EXPORT_SYMBOL(phy_softreset);
 
 int phy_swap_lanes(struct phygasket *phy, u8 lane, u8 swap, u8 device)
 {
@@ -149,9 +148,6 @@ int phy_swap_lanes(struct phygasket *phy, u8 lane, u8 swap, u8 device)
 
 	return 0;
 }
-EXPORT_SYMBOL(phy_swap_lanes);
-
-
 
 int phy_inverse_lanes(struct phygasket *phy, u8 lane, u8 invert, u8 device)
 {
@@ -164,8 +160,6 @@ int phy_inverse_lanes(struct phygasket *phy, u8 lane, u8 invert, u8 device)
 
 	return 0;
 }
-EXPORT_SYMBOL(phy_inverse_lanes);
-
 
 int phy_gasket_lane_ctrl(struct phygasket *phy, u8 mode, u8 lane)
 {
@@ -191,7 +185,6 @@ int phy_gasket_lane_ctrl(struct phygasket *phy, u8 mode, u8 lane)
 	}
 	return retcode;
 }
-EXPORT_SYMBOL(phy_gasket_lane_ctrl);
 
 int do_patter_generator(struct phygasket *phy, struct patgen *pgen)
 {
@@ -219,111 +212,71 @@ int do_patter_generator(struct phygasket *phy, struct patgen *pgen)
 
 	return retcode;
 }
-EXPORT_SYMBOL(do_patter_generator);
-
-int phygasket_init(struct device_node *node)
-{
-	int retcode = 0;
-	unsigned int id = 0;
-	struct device_node *child = NULL;
-	void __iomem *base;/* virt. address of the control segment */
-
-	for_each_child_of_node(node, child) {
-
-		retcode = (unsigned int) of_property_read_u32(child,
-								"phyid",
-								&id);
-
-		if (retcode < 0) {
-			dev_info(phypriv->dev, "phy id failed");
-			goto failed;
-		}
-
-		phypriv->phy[id] =
-			kzalloc(sizeof(struct phygasket), GFP_KERNEL);
-
-		if (!phypriv->phy[id]) {
-			retcode = -ENOMEM;
-			dev_info(phypriv->dev, "phy id malloc fail");
-			goto failed;
-		}
-
-		base = of_iomap(child, 0);
-
-		if (!base) {
-			dev_info(phypriv->dev, "phy id iomap");
-			retcode = -ENOMEM;
-			goto failed;
-		}
-		phypriv->phy[id]->pregs =
-				(struct phy_gasket_regs *)base;
-		phypriv->phy[id]->init_flag = PHYGASKET_INIT_SUCCESS;
-		phypriv->phy[id]->node = child;
-		list_add_tail(&phypriv->phy[id]->list, &phy_list);
-	}
-
-failed:
-	return retcode;
-}
 
 static int __init phygasket_probe(struct platform_device *pdev)
 {
-	int retcode = -ENODEV;
+	int retcode = 0;
 	struct device_node *node = pdev->dev.of_node;
+	struct phygasket *phy = NULL;
 
-	phypriv = kzalloc(sizeof(struct phygasket_private), GFP_KERNEL);
-	if (phypriv == NULL) {
-		retcode = -ENOMEM;
-		goto failed0;
-	}
 
 	if (!node || !of_device_is_available(node)) {
 		retcode = -ENODEV;
 		dev_err(&pdev->dev, "phy dev not avaiable");
-		goto failed1;
+		goto out;
 	}
-	phypriv->dev = &pdev->dev;
-	retcode = phygasket_init(node);
 
-	if (retcode < 0)
-		goto failed1;
+	phy = kzalloc(sizeof(struct phygasket), GFP_KERNEL);
 
-	dev_info(&pdev->dev, "phygasket probe pass");
+	if (!phy) {
+		retcode = -ENOMEM;
+		dev_info(&pdev->dev, "phy id malloc fail");
+		goto out;
+	}
+
+	phy->dev = &pdev->dev;
+	phy->pregs = of_iomap(node, 0);
+
+	if (!phy->pregs) {
+		dev_info(phy->dev, "Failed to iomap regs");
+		retcode = -ENOMEM;
+		goto out;
+	}
+	phy->init_flag = PHYGASKET_INIT_SUCCESS;
+	phy->dev_node = node;
+	dev_set_drvdata(phy->dev, phy);
+	spin_lock(&phypriv->lock);
+	list_add_tail(&phy->list, &phypriv->phy_list);
+	spin_unlock(&phypriv->lock);
+
 	return retcode;
-failed1:
-	kfree(phypriv);
-failed0:
+out:
+	kfree(phy);
 	return retcode;
 }
 
 
 static int __exit phygasket_remove(struct platform_device *pdev)
 {
-	struct device_node *child = NULL;
-	struct device_node *node = pdev->dev.of_node;
-	struct resource res;
-	struct list_head *cur, *n;
-	unsigned int id = 0;
+	struct phygasket *phy, *phy_temp;
+	struct list_head *pos, *nx;
 	int retcode = 0;
 
-	list_for_each_safe(cur, n, &phy_list) {
-		list_del(&phypriv->phy[id]->list);
-	}
+	phy = (struct phygasket *) dev_get_drvdata(&pdev->dev);
 
-	if (phypriv != NULL) {
-		for_each_child_of_node(node, child) {
-			retcode = (unsigned int) of_property_read_u32(child,
-									"phyid",
-									&id);
-			of_address_to_resource(node, 0, &res);
-			kfree(phypriv->phy[id]);
-			iounmap(phypriv->phy[id]->pregs);
-			release_mem_region(res.start, resource_size(&res));
+	iounmap(phy->pregs);
+	raw_spin_lock(&phypriv->lock);
+	list_for_each_safe(pos, nx, &phypriv->phy_list) {
+		phy_temp = list_entry(pos, struct phygasket, list);
+		if (phy_temp == phy) {
+			list_del(&phy->list);
+			kfree(phy);
+			break;
 		}
-
-		kfree(phypriv);
 	}
-	return retcode;		/* success */
+	raw_spin_unlock(&phypriv->lock);
+
+	return retcode;
 }
 
 
@@ -345,11 +298,32 @@ static struct platform_driver phygasket_driver = {
 
 static int __init phygasket_module_init(void)
 {
+
+	phypriv = kzalloc(sizeof(struct phygasket_private), GFP_KERNEL);
+	if (phypriv == NULL) {
+		pr_err("phygasket: Failed to allocate priv");
+		return -ENOMEM;
+	}
+
+	INIT_LIST_HEAD(&phypriv->phy_list);
+	spin_lock_init(&phypriv->lock);
+
 	return platform_driver_register(&phygasket_driver);
 }
 
 static void __exit phygasket_module_clean(void)
 {
+	struct phygasket *phy;
+	struct list_head *pos, *nx;
+
+	spin_lock(&phypriv->lock);
+	list_for_each_safe(pos, nx, &phypriv->phy_list) {
+		phy = list_entry(pos, struct phygasket, list);
+		list_del(&phy->list);
+		kfree(phy);
+	}
+	spin_unlock(&phypriv->lock);
+	kfree(phypriv);
 	platform_driver_unregister(&phygasket_driver);
 }
 
