@@ -195,16 +195,11 @@
 				reg = <0x0C0B4000 0x8000>;
 			};
 
-			phygasket@0x0C0B0000 {
+			phy1: phygasket@0x0C0B0000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
 				compatible = "fsl,d4400-phygasket";
-				ranges;
-				reg = <0xC0B0000 0x4000>;
-				phy1: phy@0x0C0B0000 {
-					reg = <0x0C0B0000 0x1FFC>;
-					phyid =	<1>;
-				};
+				reg = <0x0C0B0000 0x1FFC>;
 			};
 
 			jesdtx@0x0C08C000{
