@@ -53,8 +53,6 @@ static int conf_phy_gasket(struct transport_device *tdev);
 
 static void write_reg(u32 *reg, unsigned int offset,
 			unsigned int length, u32 *buf);
-static int  reg_dump_to_user(u32 *reg, unsigned int offset,
-			unsigned int length, u32 *buf);
 
 static int jesd_conf_tests(struct transport_device *tdev);
 static void raise_exception(struct transport_device *tdev,
@@ -854,7 +852,7 @@ static void write_reg(u32 *reg,
 	}
 }
 
-static int reg_dump_to_user(u32 *reg, unsigned int offset, unsigned int length,
+int jesd_reg_dump_to_user(u32 *reg, unsigned int offset, unsigned int length,
 			u32 *buf)
 {
 	int i, rc = 0;
@@ -874,6 +872,7 @@ static int reg_dump_to_user(u32 *reg, unsigned int offset, unsigned int length,
 
 	return rc;
 }
+EXPORT_SYMBOL(jesd_reg_dump_to_user);
 
 static int jesd_conf_tests(struct transport_device *tdev)
 {
@@ -1921,7 +1920,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			break;
 		}
 
-		rc = reg_dump_to_user(regs, regcnf.offset,
+		rc = jesd_reg_dump_to_user(regs, regcnf.offset,
 			regcnf.len, regcnf.buf);
 		break;
 	case JESD_SHUTDOWN:

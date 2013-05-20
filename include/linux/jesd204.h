@@ -420,4 +420,6 @@ struct jesd204_private {
 /** @brief xport symbols for jesd
 */
 int jesd_start_transport(struct transport_device *tdev);
+int  jesd_reg_dump_to_user(u32 *reg, unsigned int offset,
+			unsigned int length, u32 *buf);
 #endif

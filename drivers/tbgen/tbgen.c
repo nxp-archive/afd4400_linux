@@ -33,6 +33,7 @@
 #include <linux/miscdevice.h>
 
 #include <linux/tbgen.h>
+#include <linux/jesd204.h>
 
 struct tbgen_dev *tbg;
 
@@ -40,12 +41,13 @@ struct tbgen_dev *tbg;
 */
 static void write_reg(u32 *reg, unsigned int offset,
 					unsigned int length, u32 *buf);
-static void read_reg(u32 *reg, unsigned int offset,
-					unsigned int length, u32 *buf);
 static void notify_off_chip_devs(void);
 static void force_jesd204_recapture(struct tbgen_dev *tbg);
 static void ccm_tbgen_clock_src(u8 source);
 static void ccm_tbgen_pll_enable(u8 enable);
+
+static int tbgen_change_state(struct tbgen_dev *tbg,
+	enum tbgen_dev_state new_state);
 /**@brief inline for set, clear and test bits for 32 bit
 */
 static inline void
@@ -109,23 +111,6 @@ static void write_reg(u32 *reg,
 
 	for (i = 0; i < length; i++) {
 		*reg = *buf;
-		reg++;
-		buf++;
-	}
-}
-
-static void read_reg(u32 *reg,
-			unsigned int offset,
-			unsigned int length,
-			u32 *buf)
-{
-	int i;
-
-	for (i = 0; i < offset; i++)
-		reg++;
-
-	for (i = 0; i < length; i++) {
-		*buf = *reg;
 		reg++;
 		buf++;
 	}
@@ -289,21 +274,10 @@ void enable_interrupts(struct tbgen_dev *tbg)
 	tset_bit(RFGERRIE_BIT4, &tbg->tbgregs->cntrl_1);
 }
 
-static irqreturn_t do_isr(int irq, void *param)
+static irqreturn_t tbgen_isr(int irq, void *param)
 {
 	struct tbgen_dev *tbg = param;
 	spin_lock(&tbg->isr_lock);
-	if (tbg->state != RFG_START) {
-		pr_err("Interrupt received for tbgen is in a non running state (%d)\n",
-			tbg->state);
-	/*
-	* It is possible to really be running, i.e. we have re-loaded
-	* a running card
-	* Clear interrupt source
-	*/
-		clear_interrupts(tbg);
-		return IRQ_HANDLED;
-	}
 
 	/* Clear interrupt source */
 	clear_interrupts(tbg);
@@ -320,18 +294,9 @@ static irqreturn_t do_isr(int irq, void *param)
  */
 static int tbgen_register_irq(struct tbgen_dev *tbg)
 {
-	int retcode = 0;
+	tasklet_init(&tbg->do_tasklet, tbgen_isr_tasklet, (unsigned long)tbg);
 
-	tasklet_init(&tbg->do_tasklet,
-			tbgen_isr_tasklet,
-			(unsigned long)tbg);
-
-	retcode = request_irq(tbg->irq,
-				do_isr,
-				0, /*no flag*/
-				"tbgen",
-				tbg);
-	return retcode;
+	return request_irq(tbg->irq, tbgen_isr, 0, "tbgen", tbg);
 }
 
 
@@ -798,15 +763,58 @@ int reconfig_alignement_timers(struct tbgen_dev *tbg,
 	return retcode;
 }
 
+static int tbgen_change_state(struct tbgen_dev *tbg,
+	enum tbgen_dev_state new_state)
+{
+	enum tbgen_dev_state old_state = tbg->state;
+	int retcode = -EINVAL;
+
+	switch (old_state) {
+	case TBG_STATE_STANDBY:
+		/* Change state only if both PLL and RFG are configured*/
+		if (new_state == TBG_STATE_CONFIGURED)
+			if (TBG_CHCK_CONFIG_MASK(tbg, TBG_CONFIGURED_MASK))
+				retcode = 0;
+		break;
+	case TBG_STATE_CONFIGURED:
+		/* Transition to Ready if PLLS are locked, and RFG ready*/
+		if (new_state == TBG_STATE_READY)
+			if (TBG_CHCK_CONFIG_MASK(tbg, TBG_READY_MASK))
+				retcode = 0;
+		/* Failure transitions allowed */
+		if ((new_state == TBG_STATE_PLL_FAILED) ||
+				(new_state == TBG_STATE_RFG_FAILED))
+			retcode = 0;
+		break;
+	case TBG_STATE_PLL_FAILED:
+	case TBG_STATE_RFG_FAILED:
+		if ((new_state == TBG_STATE_STANDBY))
+			retcode = 0;
+	default:
+		dev_dbg(tbg->dev, "invalid old state %d\n", tbg->state);
+		break;
+	}
+
+	if (!retcode) {
+		dev_dbg(tbg->dev, "State transition %d -> %d done\n", old_state,
+			new_state);
+		tbg->state = new_state;
+	} else {
+		dev_dbg(tbg->dev, "State transition %d -> %d Invalid\n",
+			old_state, new_state);
+	}
+
+	return retcode;
+}
+
 long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 {
-	int retcode = -ENOSYS;
-	u64 master_counter = 0;
-	u64 l10_counter = 0;
-	int count = 0;
+	int retcode = -ENOSYS, count = 0, size;
+	u32 *regs;
+	u64 master_counter = 0, l10_counter = 0;
 	struct tbgen_dev *tbg;
 	struct jesd_align_timer_params *set_params, *reset_params;
-	struct tbgen_reg_read_buf *regcnf;
+	struct tbgen_reg_read_buf regcnf;
 	struct tbgen_device_info dev_info;
 	struct timer_disable tmr_disable;
 	struct tbgen_reg_write_buf *wreg_buf;
@@ -825,11 +833,14 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 				break;
 			}
 			retcode = tbgen_pll_conf(tbg);
-			if (retcode < 0)
+			if (retcode) {
+				dev_err(tbg->dev, "PLL configuration failed\n");
 				break;
-			else
-				tbg->state = PLL_LOCKED;
+			}
+			TBG_SET_CONFIG_MASK(tbg, TBG_PLL_CONFIGURED);
+			tbgen_change_state(tbg, TBG_STATE_CONFIGURED);
 			break;
+
 		case TBGEN_RFG:
 			tbg->mon_rfg_isr = 0;
 
@@ -839,12 +850,13 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 				retcode = -EFAULT;
 				break;
 			}
-
 			retcode = tbgen_conf_rfg(tbg);
-			if (retcode < 0)
+			if (retcode) {
+				dev_err(tbg->dev, "RFG configuration failed\n");
 				break;
-			else
-				tbg->state = RFG_START;
+			}
+			TBG_SET_CONFIG_MASK(tbg, TBG_RFG_CONFIGURED);
+			tbgen_change_state(tbg, TBG_STATE_CONFIGURED);
 			break;
 		case TBGEN_RFG_RESET:
 			tbg->mon_rfg_isr = 0;
@@ -857,13 +869,12 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 			}
 
 			retcode = tbgen_restart_radio_frame_generation(tbg);
-			if (retcode < 0)
-				break;
-			else
-				tbg->state = RFG_RESET;
-			break;
 		case TBGEN_RFG_ENABLE:
+			/* XXX: Here move to ready state after checking PLL and
+			 * RFG are good
+			 */
 			rfg_enable(tbg, 1);
+			tbgen_change_state(tbg, TBG_STATE_READY);
 			break;
 		case TBGEN_ALIGNMENT_TIMERS:
 			set_params = kzalloc
@@ -945,18 +956,6 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 			kfree(write_reg.regs);
 			break;
 		case TBGEN_READ_REG:
-			regcnf = kzalloc(sizeof(struct tbgen_reg_read_buf),
-						GFP_KERNEL);
-				if (!regcnf) {
-					retcode = -ENOMEM;
-					break;
-				}
-			regcnf->buf = kzalloc(sizeof(struct tbg_regs),
-								GFP_KERNEL);
-			if (!regcnf->buf) {
-				retcode = -ENOMEM;
-				break;
-			}
 
 			if (copy_from_user(&regcnf, (struct reg_conf *)arg,
 					sizeof(struct tbgen_reg_read_buf))) {
@@ -964,19 +963,16 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 					break;
 			}
 
-			if (regcnf->len > sizeof(struct tbg_regs)) {
-				regcnf->len = sizeof(struct tbg_regs);
-				regcnf->offset = 0;
+			regs = (u32 *) tbg->tbgregs;
+			size = sizeof(struct tbg_regs);
+			if ((regcnf.len * 4 + regcnf.len) > size) {
+				dev_err(tbg->dev, "invalid len/offset:%d/0x%x",
+						regcnf.len, regcnf.offset);
+				retcode = -EINVAL;
+				break;
 			}
-			read_reg(&tbg->tbgregs->rfg_cr, regcnf->offset,
-						regcnf->len, regcnf->buf);
-
-			if (copy_to_user((struct reg_conf *)arg, &regcnf,
-					sizeof(struct tbgen_reg_read_buf)))
-				retcode = -EFAULT;
-
-			kfree(regcnf->buf);
-			kfree(regcnf);
+			retcode = jesd_reg_dump_to_user(regs, regcnf.offset,
+				regcnf.len, regcnf.buf);
 			break;
 		case TBGEN_GET_DEV_INFO:
 			/*append any details for dev info added in here*/
@@ -1022,17 +1018,10 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
  */
 static int tbgen_open(struct inode *inode, struct file *pfile)
 {
-	struct tbgen_dev *tbg = NULL;
-	int retcode = 0;
+	pfile->private_data = tbg;
+	atomic_inc(&tbg->ref);
 
-	tbg = container_of(inode->i_cdev, struct tbgen_dev, c_dev);
-	if (tbg != NULL) {
-		pfile->private_data = tbg;
-		tbg->state = TBGEN_STANDBY;
-	} else
-		retcode = -ENODEV;
-
-	return retcode;
+	return 0;
 }
 
 /**
@@ -1044,16 +1033,8 @@ static int tbgen_open(struct inode *inode, struct file *pfile)
  */
 int tbgen_release(struct inode *inode, struct file *pfile)
 {
-	int retcode = 0;
-	struct tbgen_dev *tbg = NULL;
-
-	tbg = pfile->private_data;
-	pfile->private_data = NULL;
-
-	if (tbg == NULL)
-		retcode = -ENODEV;
-
-	return retcode;
+	atomic_dec(&tbg->ref);
+	return 0;
 }
 
 /** @brief file ops structure
@@ -1078,38 +1059,38 @@ static struct miscdevice tbg_miscdev = {
 
 static int __init tbgen_of_probe(struct platform_device *pdev)
 {
-	int retcode = 0;
-	int id;
-
-	dev_info(&pdev->dev, "fsl,Tbgen: Probe entry\n");
+	int retcode = 0, id;
 
 	tbg = kzalloc(sizeof(struct tbgen_dev), GFP_KERNEL);
 
 	if (!tbg) {
 		retcode = -ENOMEM;
-		goto tbginit_err0;
+		goto out;
 	}
 
 	tbg->node = pdev->dev.of_node;
 	tbg->dev = &pdev->dev;
-
-	retcode = of_address_to_resource(tbg->node, 0, &tbg->res);
-	if (retcode < 0)
-		goto tbginit_err1;
-
+	atomic_set(&tbg->ref, 0);
 	tbg->tbgregs = of_iomap(tbg->node, 0);
-
 	if (!tbg->tbgregs)
-		goto tbginit_err2;
+		goto out;
 
 	tbg->irq = irq_of_parse_and_map(tbg->node, 0);
-	retcode = tbgen_register_irq(tbg);
+	if (tbg->irq) {
+		retcode = tbgen_register_irq(tbg);
+		if (retcode) {
+			dev_err(tbg->dev, "Failed to register IRQs, err %d\n",
+				retcode);
+			goto out;
+		}
+	} else {
+		tbg->dev_flags |= FLG_NO_INTERRUPTS;
+	}
 
 	retcode = misc_register(&tbg_miscdev);
-
 	if (retcode < 0) {
 		dev_info(&pdev->dev, "error %d misc register\n", retcode);
-		goto tbginit_err3;
+		goto out;
 	}
 
 	spin_lock_init(&tbg->do_lock);
@@ -1127,21 +1108,16 @@ static int __init tbgen_of_probe(struct platform_device *pdev)
 	for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++)
 		spin_lock_init(&tbg->tbg_srxtmr[id].lock_srx_tmr);
 
-	dev_info(&pdev->dev, "fsl, Tbgen: probe success\n");
+	dev_set_drvdata(tbg->dev, tbg);
+	tbg->state = TBG_STATE_STANDBY;
+
 	return retcode;
 
-tbginit_err3:
+out:
+	if (tbg->tbgregs)
 		iounmap(tbg->tbgregs);
-		dev_info(&pdev->dev, "fsl, Tbgen: tbginit error 3");
-tbginit_err2:
-		release_mem_region(tbg->res.start, resource_size(&tbg->res));
-		dev_info(&pdev->dev, "fsl, Tbgen: tbginit error 2");
-tbginit_err1:
-		kfree(tbg);
-		dev_info(&pdev->dev, "fsl, Tbgen: tbginit error 1");
-tbginit_err0:
-		dev_info(&pdev->dev, "fsl, Tbgen: tbginit error 0");
-		return retcode;
+	kfree(tbg);
+	return retcode;
 }
 
 /** @brief remove function call for tbgen
@@ -1151,31 +1127,25 @@ tbginit_err0:
  */
 static int __exit tbgen_of_remove(struct platform_device *pdev)
 {
-	int retcode = 0;
-	struct tbgen_dev *tbg = NULL;
-	u32 id;
+	int retcode = 0, id;
+	struct tbgen_dev *tbg = dev_get_drvdata(&pdev->dev);
 
-	if (tbg != NULL) {
-		for (id = 0; id < MAX_TX_ALIGNMENT_TIMERS; id++)
-			disable_timer(tbg, JESD_TX_ALIGNMENT, id);
+	for (id = 0; id < MAX_TX_ALIGNMENT_TIMERS; id++)
+		disable_timer(tbg, JESD_TX_ALIGNMENT, id);
 
-		for (id = 0; id < MAX_AXRF_ALIGNMENT_TIMERS; id++)
-			disable_timer(tbg, JESD_TX_AXRF, id);
+	for (id = 0; id < MAX_AXRF_ALIGNMENT_TIMERS; id++)
+		disable_timer(tbg, JESD_TX_AXRF, id);
 
-		for (id = 0; id < MAX_RX_ALIGNMENT_TIMERS; id++)
-			disable_timer(tbg, JESD_RX_ALIGNMENT, id);
+	for (id = 0; id < MAX_RX_ALIGNMENT_TIMERS; id++)
+		disable_timer(tbg, JESD_RX_ALIGNMENT, id);
 
-		for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++)
-			disable_timer(tbg, JESD_SRX_ALIGNMENT, id);
+	for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++)
+		disable_timer(tbg, JESD_SRX_ALIGNMENT, id);
 
-		misc_deregister(&tbg_miscdev);
+	misc_deregister(&tbg_miscdev);
 
-		release_mem_region(tbg->res.start, resource_size(&tbg->res));
-		kfree(tbg);
-	} else
-		retcode = -EINVAL;
+	kfree(tbg);
 
-/*tbgrm_err:*/
 	return retcode;
 }
 

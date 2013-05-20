@@ -154,13 +154,11 @@ struct tbgen_dev {
 	__iomem struct tbg_regs *tbgregs;
 	struct device_node *node;
 	struct device *dev;
-	struct resource res;
+	enum tbgen_dev_state state;
+	u32 config_bitmap;
 	u32 mode;
-	void __iomem *base;
-	int tbgen_major;
-	int tbgen_minor;
-	dev_t devt;
-	struct cdev c_dev;
+	u32 dev_flags;
+	atomic_t ref;
 	struct tbgen_param tbg_param;
 	struct tbg_rfg rfg;
 	struct tbgen_txtimer tbg_txtmr[MAX_TX_ALIGNMENT_TIMERS];
@@ -174,10 +172,24 @@ struct tbgen_dev {
 	spinlock_t isr_lock;
 	spinlock_t do_lock;
 	u32 ien;
-	enum tbgen_dev_state state;
-
 	u8 mon_rfg_isr;
 };
+
+/* tbgen_dev->flags */
+#define FLG_NO_INTERRUPTS	(1 << 0)
+
+/* tbgen_dev->config_bitmap */
+#define TBG_PLL_CONFIGURED	(1 << 0)
+#define TBG_RFG_CONFIGURED	(1 << 1)
+#define TBG_PLL_READY		(1 << 2)
+#define TBG_RFG_READY		(1 << 3)
+#define TBG_CONFIGURED_MASK	(TBG_PLL_CONFIGURED | TBG_RFG_CONFIGURED)
+#define TBG_READY_MASK		(TBG_PLL_READY | TBG_RFG_READY)
+
+#define TBG_SET_CONFIG_MASK(tbg, mask) (tbg->config_bitmap |= mask)
+#define TBG_CLR_CONFIG_MASK(tbg, mask) (tbg->config_bitmap &= ~mask)
+#define TBG_CHCK_CONFIG_MASK(tbg, mask) (tbg->config_bitmap & mask)
+
 /** \struct alignment timer
  *  @brief base structure definition, derivatives of this struct would used for
  *	   register structure contruction
@@ -257,7 +269,7 @@ struct tbg_regs {
 	struct gen_timer_reg  titc_tmr[MAX_TIMED_INTERRUPT_TIMER_CTRLS];
 	struct gen_timer_reg  gp_tmr[MAX_GP_EVENT_TIMERS];
 /*reserved*/
-	u32 reserved[(0x44f - 0x440) / sizeof(u32)];
+	u32 reserved[(0x450 - 0x440) / sizeof(u32)];
 /* tdd*/
 	struct tdd	tdd_tmr[MAX_TDD_TIMERS];
 /*gp reg set */
