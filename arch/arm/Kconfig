@@ -1032,6 +1032,8 @@ source "arch/arm/mach-davinci/Kconfig"
 
 source "arch/arm/mach-dove/Kconfig"
 
+source "arch/arm/mach-d4400/Kconfig"
+
 source "arch/arm/mach-ep93xx/Kconfig"
 
 source "arch/arm/mach-footbridge/Kconfig"

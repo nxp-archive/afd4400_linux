@@ -1,0 +1,31 @@
+config ARCH_D4400
+	bool "Freescale D4400 family"
+	select ARCH_REQUIRE_GPIOLIB
+	select ARM_PATCH_PHYS_VIRT
+	select AUTO_ZRELADDR if !ZBOOT_ROM
+	select CLKDEV_LOOKUP
+	select CLKSRC_MMIO
+	select GENERIC_CLOCKEVENTS
+	select GENERIC_IRQ_CHIP
+	select MULTI_IRQ_HANDLER
+	select SPARSE_IRQ
+	select USE_OF
+	help
+	  Support for Freescale D4400 processor
+
+menu "Freescale D4400 support"
+	depends on ARCH_D4400
+
+comment "Device tree only"
+
+config SOC_D4400
+	bool "D4400 support"
+	select ARM_GIC
+	select COMMON_CLK
+	select PINCTRL
+	select PINCTRL_D4400
+	help
+	  This enables support for Freescale D4400 processor.
+
+endmenu
+

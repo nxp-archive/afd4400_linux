@@ -178,7 +178,7 @@ config GPIO_MVEBU
 
 config GPIO_MXC
 	def_bool y
-	depends on ARCH_MXC
+	depends on ARCH_MXC || ARCH_D4400
 	select GPIO_GENERIC
 	select GENERIC_IRQ_CHIP
 

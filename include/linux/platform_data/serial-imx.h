@@ -1,6 +1,8 @@
 /*
  * Copyright (C) 2008 by Sascha Hauer <kernel@pengutronix.de>
  *
+ * Copyright 2013 Freescale Semiconductor, Inc.
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
@@ -19,8 +21,9 @@
 #ifndef ASMARM_ARCH_UART_H
 #define ASMARM_ARCH_UART_H
 
-#define IMXUART_HAVE_RTSCTS (1<<0)
-#define IMXUART_IRDA        (1<<1)
+#define IMXUART_HAVE_RTSCTS  (1<<0)
+#define IMXUART_IRDA         (1<<1)
+#define IMXUART_RS485_ENABLE (1<<2)
 
 struct imxuart_platform_data {
 	int (*init)(struct platform_device *pdev);

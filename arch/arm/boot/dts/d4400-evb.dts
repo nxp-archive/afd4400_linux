@@ -1,0 +1,75 @@
+/*
+ * Copyright 2013 Freescale Semiconductor, Inc.
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+/dts-v1/;
+
+/include/ "d4400.dtsi"
+
+/ {
+	model = "Freescale d4400 evaluation Board";
+	compatible = "fsl,d4400";
+
+        memory {
+                reg = <0x90000000 0x60000000>;
+        };
+
+        soc@0 {
+                weim-bus@30000000 {
+                        nor_flash@0 {
+                                compatible = "cfi-flash";
+                                bank-width = <2>;
+				/* 256MB of NOR Flash memory*/
+                                reg = <0x0 0x10000000>;
+                                #address-cells = <1>;
+                                #size-cells = <1>;
+                                status = "okay";
+
+                                partition@0 {
+                                        /* This location must not be altered */
+                                        /* NOR U-Boot Image-512KB */
+                                        reg = <0x0 0x00080000>;
+                                        label = "bootloader";
+                                        read-only;
+                                };
+                                partition@80000 {
+                                        /* 128KB of env variables*/
+                                        reg = <0x80000 0x00020000>;
+                                        label = "environment";
+                                };
+                                partition@a0000 {
+                                        /* 128KB of redundant env variables*/
+                                        reg = <0xa0000 0x00020000>;
+                                        label = "redundant-environment";
+                                };
+                                partition@000C0000 {
+                                        /* 4 MB for Linux Kernel Image */
+                                        reg = <0x000C0000 0x00400000>;
+                                        label = "kernel";
+                                };
+                                partition@4C0000 {
+                                        /* 40MB for JFFS2 based Root file System */
+                                        reg = <0x4c0000 0x02800000>;
+                                        label = "filesystem";
+                                };
+                                partition@2cc0000 {
+                                        /* 1MB of Device Tree */
+                                        reg = <0x2cc0000 0x00100000>;
+                                        label = "devicetree";
+                                };
+                                partition@2dc0000 {
+                                        /* 210MB User Space*/
+                                        reg = <0x2dc0000 0x0d240000>;
+                                        label = "user_space";
+                                };
+			};
+                };
+        };
+};
+

@@ -9,6 +9,8 @@
  *  Copyright (C) 2009 emlix GmbH
  *  Author: Fabian Godehardt (added IrDA support for iMX)
  *
+ *  Copyright (C) 2013 Freescale Semiconductor, Inc.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -204,6 +206,7 @@ struct imx_port {
 	unsigned int		use_irda:1;
 	unsigned int		irda_inv_rx:1;
 	unsigned int		irda_inv_tx:1;
+	unsigned int		rs485_enable:1;
 	unsigned short		trcv_delay; /* transceiver delay */
 	struct clk		*clk_ipg;
 	struct clk		*clk_per;
@@ -233,6 +236,7 @@ static struct imx_uart_data imx_uart_devdata[] = {
 	},
 };
 
+/* d4400 UART shares its programming model with imx21-uart */
 static struct platform_device_id imx_uart_devtype[] = {
 	{
 		.name = "imx1-uart",
@@ -241,15 +245,26 @@ static struct platform_device_id imx_uart_devtype[] = {
 		.name = "imx21-uart",
 		.driver_data = (kernel_ulong_t) &imx_uart_devdata[IMX21_UART],
 	}, {
+		.name = "d4400-uart",
+		.driver_data = (kernel_ulong_t) &imx_uart_devdata[IMX21_UART],
+	}, {
 		/* sentinel */
 	}
 };
 MODULE_DEVICE_TABLE(platform, imx_uart_devtype);
 
 static struct of_device_id imx_uart_dt_ids[] = {
-	{ .compatible = "fsl,imx1-uart", .data = &imx_uart_devdata[IMX1_UART], },
-	{ .compatible = "fsl,imx21-uart", .data = &imx_uart_devdata[IMX21_UART], },
-	{ /* sentinel */ }
+	{	.compatible = "fsl,imx1-uart",
+		.data = &imx_uart_devdata[IMX1_UART],
+	}, {
+		.compatible = "fsl,imx21-uart",
+		.data = &imx_uart_devdata[IMX21_UART],
+	}, {
+		.compatible = "fsl,d4400-uart",
+		.data = &imx_uart_devdata[IMX21_UART],
+	}, {
+		/* sentinel */
+	}
 };
 MODULE_DEVICE_TABLE(of, imx_uart_dt_ids);
 
@@ -1430,6 +1445,9 @@ static int serial_imx_probe_dt(struct imx_port *sport,
 	if (of_get_property(np, "fsl,irda-mode", NULL))
 		sport->use_irda = 1;
 
+	if (of_get_property(np, "fsl,rs485-enable", NULL))
+		sport->rs485_enable = 1;
+
 	sport->devdata = of_id->data;
 
 	return 0;
@@ -1458,6 +1476,9 @@ static void serial_imx_probe_pdata(struct imx_port *sport,
 
 	if (pdata->flags & IMXUART_IRDA)
 		sport->use_irda = 1;
+
+	if (pdata->flags & IMXUART_RS485_ENABLE)
+		sport->rs485_enable = 1;
 }
 
 static int serial_imx_probe(struct platform_device *pdev)

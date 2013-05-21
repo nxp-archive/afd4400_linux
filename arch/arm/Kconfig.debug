@@ -103,6 +103,15 @@ choice
 		  Say Y here if you want the debug print routines to direct
 		  their output to the second serial port on these devices.
 
+	config DEBUG_D4400_UART
+		bool "D4400 Debug UART"
+		depends on SOC_D4400
+		help
+		  Say Y here if you want kernel low-level debugging
+		  support on D4400.
+		  It will enable the debug print routines to direct
+		  their output to UART4 serial port on D4400 evb board.
+
 	config DEBUG_DAVINCI_DA8XX_UART1
 		bool "Kernel low-level debugging on DaVinci DA8XX using UART1"
 		depends on ARCH_DAVINCI_DA8XX
@@ -459,6 +468,15 @@ config DEBUG_IMX6Q_UART_PORT
 	  Choose UART port on which kernel low-level debug messages
 	  should be output.
 
+config DEBUG_D4400_UART_PORT
+	int "D4400 Debug UART Port (1-4)" if DEBUG_D4400_UART
+	range 1 4
+	default 4
+	depends on SOC_D4400
+	help
+	  Choose UART port on which kernel low-level debug messages
+	  should be output.
+
 choice
 	prompt "Low-level debug console UART"
 	depends on DEBUG_LL && DEBUG_TEGRA_UART
@@ -498,7 +516,9 @@ config DEBUG_LL_INCLUDE
 				 DEBUG_IMX31_IMX35_UART || \
 				 DEBUG_IMX51_UART || \
 				 DEBUG_IMX50_IMX53_UART ||\
-				 DEBUG_IMX6Q_UART
+				 DEBUG_IMX6Q_UART || \
+				 DEBUG_D4400_UART
+
 	default "debug/highbank.S" if DEBUG_HIGHBANK_UART
 	default "debug/mvebu.S" if DEBUG_MVEBU_UART
 	default "debug/picoxcell.S" if DEBUG_PICOXCELL_UART

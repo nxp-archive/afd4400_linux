@@ -539,12 +539,14 @@ config BFIN_UART3_CTSRTS
 
 config SERIAL_IMX
 	bool "IMX serial port support"
-	depends on ARCH_MXC
+	depends on ARCH_MXC || ARCH_D4400
 	select SERIAL_CORE
 	select RATIONAL
 	help
-	  If you have a machine based on a Motorola IMX CPU you
+	  If you have a machine based on a Motorola IMX CPU or D4400 CPU you
 	  can enable its onboard serial port by enabling this option.
+	  D4400 driver share the same UART controller used in IMX21 SOC.
+	  Say Y to enable the driver.
 
 config SERIAL_IMX_CONSOLE
 	bool "Console on IMX serial port"

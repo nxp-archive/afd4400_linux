@@ -3,7 +3,7 @@
  * Copyright 2008 Juergen Beisert, kernel@pengutronix.de
  *
  * Based on code from Freescale,
- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+ * Copyright (C) 2004-2013 Freescale Semiconductor, Inc. All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -144,15 +144,30 @@ static struct platform_device_id mxc_gpio_devtype[] = {
 		.name = "imx35-gpio",
 		.driver_data = IMX35_GPIO,
 	}, {
+		.name = "d4400-gpio",
+		 /* D4400 GPIO shares its programming model with imx35 */
+		.driver_data = IMX35_GPIO,
+	}, {
 		/* sentinel */
 	}
 };
 
 static const struct of_device_id mxc_gpio_dt_ids[] = {
-	{ .compatible = "fsl,imx1-gpio", .data = &mxc_gpio_devtype[IMX1_GPIO], },
-	{ .compatible = "fsl,imx21-gpio", .data = &mxc_gpio_devtype[IMX21_GPIO], },
-	{ .compatible = "fsl,imx31-gpio", .data = &mxc_gpio_devtype[IMX31_GPIO], },
-	{ .compatible = "fsl,imx35-gpio", .data = &mxc_gpio_devtype[IMX35_GPIO], },
+	{ .compatible = "fsl,imx1-gpio",
+	.data = &mxc_gpio_devtype[IMX1_GPIO],
+	},
+	{ .compatible = "fsl,imx21-gpio",
+	.data = &mxc_gpio_devtype[IMX21_GPIO],
+	},
+	{ .compatible = "fsl,imx31-gpio",
+	.data = &mxc_gpio_devtype[IMX31_GPIO],
+	},
+	{ .compatible = "fsl,imx35-gpio",
+	.data = &mxc_gpio_devtype[IMX35_GPIO],
+	},
+	{ .compatible = "fsl,d4400-gpio",
+	.data = &mxc_gpio_devtype[IMX35_GPIO],
+	},
 	{ /* sentinel */ }
 };
 
@@ -450,7 +465,7 @@ static int mxc_gpio_probe(struct platform_device *pdev)
 		irq_set_chained_handler(port->irq, mx3_gpio_irq_handler);
 		irq_set_handler_data(port->irq, port);
 		if (port->irq_high > 0) {
-			/* setup handler for GPIO 16 to 31 */
+			/* setup handler for second entry, if it exists */
 			irq_set_chained_handler(port->irq_high,
 						mx3_gpio_irq_handler);
 			irq_set_handler_data(port->irq_high, port);

@@ -120,6 +120,18 @@ config PINCTRL_STN8815
 	bool "STN8815 pin controller driver"
 	depends on PINCTRL_NOMADIK && ARCH_NOMADIK
 
+config PINCTRL_D4400
+	bool "D4400 pinctrl driver"
+	depends on OF
+	depends on SOC_D4400
+	select PINMUX
+	select PINCONF
+	help
+	  Say Y here to enable the d4400 pinctrl driver.
+	  The d4400 Pin control have mux and pin configuration
+	  settings. Pin cofiguration details depends on the
+	  hardware interface/device connected on the board.
+
 config PINCTRL_DB8500
 	bool "DB8500 pin controller driver"
 	depends on PINCTRL_NOMADIK && ARCH_U8500

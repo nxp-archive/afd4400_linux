@@ -1,0 +1,233 @@
+/*
+ * Copyright 2013 Freescale Semiconductor, Inc.
+ * Copyright 2011 Linaro Ltd.
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+
+/include/ "skeleton.dtsi"
+
+/ {
+        aliases {
+                serial0 = &uart1;
+                serial1 = &uart2;
+                serial2 = &uart3;
+                serial3 = &uart4;
+                gpio0 = &gpioA;
+                gpio1 = &gpioB;
+                gpio2 = &gpioC;
+                gpio3 = &gpioD;
+                gpio4 = &gpioE;
+        };
+
+        cpus {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                cpu@0 {
+                        compatible = "arm,cortex-a9";
+                        reg = <0>;
+                        next-level-cache = <&L2>;
+                };
+        };
+
+        clocks {
+                #address-cells = <1>;
+                #size-cells = <0>;
+        };
+
+        intc: interrupt-controller@01015000 {
+                compatible = "arm,cortex-a9-gic";
+                #interrupt-cells = <3>;
+                #address-cells = <1>;
+                #size-cells = <1>;
+                interrupt-controller;
+                reg = <0x01015000 0x1000>, /* distributor address */
+                      <0x01014100 0x100>;  /* CPU interface address */
+        };
+
+        L2: l2-cache@10900000 {
+                compatible = "arm,pl310-cache";
+                reg = <0x10900000 0x4000>;
+                interrupts = <0 59 0x04>;
+                cache-unified;
+                cache-level = <2>;
+        };
+
+        soc@0 {
+                #address-cells = <1>;
+                #size-cells = <1>;
+                compatible = "simple-bus";
+                interrupt-parent = <&intc>;
+                ranges = <0x0 0x0 0xFFFFFFFF>;
+
+                aips-bus@1000000 { /* AIPS1 */
+                        compatible = "fsl,aips-bus", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0x1000000 0x200000>;
+                        ranges = <0x0 0x80000 0x180000>;
+
+                        mmdc0: mmdc@0 { /* MMDC0 */
+                                reg = <0x0 0x4000>;
+                                interrupts = <0 45 0x04>;
+                        };
+
+                        clks: ccm@014000 {
+                                compatible = "fsl,d4400-ccm";
+                                reg = <0x14000 0x4000>;
+                                #clock-cells = <1>;
+                        };
+
+                        weim@18000 {
+                                reg = <0x18000 0x4000>;
+                        };
+
+                        gpioA: gpio@54000 {
+                                compatible = "fsl,d4400-gpio";
+                                reg = <0x54000 0x4000>;
+                                interrupts = <0 159 0x04>;
+                                gpio-controller;
+                                #gpio-cells = <2>;
+                                interrupt-controller;
+                                #interrupt-cells = <2>;
+                        };
+
+                        gpioB: gpio@58000 {
+                                compatible = "fsl,d4400-gpio";
+                                reg = <0x58000 0x4000>;
+                                interrupts = <0 160 0x04>;
+                                gpio-controller;
+                                #gpio-cells = <2>;
+                                interrupt-controller;
+                                #interrupt-cells = <2>;
+                        };
+
+                        gpioC: gpio@5c000 {
+                                compatible = "fsl,d4400-gpio";
+                                reg = <0x5c000 0x4000>;
+                                interrupts = <0 161 0x04>;
+                                gpio-controller;
+                                #gpio-cells = <2>;
+                                interrupt-controller;
+                                #interrupt-cells = <2>;
+                        };
+
+                        gpioD: gpio@60000 {
+                                compatible = "fsl,d4400-gpio";
+                                reg = <0x60000 0x4000>;
+                                interrupts = <0 162 0x04>;
+                                gpio-controller;
+                                #gpio-cells = <2>;
+                                interrupt-controller;
+                                #interrupt-cells = <2>;
+                        };
+
+                        gpioE: gpio@64000 {
+                                compatible = "fsl,d4400-gpio";
+                                reg = <0x64000 0x4000>;
+                                interrupts = <0 163 0x04>;
+                                gpio-controller;
+                                #gpio-cells = <2>;
+                                interrupt-controller;
+                                #interrupt-cells = <2>;
+                        };
+
+                        epit@68000 {
+				compatible = "fsl,d4400-epit";
+                                reg = <0x68000 0x4000>;
+                                interrupts = <0 22 0x04>;
+                        };
+
+                        uart1: serial@6c000 {
+                                 compatible = "fsl,d4400-uart";
+                                 reg = <0x6c000 0x4000>;
+                                 interrupts = <0 0 0x04>;
+			/* FIXME-D4400: update this when clocks
+			 *   enum is defined in ccm. Change for all UART's
+			 */
+                                 clocks = <&clks 160>, <&clks 161>;
+
+			/* FIXME-D4400: want to change this to
+			 * something like "per" and "mod"
+			 * as per D4400 RM 29.4.2.1 and clock-bindings.txt.
+			 * Change for all UART's
+			 */
+                                 clock-names = "ipg", "per";
+                                 status = "disabled";
+                        };
+
+                        uart2: serial@70000 {
+                                 compatible = "fsl,d4400-uart";
+                                 reg = <0x70000 0x4000>;
+                                 interrupts = <0 1 0x04>;
+                                 clocks = <&clks 160>, <&clks 161>;
+                                 clock-names = "ipg", "per";
+                                 status = "disabled";
+                        };
+
+                        uart3: serial@74000 {
+                                 compatible = "fsl,d4400-uart";
+                                 reg = <0x74000 0x4000>;
+                                 interrupts = <0 2 0x04>;
+                                 clocks = <&clks 160>, <&clks 161>;
+                                 clock-names = "ipg", "per";
+                                 status = "disabled";
+                        };
+
+                        uart4: serial@78000 {
+                                 compatible = "fsl,d4400-uart";
+                                 reg = <0x78000 0x4000>;
+                                 interrupts = <0 3 0x04>;
+                                 clocks = <&clks 160>, <&clks 161>;
+                                 clock-names = "ipg", "per";
+                                 status = "disabled";
+                        };
+                };
+
+                aips-bus@1200000 { /* AIPS2 */
+                        compatible = "fsl,aips-bus", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0x1200000 0x2e00000>;
+                        ranges = <0x0 0x80000 0x2d80000>;
+                };
+
+                aips-bus@4000000 { /* AIPS3 */
+                        compatible = "fsl,aips-bus", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0x4000000 0x2000000>;
+                        ranges = <0x0 0x80000 0x1f80000>;
+
+                        iomuxc@0c000 {
+                                compatible = "fsl,d4400-iomuxc";
+                                reg = <0xc000 0x4000>, < 0x1c000 0x4000>;
+				reg-names = "iomuxc-ddr", "iomuxc-main";
+			/* FIXME-D4400: update pad setting when we have the info */
+                                uart4 {
+                                        pinctrl_uart4_1: uart4grp-1 {
+                                                fsl,pins = <
+                                                        350 0x80000000    /* D4400_PAD_UART4_TXD_UART_4_TXD */
+                                                        356 0x80000000    /* D4400_PAD_UART4_RXD_UART_4_RXD */
+                                                >;
+                                        };
+                                };
+                        };
+                };
+
+                weim-bus@30000000 {
+                        compatible = "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0x30000000 0x20000000>;
+                        ranges = <0x0 0x0 0x20000000>;
+                };
+        };
+};
+
