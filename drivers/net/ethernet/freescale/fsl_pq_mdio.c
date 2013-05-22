@@ -5,7 +5,7 @@
  * Author: Andy Fleming <afleming@freescale.com>
  * Modifier: Sandeep Gopalpet <sandeep.kumar@freescale.com>
  *
- * Copyright 2002-2004, 2008-2009, 2013 Freescale Semiconductor, Inc.
+ * Copyright 2002-2004, 2008-2009 Freescale Semiconductor, Inc.
  *
  * Based on gianfar_mii.c and ucc_geth_mii.c (Li Yang, Kim Phillips)
  *
@@ -89,27 +89,6 @@ struct fsl_pq_mdio_data {
 	void (*ucc_configure)(phys_addr_t start, phys_addr_t end);
 };
 
-static inline unsigned int fsl_mdio_read(unsigned __iomem *addr)
-{
-	unsigned int val;
-#ifdef CONFIG_ARM
-	val = readl(addr);
-#endif
-#ifdef CONFIG_PPC
-	val = in_be32(addr);
-#endif
-	return val;
-}
-
-static inline void fsl_mdio_write(u32 val, unsigned __iomem *addr)
-{
-#ifdef CONFIG_ARM
-	iowrite32(val, addr);
-#endif
-#ifdef CONFIG_PPC
-	out_be32(addr, val);
-#endif
-}
 /*
  * Write value to the PHY at mii_id at register regnum, on the bus attached
  * to the local interface, which may be different from the generic mdio bus
@@ -119,9 +98,6 @@ static inline void fsl_mdio_write(u32 val, unsigned __iomem *addr)
  * mdio pins, which may not be the same as system mdio bus, used for
  * controlling the external PHYs, for example.
  */
-
-
-
 static int fsl_pq_mdio_write(struct mii_bus *bus, int mii_id, int regnum,
 		u16 value)
 {
@@ -130,15 +106,14 @@ static int fsl_pq_mdio_write(struct mii_bus *bus, int mii_id, int regnum,
 	u32 status;
 
 	/* Set the PHY address and the register address we want to write */
-	fsl_mdio_write((mii_id << 8) | regnum, &regs->miimadd);
+	out_be32(&regs->miimadd, (mii_id << 8) | regnum);
 
 	/* Write out the value we want */
-	fsl_mdio_write(value, &regs->miimcon);
+	out_be32(&regs->miimcon, value);
 
 	/* Wait for the transaction to finish */
-	status = spin_event_timeout(!(fsl_mdio_read(&regs->miimind) &
-				MIIMIND_BUSY),
-			MII_TIMEOUT, 0);
+	status = spin_event_timeout(!(in_be32(&regs->miimind) &	MIIMIND_BUSY),
+				    MII_TIMEOUT, 0);
 
 	return status ? 0 : -ETIMEDOUT;
 }
@@ -161,22 +136,21 @@ static int fsl_pq_mdio_read(struct mii_bus *bus, int mii_id, int regnum)
 	u16 value;
 
 	/* Set the PHY address and the register address we want to read */
-	fsl_mdio_write(((mii_id << 8) | regnum), &regs->miimadd);
+	out_be32(&regs->miimadd, (mii_id << 8) | regnum);
 
 	/* Clear miimcom, and then initiate a read */
-	fsl_mdio_write(0, &regs->miimcom);
-	fsl_mdio_write(MII_READ_COMMAND, &regs->miimcom);
+	out_be32(&regs->miimcom, 0);
+	out_be32(&regs->miimcom, MII_READ_COMMAND);
 
 	/* Wait for the transaction to finish, normally less than 100us */
-
-	status = spin_event_timeout(!(fsl_mdio_read(&regs->miimind) &
+	status = spin_event_timeout(!(in_be32(&regs->miimind) &
 				    (MIIMIND_NOTVALID | MIIMIND_BUSY)),
-				    MII_TIMEOUT, 10);
+				    MII_TIMEOUT, 0);
 	if (!status)
 		return -ETIMEDOUT;
 
 	/* Grab the value of the register from miimstat */
-	value = fsl_mdio_read(&regs->miimstat);
+	value = in_be32(&regs->miimstat);
 
 	dev_dbg(&bus->dev, "read %04x from address %x/%x\n", value, mii_id, regnum);
 	return value;
@@ -192,15 +166,14 @@ static int fsl_pq_mdio_reset(struct mii_bus *bus)
 	mutex_lock(&bus->mdio_lock);
 
 	/* Reset the management interface */
-	fsl_mdio_write(MIIMCFG_RESET, &regs->miimcfg);
+	out_be32(&regs->miimcfg, MIIMCFG_RESET);
 
 	/* Setup the MII Mgmt clock speed */
-	fsl_mdio_write(MIIMCFG_INIT_VALUE, &regs->miimcfg);
+	out_be32(&regs->miimcfg, MIIMCFG_INIT_VALUE);
 
 	/* Wait until the bus is free */
-	status = spin_event_timeout(!(fsl_mdio_read(&regs->miimind) &
-				MIIMIND_BUSY),
-			MII_TIMEOUT, 0);
+	status = spin_event_timeout(!(in_be32(&regs->miimind) &	MIIMIND_BUSY),
+				    MII_TIMEOUT, 0);
 
 	mutex_unlock(&bus->mdio_lock);
 
@@ -461,7 +434,7 @@ static int fsl_pq_mdio_probe(struct platform_device *pdev)
 
 			tbipa = data->get_tbipa(priv->map);
 
-			fsl_mdio_write(be32_to_cpup(prop), tbipa);
+			out_be32(tbipa, be32_to_cpup(prop));
 		}
 	}
 
