@@ -51,4 +51,3 @@ obj-$(CONFIG_ALTERA_STAPL)	+=altera-stapl/
 obj-$(CONFIG_INTEL_MEI)		+= mei/
 obj-$(CONFIG_HWLAT_DETECTOR)	+= hwlat_detector.o
 obj-$(CONFIG_LANDSHARK)		+= landshark.o
-obj-$(CONFIG_VSPA)		+= vspa.o
