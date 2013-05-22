@@ -346,6 +346,8 @@ static int conf_phy_gasket(struct transport_device *tdev)
 
 void stop_link(struct transport_device *tdev, u32 timer_id)
 {
+/*XXX: Revisit link stopping */
+#if 0
 	/*sysref_rose config*/
 	if (tdev->transport_type == DEVICE_TX) {
 		spin_lock(&tdev->sysref_lock);
@@ -362,6 +364,7 @@ void stop_link(struct transport_device *tdev, u32 timer_id)
 		jesd_clear_bit(SW_DMA_BIT17, &tdev->rx_regs->rx_transcontrol);
 		spin_unlock(&tdev->sysref_lock);
 	}
+#endif
 }
 
 void start_link(struct transport_device *tdev)

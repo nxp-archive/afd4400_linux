@@ -32,54 +32,63 @@ enum tbgen_dev_state {
 	TBG_STATE_RFG_FAILED,
 	TBG_STATE_RFG_RESET,
 };
+
+enum strobe_mode {
+	STROBE_TOGGLE,
+	STROBE_PULSE,
+	STROBE_CYCLE
+};
+
 /** \struct timer params
  *   timer params for the alignment timer of jesd204
  */
 struct timer_param {
-	uint8_t enable; /*this shall be a bool type 0 = disable 1 = enable*/
-	uint8_t jxstrobe;
-	uint8_t perodic;
-	uint32_t perodic_int;
+	__u32 config_flags;
+	enum strobe_mode strobe_mode;
+	__u32 interval;
+	__u8 pulse_width;
+	__u64 offset;
 };
+
+/* config flags */
+#define TIMER_CONF_ACTIVE_LOW			(1 << 0)
+#define TIMER_CONF_SYNC_ERR_DETECT_EN		(1 << 1)
+#define TIMER_CONF_SYNC_BYPASS			(1 << 2)
+#define TIMER_CONF_OUTSEL_TX_IDLE_EN		(1 << 3)
+#define TIMER_CONF_ONE_SHOT			(1 << 4)
+#define TIMER_CONF_ENABLE_TIMER			(1 << 5)
+
 /** \struct jesd alignemnet timer params config
  *
  */
-struct jesd_align_timer_params {
+struct alignment_timer_params {
 	uint32_t id;
 	enum timer_type type;
-	uint8_t jesd_no;
 	struct timer_param timer;
-	uint32_t jx_start_tmr;
 };
 
-/** \struct irq_conf
- *  @brief structure instance for interrupt configuration
- */
-struct irq_conf {
-	__u8 rfg_err_ie;
-	__u8 frm_sync_ie;
-	__u8 re_sync_ie;
-};
 /** \struct tbg_pll
  *  @brief structure for PLL
  */
 struct tbg_pll {
-	__u8 pll_mode; /*0 = 614.4, 1 = 983.04*/
-	__u8 clock_src; /*0 = devclk 1, 1 = sgmii*/
+	__u32 refclk_khz;
+	__u8 clk_src;
 	__u8 tbgen_in_standby; /*0 = disable pll 1=ebable pll in standy*/
 };
-/** \struct tbgen params
- * params for tbgen clock configuration and pll
- */
-struct tbgen_param {
-	struct tbg_pll tbgen_pll;
-};
+
+/* Refclk values in KHZ */
+#define REF_CLK_614MHZ          614400
+#define REF_CLK_983MHZ          983040
+#define REF_CLK_122MHZ          122880
+
+#define TBG_CLK_SRC_DEVCLK	1
+#define TBG_CLK_SRC_SGMII	2
+
 /** \struct tbg_rfg
  * params for rfg init
  */
 struct tbg_rfg {
 	__u32 drift_threshold;
-	__u8 ref_syncsel;
 	__u8 sync_adv;
 };
 /** \struct register configuration
@@ -99,12 +108,13 @@ struct tbgen_reg_write_buf {
 	struct tbgen_wreg *regs;
 	__u32 count;
 };
-/** \struct timer_disable
+/** \struct timer_ctrl
  *  @brief for disabling the timer under instance
  */
-struct timer_disable {
-	uint8_t	timer_identifier;
-	enum timer_type tmr_type;
+struct timer_ctrl {
+	__u8 id;
+	__u8 enable;
+	enum timer_type type;
 };
 /** \struct tbgen_device_info
  *  @brief structure for txtimer instances
@@ -116,28 +126,26 @@ struct tbgen_device_info {
  * tbgen_num is 't'
  */
 #define TDGEN_NUM 't'
-#define TBGEN_ALIGNMENT_TIMERS		_IOW(TDGEN_NUM, 0x801, \
-						struct jesd_align_timer_params*)
-#define TBGEN_REALIGNMENT_TIMERS	_IOW(TDGEN_NUM, 0x802, \
-						struct jesd_align_timer_params*)
-#define TBGEN_ISR_MASK			_IOW(TDGEN_NUM, 0x803, \
-						struct irq_conf)
-#define TBGEN_SET_PLL			_IOW(TDGEN_NUM, 0x804, \
-						struct tbgen_param)
-#define TBGEN_RFG			_IOW(TDGEN_NUM, 0x805, \
+#define IOCTL_IDX	0x0
+
+#define TBGEN_CONFIG_TIMER		_IOW(TDGEN_NUM, (IOCTL_IDX + 1), \
+						struct alignment_timer_params*)
+#define TBGEN_TIMER_CTRL		_IOW(TDGEN_NUM, (IOCTL_IDX + 2), \
+						struct timer_ctrl*)
+#define TBGEN_SET_PLL			_IOW(TDGEN_NUM, (IOCTL_IDX + 4), \
+						struct tbg_pll)
+#define TBGEN_RFG_INIT			_IOW(TDGEN_NUM, (IOCTL_IDX + 5), \
 						struct tbg_rfg)
-#define TBGEN_RFG_RESET			_IOW(TDGEN_NUM, 0x806, \
+#define TBGEN_RFG_RESET			_IOW(TDGEN_NUM, (IOCTL_IDX + 6), \
 						struct tbg_rfg)
-#define TBGEN_RFG_ENABLE		_IO(TDGEN_NUM, 0x807)
-#define TBGEN_WRITE_REG			_IOW(TDGEN_NUM, 0x808, \
+#define TBGEN_RFG_ENABLE		_IO(TDGEN_NUM, (IOCTL_IDX + 7))
+#define TBGEN_WRITE_REG			_IOW(TDGEN_NUM, (IOCTL_IDX + 8), \
 						struct tbgen_reg_write_buf*)
-#define TBGEN_READ_REG			_IOR(TDGEN_NUM, 0x809, \
+#define TBGEN_READ_REG			_IOR(TDGEN_NUM, (IOCTL_IDX + 9), \
 						struct tbgen_reg_read_buf*)
-#define TBGEN_DISABLE_TIMER_INSTANCE	_IOW(TDGEN_NUM, 0x80a, \
-						struct timer_disable*)
-#define TBGEN_GET_MASTER_COUNTER	_IOR(TDGEN_NUM, 0x80b, __u64)
-#define TBGEN_GET_L10MCNTR		_IOR(TDGEN_NUM, 0x80c, __u64)
-#define TBGEN_GET_DEV_INFO		_IOR(TDGEN_NUM, 0x80d, \
+#define TBGEN_GET_MASTER_COUNTER	_IOR(TDGEN_NUM, (IOCTL_IDX + 10), __u64)
+#define TBGEN_GET_L10MCNTR		_IOR(TDGEN_NUM, (IOCTL_IDX + 11), __u64)
+#define TBGEN_GET_DEV_INFO		_IOR(TDGEN_NUM, (IOCTL_IDX + 12), \
 						struct tbgen_device_info*)
-#define TBGEN_RESET			_IO(TDGEN_NUM, 0x80e)
+#define TBGEN_RESET			_IO(TDGEN_NUM, (IOCTL_IDX + 13))
 #endif
