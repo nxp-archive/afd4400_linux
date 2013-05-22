@@ -84,11 +84,11 @@
 				<0x0 0 107 0x4 &gpio4 22 0x04>, /* CPRI 1 framer 1 Tx control */
 				<0x0 0 109 0x4 &gpio4 24 0x04>, /* CPRI 1 framer 1 Rx control */
 				<0x0 0 111 0x4 &gpio4 30 0x04>, /* CPRI 1 Error */
-				<0x0 0 138 0x4 &gpio5 14 0x08>, /* JESD Rx1 */
-				<0x0 0 151 0x4 &gpio5 17 0x08>, /* JESD Tx1 */
-				<0x0 0 215 0x4 &gpio4 27 0x01>, /* eTSEC group0 Rx */
-				<0x0 0 216 0x4 &gpio5 11 0x01>, /* eTSEC group0 Tx */
-				<0x0 0 217 0x4 &gpio4 26 0x01>; /* eTSEC group0 error */
+				<0x0 0 138 0x4 &gpio5 14 0x04>, /* JESD Rx1 */
+				<0x0 0 151 0x4 &gpio5 17 0x04>, /* JESD Tx1 */
+				<0x0 0 222 0x4 &gpio4 27 0x01>, /* eTSEC group0 Rx */
+				<0x0 0 223 0x4 &gpio5 11 0x01>, /* eTSEC group0 Tx */
+				<0x0 0 224 0x4 &gpio4 26 0x01>; /* eTSEC group0 error */
 
 			cpri@0x0C100000 {
 				#address-cells = <1>;
@@ -173,7 +173,6 @@
 					device_type = "ethernet-phy";
 				};
 			};
-
                    vspa@0x0C080000 {
                            compatible = "fsl,vspa";
                            reg = <0x0C080000 0x800>;
