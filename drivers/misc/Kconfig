@@ -541,6 +541,13 @@ config LANDSHARK
 	help
 	 The Landshark is the kernel driver part of the user space memory
 	 management library.
+config VSPA
+	tristate "VSPA Driver"
+	depends on (SOC_D4400 || SOC_IMX6Q)
+	default y
+	help
+	 The VSPA kernel driver is the part of user space library providing
+	 primitives for the VSPA driver in user space
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
