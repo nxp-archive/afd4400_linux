@@ -1722,7 +1722,6 @@ static void gfar_halt_nodisable(struct net_device *dev)
 	struct gfar __iomem *regs = NULL;
 	u32 tempval;
 	int i;
-	int timeout = 100;
 
 	for (i = 0; i < priv->num_grps; i++) {
 		regs = priv->gfargrp[i].regs;
@@ -1744,27 +1743,11 @@ static void gfar_halt_nodisable(struct net_device *dev)
 		gfar_write(&regs->dmactrl, tempval);
 
 		do {
-#ifndef __BIG_ENDIAN
-			while(((gfar_read(&regs->ievent) & (IEVENT_GRSC | IEVENT_GTSC)) != (IEVENT_GRSC | IEVENT_GTSC)) && timeout--) {
-				udelay(100);
-			}
-			if(0 == timeout)
-				ret = 0;
-			else
-				ret = ((gfar_read(&regs->ievent) & (IEVENT_GRSC | IEVENT_GTSC)) == (IEVENT_GRSC | IEVENT_GTSC));
-#else
 			ret = spin_event_timeout(((gfar_read(&regs->ievent) &
 				 (IEVENT_GRSC | IEVENT_GTSC)) ==
 				 (IEVENT_GRSC | IEVENT_GTSC)), 1000000, 0);
-#endif
 			if (!ret && !(gfar_read(&regs->ievent) & IEVENT_GRSC))
 				ret = __gfar_is_rx_idle(priv);
-#ifdef MEDUSA_OCRAM_MEM
-			if((-1 == timeout) && (0 == ret)) {
-				printk("RESET board and ensure FPGA INIT to use TSEC\n");
-				break;
-			}
-#endif
 		} while (!ret);
 	}
 }
