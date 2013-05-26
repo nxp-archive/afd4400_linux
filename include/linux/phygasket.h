@@ -25,13 +25,15 @@
 #define GASKET2 2
 
 /*patgen defs*/
-#define JESD204TX 1
-#define TEST_PATT 2
-#define RX_PHY	3
-#define RX_LOOPBACK 4
+enum phygasket_data_src {
+	PHY_DATA_JESDTX,
+	PHY_DATA_JESDRX,
+	PHY_DATA_TEST_PATTRN,
+	PHY_DATA_RX_LOOPBACK
+};
 
 struct phy_gasket_regs {
-	u32 reserved0[1023];
+	u32 reserved0[1024];
 	u32 tx_lane0_ctrl;
 	u32 tx_lane1_ctrl;
 	u32 tx_lane2_ctrl;
@@ -57,9 +59,16 @@ struct phy_gasket_regs {
 	u32 rx_softreset;
 	u32 reserved3[(0x2000 - 0x108C)/sizeof(u32)];
 };
-/** @brief phygasket which hold info for the phy gasket
-* this instance is to be used by all the transports
-*/
+/* Tx lane ctrl */
+#define TX_INV			(1 << 8)
+#define TX_SRC_MASK		0x3
+#define TX_SRC_JESDTX		0
+#define TX_SRC_TEST_PATTRN	0x3
+
+/* Rx lane ctrl */
+#define RX_INV			(1 << 8)
+#define RX_SRC_LOOPBACK_EN	(1 << 0)
+
 struct phygasket_private {
 	spinlock_t lock;
 	struct list_head phy_list;
@@ -116,8 +125,9 @@ int phy_swap_lanes(struct phygasket *phy, u8 lane,
 				u8 swap, u8 device);
 int phy_inverse_lanes(struct phygasket *phy, u8 lane,
 				u8 invert, u8 device);
+
 int phy_gasket_lane_ctrl(struct phygasket *phy,
-				u8 mode, u8 lane);
+	enum phygasket_data_src data_src, u8 lane);
 int do_patter_generator(struct phygasket *phy, struct patgen *pgen);
 struct phygasket *map_phygasket(struct device_node *phy_node);
 #endif /*PHYGASKET_H_*/

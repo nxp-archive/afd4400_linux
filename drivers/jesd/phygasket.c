@@ -57,31 +57,35 @@ void invert_lanes(u32 *offset, u8 lane, u8 invert)
 		jclear_bit(8, offset);
 }
 
-void set_txlanes_jesd204tx(u32 *offset, u8 lane)
+void phygasket_config_tx_lane(u32 *lane0_ctrl_reg, u8 lane,
+	enum phygasket_data_src data_src)
 {
-	offset = offset + lane;
-	jclear_bit(0, offset);
-	jclear_bit(1, offset);
+	u32 *reg, val;
+
+	reg = lane0_ctrl_reg + lane;
+	val = ioread32(reg);
+	val &= ~TX_SRC_MASK;
+
+	if (data_src == PHY_DATA_JESDTX)
+		val |= TX_SRC_JESDTX;
+	else if (data_src == PHY_DATA_TEST_PATTRN)
+		val |= TX_SRC_TEST_PATTRN;
+
+	iowrite32(val, reg);
 }
 
-void set_txlanes_testpattern(u32 *offset, u8 lane)
+void phygasket_config_rx_lane(u32 *lane0_ctrl_reg, u8 lane,
+	enum phygasket_data_src data_src)
 {
-	offset = offset + lane;
-	jset_bit(0, offset);
-	jset_bit(1, offset);
-}
+	u32 *reg, val;
 
-void set_rxlanes_phy(u32 *offset, u8 lane)
-{
-	offset = offset + lane;
-	jclear_bit(0, offset);
-}
+	reg = lane0_ctrl_reg + lane;
+	val = ioread32(reg);
+	val &= ~RX_SRC_LOOPBACK_EN;
 
-
-void set_rxlanes_loopback(u32 *offset, u8 lane)
-{
-	offset = offset + lane;
-	jset_bit(0, offset);
+	if (data_src == PHY_DATA_RX_LOOPBACK)
+		val |= RX_SRC_LOOPBACK_EN;
+	iowrite32(val, reg);
 }
 
 struct phygasket *map_phygasket(struct device_node *phy_node)
@@ -159,28 +163,27 @@ int phy_inverse_lanes(struct phygasket *phy, u8 lane, u8 invert, u8 device)
 	return 0;
 }
 
-int phy_gasket_lane_ctrl(struct phygasket *phy, u8 mode, u8 lane)
+int phy_gasket_lane_ctrl(struct phygasket *phy,
+	enum phygasket_data_src data_src, u8 lane)
 {
 	int retcode = 0;
-	switch (mode) {
-	case JESD204TX:
-		set_txlanes_jesd204tx(&phy->pregs->tx_lane0_ctrl, lane);
-		break;
-	case TEST_PATT:
-		set_txlanes_testpattern(&phy->pregs->tx_lane0_ctrl, lane);
-		break;
 
-	case RX_PHY:
-		set_rxlanes_phy(&phy->pregs->rx_lane0_ctrl, lane);
+	switch (data_src) {
+	case PHY_DATA_JESDTX:
+	case PHY_DATA_TEST_PATTRN:
+		phygasket_config_tx_lane(&phy->pregs->tx_lane0_ctrl,
+			lane, data_src);
 		break;
-
-	case RX_LOOPBACK:
-		set_rxlanes_loopback(&phy->pregs->rx_lane0_ctrl, lane);
+	case PHY_DATA_JESDRX:
+	case PHY_DATA_RX_LOOPBACK:
+		phygasket_config_rx_lane(&phy->pregs->rx_lane0_ctrl,
+			lane, data_src);
 		break;
 	default:
-		retcode = -ENOTTY;
+		retcode = -EINVAL;
 		break;
 	}
+
 	return retcode;
 }
 

@@ -27,17 +27,22 @@ enum jesd_state {
 	SUSPENDED,
 	ERROR,
 };
-/** @brief \struct configure the transport
-*/
-struct conf_tr {
-	unsigned long sampling_rate;
-	__u8 delay; /*Rx/Tx delay*/
-	__u32 tran_flg;
+
+enum jesd_dev_type {
+	JESD_DEV_TX,
+	JESD_DEV_RX,
+	JESD_DEV_SRX,
+	JESD_DEV_INVAL,
+};
+struct jesd_dev_params {
+	unsigned long data_rate;
+	__u8 delay;
+	__u32 config_flags;
 	__u32 lanes;
+	int ilas_length;
 };
 
-/** @brief transport flag bit test params -- start
-*/
+/* config_flags */
 #define	RESERVED_BIT_0		0
 #define	MS_OCT_FIRST_VALID	1/*for tx*/
 #define	WCBUF_PROTECT_VALID	2/*for tx*/
@@ -52,11 +57,8 @@ struct conf_tr {
 #define	TN_CHK_CSUM_VALID	11/*for rx*/
 #define	PHY_OCT_FIRST_VALID	12/*for rx*/
 #define	RCBUF_PROTECT_VALID	13/*for rx*/
-#define	RESERVED_BIT_14		14
-#define	RESERVED_BIT_15		15
-#define	NO_TRANSPORT_EVENTS	16
-/*trans_flg end*/
 
+#define CONF_PHYGASKET_LOOPBACK_EN	(1 << 16)
 /** @brief \struct ils params
  */
 struct ils_params {
@@ -211,11 +213,10 @@ struct jesd_reg_read_buf {
 };
 /** @brief \struct tansport device info
 */
-struct transport_device_info {
+struct jesd_transport_dev_info {
 	enum jesd_state dev_state;
 	struct ils_params ils;
-	struct conf_tr init_params;
-	__u32 ilas_len;
+	struct jesd_dev_params init_params;
 };
 /** @brief \struct restart timer inputs
  * this inputs shall be from the tbgen
@@ -269,48 +270,40 @@ struct auto_sync_params {
 	uint8_t	 error_threshold;
 };
 
-/*IOCTL intefrace details.. this shall be common across the driver and lib*/
-/*dev comment Ram.I need to give the command a tag to get hold*/
 #define JESD204_IOCTL 'j'
+#define JESD_IOCTL_IDX	0x801
 
-#define JESD_SET_TRANS_PARAMS	_IOW(JESD204_IOCTL, 0x801, \
-						struct conf_tr*)
-#define JESD_SET_LANE_PARAMS	_IOW(JESD204_IOCTL, 0x802, \
-						struct ils_params*)
-#define JESD_SET_ILS_LENGTH	_IOW(JESD204_IOCTL, 0x803, \
+#define JESD_DEVICE_INIT	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 1), \
+						struct jesd_dev_params *)
+#define JESD_SET_LANE_PARAMS	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 2), \
+						struct ils_params *)
+#define JESD_SET_ILS_LENGTH	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 3), \
 						unsigned int)
-#define JESD_SET_INTERRUPTMASK	_IOW(JESD204_IOCTL, 0x804, \
-						struct isrconf*)
-#define JESD_GET_INTERRUPTMASK	_IOR(JESD204_IOCTL, 0x805, \
-						struct isrconf*)
-#define JESD_DEIVCE_START	_IO(JESD204_IOCTL, 0x806)
-#define JESD_TX_TEST_MODE	_IOR(JESD204_IOCTL, 0x807, \
-						struct conf_tx_tests*)
-#define JESD_RX_TEST_MODE	_IOR(JESD204_IOCTL, 0x808, \
-						struct conf_rx_tests*)
-#define JESD_FORCE_SYNC		_IO(JESD204_IOCTL, 0x809)
-#define JESD_WRITE_REG		_IOW(JESD204_IOCTL, 0x80a, \
-						struct jesd_reg_write_buf*)
-#define JESD_READ_REG		_IOR(JESD204_IOCTL, 0x80b, \
-						struct jesd_reg_read_buf*)
-#define JESD_SHUTDOWN		_IO(JESD204_IOCTL, 0x80c)
-#define JESD_GET_DEVICE_INFO	_IOR(JESD204_IOCTL, 0x80d, \
-						struct transport_device_info*)
-#define JESD_DEV_RESTART	_IOW(JESD204_IOCTL, 0x80e, \
-						struct tbgen_params*)
-#define JESD_GET_STATS		_IOW(JESD204_IOCTL, 0x80f, \
-						struct tarns_dev_stats*)
-#define JESD_CLEAR_STATS	_IO(JESD204_IOCTL, 0x810)
-#define JESD_GET_LANE_RX_RECEIVED_PARAMS _IOW(JESD204_IOCTL, 0x811, \
-						struct ils_params*)
-#define JESD_RX_AUTO_SYNC	_IOW(JESD204_IOCTL, 0x812, \
-						struct auto_sync_params*)
-#define JESD_GET_DEVICE_STATE   _IOR(JESD204_IOCTL, 0x813, \
-						enum jesd_state*)
-#define JESD_SET_DEVICE_STATE   _IOW(JESD204_IOCTL, 0x814, \
-						enum jesd_state*)
-
-#define JESD_READ_PHYGASKET_REG		_IOR(JESD204_IOCTL, 0x815, \
-						struct jesd_reg_read_buf*)
+#define JESD_TX_TEST_MODE	_IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 6), \
+						struct conf_tx_tests *)
+#define JESD_RX_TEST_MODE	_IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 7), \
+						struct conf_rx_tests *)
+#define JESD_FORCE_SYNC		_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 8))
+#define JESD_WRITE_REG		_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 9), \
+						struct jesd_reg_write_buf *)
+#define JESD_READ_REG		_IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 10), \
+						struct jesd_reg_read_buf *)
+#define JESD_DEVICE_STOP	_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 11))
+#define JESD_GET_DEVICE_INFO	_IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 12), \
+					struct jesd_transport_dev_info *)
+#define JESD_GET_STATS		_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 13), \
+						struct tarns_dev_stats *)
+#define JESD_CLEAR_STATS	_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 14))
+#define JESD_GET_LANE_RX_RECEIVED_PARAMS _IOW(JESD204_IOCTL,\
+					(JESD_IOCTL_IDX + 15), \
+					struct ils_params *)
+#define JESD_RX_AUTO_SYNC	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 16), \
+						struct auto_sync_params *)
+#define JESD_GET_DEVICE_STATE   _IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 17), \
+						enum jesd_state *)
+#define JESD_READ_PHYGASKET_REG		_IOR(JESD204_IOCTL,\
+						(JESD_IOCTL_IDX + 18), \
+						struct jesd_reg_read_buf *)
+#define JESD_DEVICE_START	_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 19))
 /*IOCTL end*/
 #endif

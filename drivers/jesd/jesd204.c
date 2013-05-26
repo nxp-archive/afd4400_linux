@@ -26,6 +26,8 @@
 #include <linux/interrupt.h>
 #include <linux/ioctl.h>
 #include <linux/io.h>
+#include <linux/delay.h>
+#include <linux/workqueue.h>
 #include <linux/tbgen.h>
 #include <linux/jesd204.h>
 #include <linux/phygasket.h>
@@ -39,23 +41,21 @@
 static struct class *jesd204_class;
 static struct jesd204_private *pri;
 
-static int jesd_init_transport(struct transport_device *tdev,
-					struct conf_tr __user *trans_p);
-static int jesd_set_ils_pram(struct transport_device *tdev);
-static int jesd_set_ilas_len(struct transport_device *tdev, int length);
-static int shutdown(struct transport_device *tdev);
-static int force_sync(struct transport_device *tdev);
-static int get_device_name(struct transport_device *tdev);
+static int jesd_init_transport(struct jesd_transport_dev *tdev,
+				struct jesd_dev_params *trans_p);
+static int jesd_set_ils_pram(struct jesd_transport_dev *tdev);
+static int jesd_set_ilas_len(struct jesd_transport_dev *tdev, int length);
+static int jesd_dev_stop(struct jesd_transport_dev *tdev);
+static int jesd_force_sync(struct jesd_transport_dev *tdev);
+static int get_device_name(struct jesd_transport_dev *tdev);
 
-/*support functions*/
-static int setclkdiv(struct transport_device *tdev);
-static int conf_phy_gasket(struct transport_device *tdev);
+static int jesd_setclkdiv(struct jesd_transport_dev *tdev);
 
 static void write_reg(u32 *reg, unsigned int offset,
 			unsigned int length, u32 *buf);
 
-static int jesd_conf_tests(struct transport_device *tdev);
-static void raise_exception(struct transport_device *tdev,
+static int jesd_conf_tests(struct jesd_transport_dev *tdev);
+static void raise_exception(struct jesd_transport_dev *tdev,
 				unsigned int event_typ);
 
 /**@brief inline for set, clear and test bits for 32 bit
@@ -104,317 +104,86 @@ void jesd_update_reg(u32 *reg, u32 val, u32 mask)
 	iowrite32(reg_val, reg);
 }
 
+void jesd_write_reg(u32 *reg, u32 val)
+{
+	iowrite32(val, reg);
+}
+
+void jesd_read_reg(u32 *reg)
+{
+	ioread32(reg);
+}
+
 static void handel_skew_err(void)
 {
 	/*yet to be impelemented
 	invalid function until req is cleared */
 }
 
-static int phy_config_tx_testmode(struct transport_device *tdev)
+static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 {
-	int rc = 0;
-	phy_gasket_lane_ctrl(tdev->phy, TEST_PATT,
-					tdev->lane_devs[LANEID_FOR_0]->id);
+	int rc = 0, i;
+	struct lane_device *lane;
+	enum phygasket_data_src phy_data_src;
 
-	if (tdev->identifier == TRANPORT_0 &&
-				tdev->active_lanes == 2) {
+	dev_info(tdev->dev, "%s: type %d, dev_flags %x\n", tdev->name,
+		tdev->type, tdev->dev_flags);
 
-		tdev->lane_devs[LANEID_FOR_1]->id =
-					tdev->lane_id[LANEID_FOR_SECONDARY];
-
-		if (tdev->lane_devs[LANEID_FOR_1]->id < 0) {
-			rc = -EINVAL;
-			goto fail;
-		}
-
-		phy_gasket_lane_ctrl(tdev->phy, TEST_PATT,
-				tdev->lane_devs[LANEID_FOR_1]->id);
-	}
-
-	do_patter_generator(tdev->phy, &tdev->tx_tests.tx_patgen);
-
-fail:
-	return rc;
-}
-
-static int phy_config_rx_testmode(struct transport_device *tdev)
-{
-	int rc = 0;
-	phy_gasket_lane_ctrl(tdev->phy, RX_LOOPBACK,
-					tdev->lane_devs[LANEID_FOR_0]->id);
-
-	if (tdev->identifier == TRANPORT_0 &&
-				tdev->active_lanes == 2) {
-		tdev->lane_devs[LANEID_FOR_1]->id =
-				tdev->lane_id[LANEID_FOR_SECONDARY];
-
-		if (tdev->lane_devs[LANEID_FOR_1]->id < 0) {
-			rc = -EINVAL;
-			goto fail;
-		}
-		phy_gasket_lane_ctrl(tdev->phy, RX_LOOPBACK,
-				tdev->lane_devs[LANEID_FOR_1]->id);
-	}
-
-	do_patter_generator(tdev->phy, &tdev->tx_tests.tx_patgen);
-fail:
-	return rc;
-}
-
-static int phy_config_tx_normalmode(struct transport_device *tdev)
-{
-	int rc = 0;
-
-	phy_gasket_lane_ctrl(tdev->phy, JESD204TX,
-					tdev->lane_devs[LANEID_FOR_0]->id);
-
-	if (tdev->identifier == TRANPORT_0 &&
-				tdev->active_lanes == 2) {
-
-		tdev->lane_devs[LANEID_FOR_1]->id =
-				tdev->lane_id[LANEID_FOR_SECONDARY];
-
-		if (tdev->lane_devs[LANEID_FOR_1]->id < 0) {
-			rc = -EINVAL;
-			goto fail;
-		}
-
-		phy_gasket_lane_ctrl(tdev->phy, JESD204TX,
-				tdev->lane_devs[LANEID_FOR_1]->id);
-	}
-fail:
-	return rc;
-}
-
-static int phy_config_rx_normalmode(struct transport_device *tdev)
-{
-	int rc = 0;
-
-	phy_gasket_lane_ctrl(tdev->phy, RX_PHY,
-					tdev->lane_devs[LANEID_FOR_0]->id);
-
-	if (tdev->identifier == TRANPORT_0 &&
-					tdev->active_lanes == 2) {
-
-		tdev->lane_devs[LANEID_FOR_1]->id =
-				tdev->lane_id[LANEID_FOR_SECONDARY];
-
-		if (tdev->lane_devs[LANEID_FOR_1]->id < 0) {
-			rc = -EINVAL;
-			goto fail;
-		}
-
-		phy_gasket_lane_ctrl(tdev->phy, RX_PHY,
-				tdev->lane_devs[LANEID_FOR_1]->id);
-	}
-
-fail:
-	return rc;
-}
-
-
-static void do_tx_soft_reset(struct transport_device *tdev)
-{
-	/*soft reset == 1*/
-	phy_softreset(tdev->phy, DEVICE_TX, 1,
-					tdev->lane_devs[LANEID_FOR_0]->id);
-
-	if (tdev->identifier == TRANPORT_0 &&
-					tdev->active_lanes == 2) {
-		phy_softreset(tdev->phy, DEVICE_TX, 1,
-				tdev->lane_devs[LANEID_FOR_1]->id);
-	}
-	/*soft reset == 0*/
-	phy_softreset(tdev->phy, DEVICE_TX, 0,
-					tdev->lane_devs[LANEID_FOR_0]->id);
-
-	if (tdev->identifier == TRANPORT_0 &&
-				tdev->active_lanes == 2) {
-		phy_softreset(tdev->phy, DEVICE_TX, 0,
-				tdev->lane_devs[LANEID_FOR_1]->id);
-	}
-}
-
-static void do_rx_soft_reset(struct transport_device *tdev)
-{
-	/*soft reset == 1*/
-	phy_softreset(tdev->phy, DEVICE_RX, 1,
-					tdev->lane_devs[LANEID_FOR_0]->id);
-
-	if (tdev->identifier == TRANPORT_0 &&
-					tdev->active_lanes == 2) {
-		phy_softreset(tdev->phy, DEVICE_RX, 1,
-				tdev->lane_devs[LANEID_FOR_1]->id);
-	}
-	/*soft reset == 0*/
-	phy_softreset(tdev->phy, DEVICE_RX, 0,
-				tdev->lane_devs[LANEID_FOR_0]->id);
-
-	if (tdev->identifier == TRANPORT_0 &&
-					tdev->active_lanes == 2) {
-		phy_softreset(tdev->phy, DEVICE_RX, 0,
-				tdev->lane_devs[LANEID_FOR_1]->id);
-	}
-}
-
-static void dfifo_reset(struct transport_device *tdev)
-{
-	if (tdev->transport_type == DEVICE_TX) {
-		/*reset dfifo pointers now*/
-		jesd_set_bit(DFIFO_BIT3, &tdev->tx_regs->tx_transcontrol);
-		/*reset done*/
-		jesd_clear_bit(DFIFO_BIT3, &tdev->tx_regs->tx_transcontrol);
-	} else if (tdev->transport_type == DEVICE_RX) {
-		/*reset dfifo pointers now*/
-		jesd_set_bit(DFIFO_BIT3, &tdev->rx_regs->rx_transcontrol);
-		/*reset done*/
-		jesd_clear_bit(DFIFO_BIT3, &tdev->rx_regs->rx_transcontrol);
-	}
-}
-
-static int conf_tx_phy_gasket(struct transport_device *tdev)
-{
-	int rc = 0;
-
-	tdev->lane_devs[LANEID_FOR_0]->id =
-					tdev->lane_id[LANEID_FOR_PRIMARY];
-
-	if (tdev->lane_devs[LANEID_FOR_0]->id < 0) {
+	switch (tdev->type) {
+	case JESD_DEV_TX:
+		if (tdev->dev_flags & DEV_FLG_TEST_PATTERNS_EN)
+			phy_data_src = PHY_DATA_TEST_PATTRN;
+		else
+			phy_data_src = PHY_DATA_JESDTX;
+		break;
+	case JESD_DEV_RX:
+	case JESD_DEV_SRX:
+		if (tdev->dev_flags & DEV_FLG_PHYGASKET_LOOPBACK_EN)
+			phy_data_src = PHY_DATA_RX_LOOPBACK;
+		else
+			phy_data_src = PHY_DATA_JESDRX;
+		break;
+	default:
 		rc = -EINVAL;
-		goto fail;
+		goto out;
 	}
 
-	if (tdev->dev_state == TESTMODE)
-		rc = phy_config_tx_testmode(tdev);
-	else
-		rc = phy_config_tx_normalmode(tdev);
+	dev_info(tdev->dev, "%s: data src %d\n", tdev->name, phy_data_src);
 
-	if (rc < 0)
-		goto fail;
+	for (i = 0; i < tdev->active_lanes; i++) {
+		lane = tdev->lane_devs[i];
+		rc = phy_gasket_lane_ctrl(tdev->phy, phy_data_src, lane->id);
+		if (rc) {
+			dev_err(tdev->dev, "%s: Phy init Failed, lane %d\n",
+				tdev->name, lane->id);
+			goto out;
+		}
 
-	phy_inverse_lanes(tdev->phy, tdev->lane_devs[LANEID_FOR_0]->id,
-				tdev->tx_tests.flag, DEVICE_TX);
-	do_tx_soft_reset(tdev);
-	dfifo_reset(tdev);
-
-fail:
-	return rc;
-}
-
-static int conf_rx_phy_gasket(struct transport_device *tdev)
-{
-	int rc = 0;
-
-	tdev->lane_devs[LANEID_FOR_0]->id =
-					tdev->lane_id[LANEID_FOR_PRIMARY];
-
-	if (tdev->lane_devs[LANEID_FOR_0]->id < 0) {
-		rc = -EINVAL;
-		goto fail;
 	}
 
-	if (tdev->dev_state == TESTMODE)
-		rc = phy_config_rx_testmode(tdev);
-	else
-		phy_config_rx_normalmode(tdev);
+	if ((tdev->type == JESD_DEV_TX) &&
+		(tdev->dev_flags & DEV_FLG_TEST_PATTERNS_EN))
+		do_patter_generator(tdev->phy, &tdev->tx_tests.tx_patgen);
 
-	if (rc < 0)
-		goto fail;
-	phy_inverse_lanes(tdev->phy, tdev->lane_devs[LANEID_FOR_0]->id,
-				tdev->tx_tests.flag, DEVICE_RX);
-	do_rx_soft_reset(tdev);
-	dfifo_reset(tdev);
-
-fail:
+out:
 	return rc;
 }
 
-
-static int conf_phy_gasket(struct transport_device *tdev)
-{
-	int rc = 0;
-
-	if (tdev->transport_type == DEVICE_TX)
-		rc = conf_tx_phy_gasket(tdev);
-	else if (tdev->transport_type == DEVICE_RX)
-		rc = conf_rx_phy_gasket(tdev);
-	else
-		rc = -ENODEV;
-
-	return rc;
-}
-
-void stop_link(struct transport_device *tdev, u32 timer_id)
+void stop_link(struct jesd_transport_dev *tdev, u32 timer_id)
 {
 /*XXX: Revisit link stopping */
-#if 0
-	/*sysref_rose config*/
-	if (tdev->transport_type == DEVICE_TX) {
-		spin_lock(&tdev->sysref_lock);
-		jesd_clear_bit(0,
-			&tdev->tbg->tbgregs->tx_tmr[timer_id].alig_ctrl);
-		jesd_clear_bit(SW_DMA_BIT17, &tdev->tx_regs->tx_transcontrol);
-		spin_unlock(&tdev->sysref_lock);
-	} else if (tdev->transport_type == DEVICE_RX) {
-		spin_lock(&tdev->sysref_lock);
-		jesd_clear_bit(SW_DMA_BIT17, &tdev->rx_regs->rx_transcontrol);
-		jesd_clear_bit(0,
-			&tdev->tbg->tbgregs->rx_tmr[timer_id].alig_ctrl);
-		/*not sure why do we need to double clear this*/
-		jesd_clear_bit(SW_DMA_BIT17, &tdev->rx_regs->rx_transcontrol);
-		spin_unlock(&tdev->sysref_lock);
-	}
-#endif
+
 }
 
-void start_link(struct transport_device *tdev)
+void start_link(struct jesd_transport_dev *tdev)
 {
-	/*sysref_rose config*/
-	if (tdev->transport_type == DEVICE_TX) {
-		spin_lock(&tdev->sysref_lock);
-
-		tdev->sysref_rose = 0;
-		/*SYSREF_ROSE bit 8 clear sysref*/
-		jesd_set_bit(SYSREF_ISR_BIT8, &tdev->tx_regs->tx_irq_status);
-		/*mask detection seen*/
-		jesd_clear_bit(SYSREF_MASK_BIT20,
-					&tdev->rx_regs->rx_transcontrol);
-		/*disable interrupt and enable just for gag*/
-		jesd_clear_bit(SYSREF_ISR_BIT8, &tdev->tx_regs->tx_irq_enable);
-		jesd_set_bit(SYSREF_ISR_BIT8, &tdev->tx_regs->tx_irq_enable);
-
-		wait_event_interruptible(tdev->isr_wait,
-				tdev->sysref_rose == 1);
-		tdev->sysref_rose = 0;
-		spin_unlock(&tdev->sysref_lock);
-
-	} else if (tdev->transport_type == DEVICE_RX) {
-		spin_lock(&tdev->sysref_lock);
-		tdev->sysref_rose = 0;
-		/*SYSREF_ROSE bit 8 clear sysref*/
-		jesd_set_bit(SYSREF_ISR_BIT8,
-					&tdev->rx_regs->rx_irq_status);
-		/*mask detection seen*/
-		jesd_clear_bit(SYSREF_MASK_BIT20,
-					&tdev->rx_regs->rx_transcontrol);
-		/*disable interrupt and enable just for gag*/
-		jesd_clear_bit(SYSREF_ISR_BIT8,
-					&tdev->rx_regs->rx_irq_enable);
-		jesd_set_bit(SYSREF_ISR_BIT8,
-					&tdev->rx_regs->rx_irq_enable);
-
-		wait_event_interruptible(tdev->isr_wait,
-				tdev->sysref_rose == 1);
-		tdev->sysref_rose = 0;
-		spin_unlock(&tdev->sysref_lock);
-	}
+	/*XXX: This function will be removed */
 }
 
-static int enable_dis(struct transport_device *tdev)
+static int enable_dis(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 
-	spin_lock(&tdev->sysref_lock);
 	jesd_clear_bit(RX_DIS_BIT7, &tdev->rx_regs->rx_ctrl_0);
 
 	rc = wait_event_interruptible_timeout(tdev->to_wait,
@@ -426,18 +195,16 @@ static int enable_dis(struct transport_device *tdev)
 	if (rc < 0)
 		raise_exception(tdev, START_TIMEOUT);
 
-	spin_unlock(&tdev->sysref_lock);
 
 	return rc;
 }
 
-static int enable_tx(struct transport_device *tdev)
+static int enable_tx(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 	unsigned int tx_en = 1;
 	uint frm_ctrl;
 
-	spin_lock(&tdev->sysref_lock);
 	tx_en = tx_en << 1;
 	frm_ctrl = (ioread32(&tdev->tx_regs->tx_frm_ctrl) | tx_en);
 	iowrite32(frm_ctrl, &tdev->tx_regs->tx_frm_ctrl);
@@ -450,55 +217,54 @@ static int enable_tx(struct transport_device *tdev)
 
 	if (rc < 0)
 		raise_exception(tdev, START_TIMEOUT);
-	spin_unlock(&tdev->sysref_lock);
 
 	return rc;
 }
 
-static void raise_exception(struct transport_device *tdev,
+static void raise_exception(struct jesd_transport_dev *tdev,
 			unsigned int event_typ)
 {
 	/*XXX: Implement event notification*/
 }
 
 
-void lane_stats_update(struct transport_device *tdev,
+void lane_stats_update(struct jesd_transport_dev *tdev,
 						u32 stats_field,
 						u32 lane_id)
 {
 	switch (stats_field) {
 	case ILS_FAIL:
-		tdev->lane_devs[lane_id]->l_stats->ils_error++;
+		tdev->lane_devs[lane_id]->l_stats.ils_error++;
 		break;
 	case CGS_FAIL:
-		tdev->lane_devs[lane_id]->l_stats->cgs_error++;
+		tdev->lane_devs[lane_id]->l_stats.cgs_error++;
 		break;
 	case FSF_FAIL:
-		tdev->lane_devs[lane_id]->l_stats->frm_sync_error++;
+		tdev->lane_devs[lane_id]->l_stats.frm_sync_error++;
 		break;
 	case UEX_K_FAIL:
-		tdev->lane_devs[lane_id]->l_stats->uexk_threshold++;
-		if (tdev->lane_devs[lane_id]->l_stats->uexk_threshold > 255) {
+		tdev->lane_devs[lane_id]->l_stats.uexk_threshold++;
+		if (tdev->lane_devs[lane_id]->l_stats.uexk_threshold > 255) {
 			tdev->rx_regs->rx_bad_parrity |= lane_id;
 			 /*reset counter after we reach the limit*/
 			tdev->rx_regs->rx_ux_char |= 0x20;
-			tdev->lane_devs[lane_id]->l_stats->uexk_threshold = 0;
+			tdev->lane_devs[lane_id]->l_stats.uexk_threshold = 0;
 		}
 		break;
 	case NIT_FAIL:
-		tdev->lane_devs[lane_id]->l_stats->nit_threshold++;
-		if (tdev->lane_devs[lane_id]->l_stats->uexk_threshold > 255) {
+		tdev->lane_devs[lane_id]->l_stats.nit_threshold++;
+		if (tdev->lane_devs[lane_id]->l_stats.uexk_threshold > 255) {
 			tdev->rx_regs->rx_bad_parrity |= lane_id;
 			tdev->rx_regs->rx_nit |= 0x20;
-			tdev->lane_devs[lane_id]->l_stats->uexk_threshold = 0;
+			tdev->lane_devs[lane_id]->l_stats.uexk_threshold = 0;
 		}
 		break;
 	case BAD_DIS_FAIL:
-		tdev->lane_devs[lane_id]->l_stats->baddis_threshold++;
-		if (tdev->lane_devs[lane_id]->l_stats->uexk_threshold > 255) {
+		tdev->lane_devs[lane_id]->l_stats.baddis_threshold++;
+		if (tdev->lane_devs[lane_id]->l_stats.uexk_threshold > 255) {
 			tdev->rx_regs->rx_bad_parrity |= lane_id;
 			tdev->rx_regs->rx_bad_parrity |= 0x20;
-			tdev->lane_devs[lane_id]->l_stats->uexk_threshold = 0;
+			tdev->lane_devs[lane_id]->l_stats.uexk_threshold = 0;
 		}
 		break;
 	default:
@@ -506,7 +272,7 @@ void lane_stats_update(struct transport_device *tdev,
 	}
 }
 
-u32 do_rx_cgs(struct transport_device *tdev)
+u32 do_rx_cgs(struct jesd_transport_dev *tdev)
 {
 	u32 cgs = CGS_NOT_CONFIGED;
 	/*do we need to handle cgs*/
@@ -518,7 +284,7 @@ u32 do_rx_cgs(struct transport_device *tdev)
 			lane_stats_update(tdev, CGS_FAIL, 0);
 		}
 
-		if (tdev->identifier == TRANPORT_0 &&
+		if (tdev->id == TRANPORT_0 &&
 			 tdev->active_lanes == 2) {
 
 			if (jtest_bit(1, &tdev->rx_regs->rx_cgs))
@@ -535,7 +301,7 @@ u32 do_rx_cgs(struct transport_device *tdev)
 	return cgs;
 }
 
-u32 do_rx_fsf(struct transport_device *tdev)
+u32 do_rx_fsf(struct jesd_transport_dev *tdev)
 {
 	u32 fsf = FSF_NOT_CONFIGED;
 	/*do we need to handle fsf*/
@@ -547,7 +313,7 @@ u32 do_rx_fsf(struct transport_device *tdev)
 			lane_stats_update(tdev, FSF_FAIL, 0);
 		}
 
-		if (tdev->identifier == TRANPORT_0 &&
+		if (tdev->id == TRANPORT_0 &&
 			tdev->active_lanes == 2) {
 
 			if (jtest_bit(1, &tdev->rx_regs->rx_fsf))
@@ -566,7 +332,7 @@ u32 do_rx_fsf(struct transport_device *tdev)
 }
 
 
-void do_rx_csum(struct transport_device *tdev)
+void do_rx_csum(struct jesd_transport_dev *tdev)
 {
 	u32 csum = CSUM_NOT_CONFIGED;
 	/*do we need to handle cgs*/
@@ -578,7 +344,7 @@ void do_rx_csum(struct transport_device *tdev)
 				lane_stats_update(tdev, CSUM_FAIL, 0);
 		}
 
-		if (tdev->identifier == TRANPORT_0 &&
+		if (tdev->id == TRANPORT_0 &&
 					tdev->active_lanes == 2) {
 			if (jtest_bit(1, &tdev->rx_regs->rx_g_csum))
 				csum = CSUM_SUCCESS;
@@ -595,7 +361,7 @@ void do_rx_csum(struct transport_device *tdev)
 }
 
 
-void do_rx_ils(struct transport_device *tdev, u32 cgs, u32 fsf)
+void do_rx_ils(struct jesd_transport_dev *tdev, u32 cgs, u32 fsf)
 {
 	u32 ils;
 	/*do we need to handle cgs*/
@@ -607,7 +373,7 @@ void do_rx_ils(struct transport_device *tdev, u32 cgs, u32 fsf)
 			lane_stats_update(tdev, ILS_FAIL, 0);
 		}
 
-		if (tdev->identifier == TRANPORT_0 &&
+		if (tdev->id == TRANPORT_0 &&
 				tdev->active_lanes == 2) {
 
 			if (jtest_bit(1, &tdev->rx_regs->rx_ilsf))
@@ -630,7 +396,7 @@ void do_rx_ils(struct transport_device *tdev, u32 cgs, u32 fsf)
 }
 
 
-void reset_sync_interrupts(struct transport_device *tdev)
+void reset_sync_interrupts(struct jesd_transport_dev *tdev)
 {
 	tdev->rx_regs->rx_ilsf |= RESET_IRQ_VECTOR; /*reset ilsf interrupt.*/
 	tdev->rx_regs->rx_cgs |= RESET_IRQ_VECTOR;/*reset cgs interrupt.*/
@@ -638,7 +404,7 @@ void reset_sync_interrupts(struct transport_device *tdev)
 	tdev->rx_regs->rx_g_csum |= RESET_IRQ_VECTOR; /*reset csum isr*/
 }
 
-void handle_sync_isr(struct transport_device *tdev)
+void handle_sync_isr(struct jesd_transport_dev *tdev)
 {
 	u32 cgs = do_rx_cgs(tdev);
 	u32 fsf = do_rx_fsf(tdev);
@@ -646,7 +412,7 @@ void handle_sync_isr(struct transport_device *tdev)
 	do_rx_ils(tdev, cgs, fsf);
 }
 
-void handle_maskvector(struct transport_device *tdev)
+void handle_maskvector(struct jesd_transport_dev *tdev)
 {
 	/* this is for the sync user event*/
 	handle_sync_isr(tdev);
@@ -665,7 +431,7 @@ void handle_maskvector(struct transport_device *tdev)
 		if (tdev->rx_regs->rx_ux_char & 1)
 				lane_stats_update(tdev, UEX_K_FAIL, 0);
 
-		if (tdev->identifier == TRANPORT_0 &&
+		if (tdev->id == TRANPORT_0 &&
 					tdev->active_lanes == 2) {
 			if (tdev->rx_regs->rx_ux_char & 2)
 				lane_stats_update(tdev, UEX_K_FAIL, 1);
@@ -677,7 +443,7 @@ void handle_maskvector(struct transport_device *tdev)
 		if (tdev->rx_regs->rx_nit & 1)
 			lane_stats_update(tdev, NIT_FAIL, 0);
 
-		if (tdev->identifier == TRANPORT_0 &&
+		if (tdev->id == TRANPORT_0 &&
 				tdev->active_lanes == 2) {
 			if (tdev->rx_regs->rx_nit & 2)
 				lane_stats_update(tdev, NIT_FAIL, 1);
@@ -688,7 +454,7 @@ void handle_maskvector(struct transport_device *tdev)
 		if (tdev->rx_regs->rx_bad_parrity & 1)
 				lane_stats_update(tdev, BAD_DIS_FAIL, 0);
 
-		if (tdev->identifier == TRANPORT_0 &&
+		if (tdev->id == TRANPORT_0 &&
 				tdev->active_lanes == 2) {
 
 			if (tdev->rx_regs->rx_bad_parrity & 2)
@@ -697,7 +463,7 @@ void handle_maskvector(struct transport_device *tdev)
 	}
 }
 
-void handle_rx_irq(struct transport_device *tdev)
+void handle_rx_irq(struct jesd_transport_dev *tdev)
 {
 	u32 i;
 	u32 isr_bit = 0;
@@ -781,23 +547,14 @@ void handle_rx_irq(struct transport_device *tdev)
 	}
 }
 
-static int setclkdiv(struct transport_device *tdev)
+static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 {
 	int line_rate, m, s, np, l;
-	int fs, fc;
-	int clkdiv;
-	int ref;
-	int rc = 0;
-	uint ctrl_reg;
+	int fs, fc, clkdiv, ref, rc = 0;
+	u32 *reg = NULL, mask;
 
-	tdev->tbg = get_tbgen_device();
-
-	if (tdev->tbg == NULL) {
-		rc = -EINVAL;
-		goto fail;
-	}
-
-	ref = get_ref_clock(tdev->tbg);
+	/*XXX: TBD set clk div based on tdev->data_rate and tdev->ref_clk*/
+	ref = get_ref_clock(tdev->tbgen_dev_handle);
 
 	m = tdev->ils.conv_per_device_m;
 	s = tdev->ils.samples_per_cnvrtr_per_frame;
@@ -808,33 +565,24 @@ static int setclkdiv(struct transport_device *tdev)
 	line_rate = (((m*s*np*fs)*(10/8))/l);
 	fc = line_rate/10;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		clkdiv = (ref/fc);
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		clkdiv = ((ref*2)/fc);
-	else{
-		rc = -EFAULT;
-		goto fail;
-	}
 
-	/*config clkdiv*/
-	if (clkdiv <= 3) {
-		clkdiv = clkdiv & 0x03; /*mask for three bits*/
-		clkdiv = clkdiv << 4; /*push to 4-5 bits*/
-		if (tdev->transport_type == DEVICE_TX) {
-			ctrl_reg = ioread32(&tdev->tx_regs->tx_transcontrol) |
-					clkdiv;
-			iowrite32(ctrl_reg, &tdev->tx_regs->tx_transcontrol);
-		} else if (tdev->transport_type == DEVICE_RX) {
-			ctrl_reg = ioread32(&tdev->rx_regs->rx_transcontrol) |
-					clkdiv;
-			iowrite32(ctrl_reg, &tdev->rx_regs->rx_transcontrol);
-		} else
-			rc = -EFAULT;
-	} else
-		rc = -EFAULT;
+	/*XXX: For medusa setting it to 0 hardcoded for bringup.
+	 *This needs cleanup
+	 */
+	clkdiv = 0;
+	clkdiv &= ~CLKDIV_MASK; /*mask for three bits*/
+	mask = CLKDIV_MASK;
+	if (tdev->type == JESD_DEV_TX)
+		reg = &tdev->tx_regs->tx_transcontrol;
+	else
+		reg = &tdev->rx_regs->rx_transcontrol;
 
-fail:
+	jesd_update_reg(reg, clkdiv, mask);
+
 	return rc;
 }
 
@@ -877,11 +625,11 @@ int jesd_reg_dump_to_user(u32 *reg, unsigned int offset, unsigned int length,
 }
 EXPORT_SYMBOL(jesd_reg_dump_to_user);
 
-static int jesd_conf_tests(struct transport_device *tdev)
+static int jesd_conf_tests(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 
-	if (tdev->transport_type == DEVICE_TX) {
+	if (tdev->type == JESD_DEV_TX) {
 		if (tdev->tx_tests.frmr_tst.bipass_8b10 == 1)
 			jesd_set_bit(BP_8b10_BIT0,
 					&tdev->tx_regs->tx_frm_tst);
@@ -926,7 +674,7 @@ static int jesd_conf_tests(struct transport_device *tdev)
 				goto fail;
 			}
 		}
-	} else if (tdev->transport_type == DEVICE_RX) {
+	} else {
 
 		if (tdev->rx_tests.drfmr_tst.rep_data_tst == 1) {
 			jesd_set_bit(REP_DAT_BIT5, &tdev->rx_regs->rx_ctrl_2);
@@ -948,39 +696,38 @@ static int jesd_conf_tests(struct transport_device *tdev)
 			jesd_clear_bit(ILS_MODE_BIT7,
 					&tdev->rx_regs->rx_ctrl_2);
 
-	} else
-		rc = -EFAULT;
+	}
+
 fail:
 	return rc;
 }
 
 
-static int conf_transport_delays(struct transport_device *tdev)
+static int jesd_set_delays(struct jesd_transport_dev *tdev)
 {
-	struct transport_device *t = tdev;
 	int rc = 0;
 	int delay;
 	/* this shall be either tx or rx delay have the segregation here
 	* itself config delay
 	*/
-	if (t->transport_type == DEVICE_TX)
-		iowrite32(t->delay & 0x15, &t->tx_regs->tx_sync_delay);
-	else if (t->transport_type == DEVICE_RX) {
+	if (tdev->type == JESD_DEV_TX)
+		iowrite32(tdev->delay & 0x15, &tdev->tx_regs->tx_sync_delay);
+	else if ((tdev->type == JESD_DEV_RX) || (tdev->type == JESD_DEV_SRX)) {
 		/*Set to 2 when K=5, F=4
 		Set to 4 when K=10, F=2
 		Set to 5 when K=6, F=4
 		Set to 10 when K=12, F=2 as per RM*/
-		if (t->ils.frame_per_mf_k == 5 &&
-				t->ils.octect_per_frame_f == 4)
+		if (tdev->ils.frame_per_mf_k == 5 &&
+				tdev->ils.octect_per_frame_f == 4)
 			delay = 2;
-		else if (t->ils.frame_per_mf_k == 10 &&
-				t->ils.octect_per_frame_f == 2)
+		else if (tdev->ils.frame_per_mf_k == 10 &&
+				tdev->ils.octect_per_frame_f == 2)
 			delay = 4;
-		else if (t->ils.frame_per_mf_k == 6 &&
-					t->ils.octect_per_frame_f == 4)
+		else if (tdev->ils.frame_per_mf_k == 6 &&
+					tdev->ils.octect_per_frame_f == 4)
 			delay = 5;
-		else if (t->ils.frame_per_mf_k == 12 &&
-					t->ils.octect_per_frame_f == 2)
+		else if (tdev->ils.frame_per_mf_k == 12 &&
+					tdev->ils.octect_per_frame_f == 2)
 			delay = 10;
 		else
 			rc = -EFAULT;
@@ -988,109 +735,170 @@ static int conf_transport_delays(struct transport_device *tdev)
 		if (rc < 0)
 			return rc;
 		else
-			iowrite32(delay, &t->rx_regs->rx_rcv_delay);
+			iowrite32(delay, &tdev->rx_regs->rx_rcv_delay);
 	} else
 		rc = -EINVAL;
 	return rc;
 }
+static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
+{
+	int rc = 0, i;
+	u32 *reg, val, mask, enable_mask = 0;
 
-static int enable_transports(struct transport_device *tdev)
+	for (i = 0; i < tdev->active_lanes; i++)
+		enable_mask |= 1 << i;
+
+	reg = &tdev->tx_regs->tx_l_en;
+	mask = LANE_EN_MASK;
+	jesd_update_reg(reg, enable_mask, mask);
+
+	for (i = 0; i < tdev->ils.conv_per_device_m; i++)
+		enable_mask |= 1 << i;
+
+	reg = &tdev->tx_regs->tx_m_en;
+	mask = M_EN_MASK;
+	jesd_update_reg(reg, enable_mask, mask);
+
+	/*Clear sysref rose */
+	reg = &tdev->tx_regs->tx_irq_status;
+	val = ~IRQ_SYSREF_ROSE;
+	mask = IRQ_SYSREF_ROSE;
+	jesd_update_reg(reg, val, mask);
+
+	/*unmask sysref detection  */
+	reg = &tdev->tx_regs->tx_transcontrol;
+	val = ~SYSREF_MASK;
+	mask = SYSREF_MASK;
+	jesd_update_reg(reg, val, mask);
+
+	/*enable sysref rose IRQ*/
+	reg = &tdev->tx_regs->tx_irq_enable;
+	val = IRQ_SYSREF_ROSE | IRQ_SYNC_RECIEVED;
+	mask = val;
+	jesd_update_reg(reg, val, mask);
+
+/*Do it in sysref interrupt*/
+#if 0
+	reg = &tdev->tx_regs->tx_frm_ctrl;
+	val = TRANSMIT_EN;
+	mask = TRANSMIT_EN;
+	jesd_udpate_reg(reg, val, mask);
+#endif
+	return rc;
+}
+
+int jesd_setup_rx_transport(struct jesd_transport_dev *tdev)
+{
+	int rc = 0, i;
+	u32 *reg, val, mask, enable_mask = 0;
+
+	for (i = 0; i < tdev->active_lanes; i++)
+		enable_mask |= 1 << i;
+
+	reg = &tdev->rx_regs->rx_lane_en;
+	mask = LANE_EN_MASK;
+	jesd_update_reg(reg, enable_mask, mask);
+
+	/*Clear sysref rose */
+	reg = &tdev->rx_regs->rx_irq_status;
+	val = ~IRQ_SYSREF_ROSE;
+	mask = IRQ_SYSREF_ROSE;
+	jesd_update_reg(reg, val, mask);
+
+	/*unmask sysref detection  */
+	reg = &tdev->rx_regs->rx_transcontrol;
+	val = ~SYSREF_MASK;
+	mask = SYSREF_MASK;
+	jesd_update_reg(reg, val, mask);
+
+	/*enable sysref rose IRQ*/
+	reg = &tdev->rx_regs->rx_irq_enable;
+	val = IRQ_SYSREF_ROSE | IRQ_SYNC_RECIEVED;
+	mask = val;
+	jesd_update_reg(reg, val, mask);
+
+	return rc;
+}
+
+static int jesd_setup_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 
-	if (tdev->transport_type == DEVICE_TX) {
-		/*Always set to 3*/
-		iowrite32(3, &tdev->tx_regs->tx_m_en);
-		iowrite32(0, &tdev->tx_regs->tx_ln_ctrl);
+	if (tdev->type == JESD_DEV_TX)
+		rc = jesd_setup_tx_transport(tdev);
+	else
+		rc = jesd_setup_rx_transport(tdev);
 
-		if (tdev->active_lanes == 1)
-			iowrite32(1, &tdev->tx_regs->tx_l_en);
-		else if (tdev->active_lanes == 2)
-			iowrite32(3, &tdev->tx_regs->tx_l_en);
-		else
-			rc = -EFAULT;
+	return rc;
+}
 
-		if (rc == 0) {
-			tdev->evnt_jiffs = 2;
-			start_link(tdev);
-			rc = enable_tx(tdev);
-		}
+int jesd_start_transport(struct jesd_transport_dev *tdev)
+{
+	int rc = 0;
 
-	} else if (tdev->transport_type == DEVICE_RX) {
-
-		if (tdev->active_lanes == 1)
-			iowrite32(0x01, &tdev->rx_regs->rx_lane_en);
-		else if (tdev->active_lanes == 2)
-			iowrite32(0x03, &tdev->rx_regs->rx_lane_en);
-		else{
-			iowrite32(0x00, &tdev->rx_regs->rx_lane_en);
-			rc = -EFAULT;
-		}
-
-		if (rc == 0) {
-			tdev->evnt_jiffs = 2;
-			start_link(tdev);
-			/* RX_DIS to enable rx transport*/
-			rc = enable_dis(tdev);
-		}
+	rc = jesd_config_phygasket(tdev);
+	if (rc) {
+		dev_err(tdev->dev, "Failed to configure phy-gasket, err %d\n",
+			rc);
+		goto out;
+	}
+	rc = jesd_setclkdiv(tdev);
+	if (rc) {
+		dev_err(tdev->dev, "Failed to set clkdiv, err %d\n", rc);
+		goto out;
 	}
 
-	return rc;
-}
+	rc = jesd_set_delays(tdev);
+	if (rc) {
+		dev_err(tdev->dev, "Failed to set delays, err %d\n", rc);
+		goto out;
+	}
 
-int jesd_start_transport(struct transport_device *tdev)
-{
-	int rc = 0;
-/* thus is to be implemented if needed*/
-/*	set_serdes();*/
+	rc = jesd_setup_transport(tdev);
+	if (rc) {
+		dev_err(tdev->dev, "Failed to enable transport, err %d\n", rc);
+		goto out;
+	}
 
-	conf_phy_gasket(tdev);
-/* thus is to be implemented and integrated*/
-	rc = setclkdiv(tdev);
-	if (rc < 0)
-		goto fail;
-
-	rc = conf_transport_delays(tdev);
-	if (rc < 0)
-		goto fail;
-
-	rc = enable_transports(tdev);
-fail:
+	/*Inform TBGEN that link is configured */
+	tbgen_timer_set_jesd_ready(tdev->timer_handle, 1);
+	if (tdev->type == JESD_DEV_TX)
+		tbgen_timer_set_jesd_ready(tdev->txalign_timer_handle, 1);
+out:
 	return rc;
 }
 
 
-int jesd_restart_transport(struct transport_device *tdev,
+int jesd_restart_transport(struct jesd_transport_dev *tdev,
 				u32 timer_id)
 {
 	int rc = 0;
 
 	stop_link(tdev, timer_id);
 	start_link(tdev);
-	if (tdev->transport_type == DEVICE_RX) {
-		/* RX_DIS to enable rx transport*/
-		rc = enable_dis(tdev);
-	} else if (tdev->transport_type == DEVICE_TX) {
-		/* tx enable*/
+
+	if (tdev->type == JESD_DEV_TX)
 		rc = enable_tx(tdev);
-	}
-	return rc;
-}
-
-static int force_sync(struct transport_device *tdev)
-{
-	int rc = 0;
-
-	if (tdev->transport_type == DEVICE_RX)
-		jesd_set_bit(RX_DEV_BIT2, &tdev->rx_regs->rx_ctrl_0);
 	else
-		rc = -EINVAL;
+		rc = enable_dis(tdev);
 
 	return rc;
 }
 
+static int jesd_force_sync(struct jesd_transport_dev *tdev)
+{
+	u32 *reg, val, mask;
 
-static int jesd_set_ilas_len(struct transport_device *tdev, int ilas_len)
+	reg = &tdev->rx_regs->rx_ctrl_0;
+	val = FSREQ;
+	mask = FSREQ;
+	jesd_update_reg(reg, val, mask);
+
+	return 0;
+}
+
+
+static int jesd_set_ilas_len(struct jesd_transport_dev *tdev, int ilas_len)
 {
 	int rc = 0;
 	u32 val, *reg;
@@ -1107,7 +915,7 @@ static int jesd_set_ilas_len(struct transport_device *tdev, int ilas_len)
 	}
 	tdev->ilas_len = ilas_len;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_ilas_len;
 	else
 		reg = &tdev->rx_regs->rx_ilas_len;
@@ -1119,7 +927,7 @@ out:
 	return rc;
 }
 
-static int init_tx_transport(struct transport_device *tdev)
+static int init_tx_transport(struct jesd_transport_dev *tdev)
 {
 
 	int rc = 0;
@@ -1127,7 +935,7 @@ static int init_tx_transport(struct transport_device *tdev)
 	/* test, set/clear the scr ctrl reg*/
 	/* conf ->SCR_CTRL_L0 */
 	if (jtest_bit(SCR_CTRL_L0_VALID,
-				&tdev->flags))
+				&tdev->config_flags))
 		jesd_set_bit(SCR_CTRL_L0_BIT0,
 				&tdev->tx_regs->tx_scr_ctrl);
 	else
@@ -1136,7 +944,7 @@ static int init_tx_transport(struct transport_device *tdev)
 
 	/* conf ->SCR_CTRL_L1 */
 	if (jtest_bit(SCR_CTRL_L1_VALID,
-			&tdev->flags))
+			&tdev->config_flags))
 		jesd_set_bit(SCR_CTRL_L1_BIT1,
 			&tdev->tx_regs->tx_scr_ctrl);
 	else
@@ -1148,7 +956,7 @@ static int init_tx_transport(struct transport_device *tdev)
 	* synchronization
 	*/
 	if (jtest_bit(L2SIDES_VALID,
-			&tdev->flags))
+			&tdev->config_flags))
 		jesd_set_bit(L2SIDES_BIT0,
 			&tdev->tx_regs->tx_frm_ctrl);
 	else
@@ -1156,7 +964,7 @@ static int init_tx_transport(struct transport_device *tdev)
 			&tdev->tx_regs->tx_frm_ctrl);
 
 	/*Bypass Initial Lane Alignment*/
-	if (jtest_bit(BYP_ILAS_VALID, &tdev->flags))
+	if (jtest_bit(BYP_ILAS_VALID, &tdev->config_flags))
 		jesd_set_bit(BYP_ILAS_BIT2,
 			&tdev->tx_regs->tx_frm_ctrl);
 	else
@@ -1165,7 +973,7 @@ static int init_tx_transport(struct transport_device *tdev)
 
 	/*Bypass Alignment Character Generation*/
 	if (jtest_bit(BYP_ACG_VALID,
-			&tdev->flags))
+			&tdev->config_flags))
 		jesd_set_bit(BYP_ACG_BIT3,
 				&tdev->tx_regs->tx_frm_ctrl);
 	else
@@ -1176,7 +984,7 @@ static int init_tx_transport(struct transport_device *tdev)
 	* idle select
 	*/
 	if (jtest_bit(IDLE_SELECT_VALID,
-			&tdev->flags))
+			&tdev->config_flags))
 		jesd_set_bit(IDLE_SELECT_BIT1,
 			&tdev->tx_regs->tx_transcontrol);
 	else
@@ -1185,7 +993,7 @@ static int init_tx_transport(struct transport_device *tdev)
 
 	/*Write Circular Buffer Overflow Protection*/
 	if (jtest_bit(WCBUF_PROTECT_VALID,
-				&tdev->flags))
+				&tdev->config_flags))
 		jesd_set_bit(WC_RC_PROTECT_BIT18,
 			&tdev->tx_regs->tx_transcontrol);
 	else
@@ -1201,7 +1009,7 @@ static int init_tx_transport(struct transport_device *tdev)
 	the transport\92s output
 	*/
 	if (jtest_bit(MS_OCT_FIRST_VALID,
-				&tdev->flags))
+				&tdev->config_flags))
 		jesd_set_bit(OCT_FIRST_BIT9,
 			&tdev->tx_regs->tx_transcontrol);
 	else
@@ -1210,7 +1018,7 @@ static int init_tx_transport(struct transport_device *tdev)
 
 	/*IQ swap*/
 	if (jtest_bit(IQ_SWAP_VALID,
-			&tdev->flags))
+			&tdev->config_flags))
 		jesd_set_bit(IQ_SWAP_BIT7,
 			&tdev->tx_regs->tx_transcontrol);
 	else
@@ -1220,7 +1028,7 @@ static int init_tx_transport(struct transport_device *tdev)
 	return rc;
 }
 
-static int init_rx_transport(struct transport_device *tdev)
+static int init_rx_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 
@@ -1229,7 +1037,7 @@ static int init_rx_transport(struct transport_device *tdev)
 	jesd_set_bit(ENABLE_CLK_BIT0,
 		&tdev->rx_regs->rx_transcontrol);
 	/*IQ swap*/
-	if (jtest_bit(IQ_SWAP_VALID, &tdev->flags))
+	if (jtest_bit(IQ_SWAP_VALID, &tdev->config_flags))
 		jesd_set_bit(IQ_SWAP_BIT7,
 			&tdev->rx_regs->rx_transcontrol);
 	else
@@ -1243,7 +1051,7 @@ static int init_rx_transport(struct transport_device *tdev)
 	*	most-significant octet of the 20-bit PHY input
 	*/
 	if (jtest_bit(PHY_OCT_FIRST_VALID,
-				&tdev->flags))
+				&tdev->config_flags))
 		jesd_set_bit(OCT_FIRST_BIT9,
 			&tdev->rx_regs->rx_transcontrol);
 	else
@@ -1252,7 +1060,7 @@ static int init_rx_transport(struct transport_device *tdev)
 
 	/*Read Circular Buffer Overflow Protection*/
 	if (jtest_bit(RCBUF_PROTECT_VALID,
-				&tdev->flags))
+				&tdev->config_flags))
 		jesd_set_bit(WC_RC_PROTECT_BIT18,
 			&tdev->rx_regs->rx_transcontrol);
 	else
@@ -1261,7 +1069,7 @@ static int init_rx_transport(struct transport_device *tdev)
 
 	/*idle select*/
 	if (jtest_bit(IDLE_SELECT_VALID,
-			&tdev->flags))
+			&tdev->config_flags))
 		jesd_set_bit(IDLE_SELECT_BIT1,
 			&tdev->rx_regs->rx_transcontrol);
 	else
@@ -1275,7 +1083,7 @@ static int init_rx_transport(struct transport_device *tdev)
 	*most-significant bit of a given octet from the PHY
 	*/
 	if (jtest_bit(PHY_BIT_FIRST_VALID,
-				&tdev->flags))
+				&tdev->config_flags))
 		jesd_set_bit(PHY_FIRT_BIT8,
 			&tdev->rx_regs->rx_transcontrol);
 	else
@@ -1290,7 +1098,7 @@ static int init_rx_transport(struct transport_device *tdev)
 	* containing the packed link configuration fields
 	*/
 	if (jtest_bit(TN_CHK_CSUM_VALID,
-			&tdev->flags))
+			&tdev->config_flags))
 		jesd_set_bit(TN_CHK_CSUM_BIT12,
 			&tdev->rx_regs->rx_transcontrol);
 	else
@@ -1300,11 +1108,95 @@ static int init_rx_transport(struct transport_device *tdev)
 	return rc;
 }
 
-static int jesd_init_transport(struct transport_device *tdev,
-					struct conf_tr __user *trans_p)
+static int __jesd_attach_timer(struct jesd_transport_dev *tdev,
+	enum timer_type timer_type)
+{
+	int rc = 0;
+	void *timer_handle;
+
+	timer_handle = tbgen_get_timer(tdev->tbgen_dev_handle, timer_type,
+			tdev->timer_id);
+
+	if (!timer_handle) {
+		dev_err(tdev->dev, "%s:Failed to get timer type %d, id %d\n",
+				tdev->name, timer_type, tdev->timer_id);
+		rc = -ENODEV;
+		goto out;
+	}
+
+	rc = tbgen_attach_timer(timer_handle, tdev);
+	if (rc) {
+		dev_err(tdev->dev, "%s: Attach failed timer type %d, id %d\n",
+			tdev->name, timer_type, tdev->timer_id);
+		goto out;
+	}
+
+	if (timer_type == JESD_TX_ALIGNMENT)
+		tdev->txalign_timer_handle = timer_handle;
+	else
+		tdev->timer_handle = timer_handle;
+
+	dev_info(tdev->dev, "%s: Attached timer %d, type %d, handle 0x%p\n",
+			tdev->name, tdev->timer_id, timer_type, timer_handle);
+	return rc;
+out:
+	tdev->timer_handle = NULL;
+	tdev->txalign_timer_handle = NULL;
+	return rc;
+}
+
+static int jesd_attach_tbgen_timer(struct jesd_transport_dev *tdev)
+{
+	int rc = 0;
+
+	tdev->tbgen_dev_handle = get_tbgen_device();
+
+	if (!tdev->tbgen_dev_handle) {
+		dev_err(tdev->dev, "Failed to get tbgen device\n");
+		rc = -ENODEV;
+		goto out;
+	}
+	switch (tdev->type) {
+	case JESD_DEV_TX:
+		rc = __jesd_attach_timer(tdev, JESD_TX_ALIGNMENT);
+		if (!rc)
+			rc = __jesd_attach_timer(tdev, JESD_TX_AXRF);
+		break;
+	case JESD_DEV_RX:
+		rc = __jesd_attach_timer(tdev, JESD_RX_ALIGNMENT);
+		break;
+	case JESD_DEV_SRX:
+		rc = __jesd_attach_timer(tdev, JESD_SRX_ALIGNMENT);
+		break;
+	default:
+		rc = -EINVAL;
+		goto out;
+	}
+	if (rc)
+		goto out;
+
+	return rc;
+out:
+	tdev->tbgen_dev_handle = NULL;
+	return rc;
+}
+
+static void jesd_init_dev_flags(struct jesd_transport_dev *tdev,
+	u32 config_flags)
+{
+
+	if (config_flags & CONF_PHYGASKET_LOOPBACK_EN)
+		tdev->dev_flags |= DEV_FLG_PHYGASKET_LOOPBACK_EN;
+	else
+		tdev->dev_flags &= ~DEV_FLG_PHYGASKET_LOOPBACK_EN;
+}
+
+static int jesd_init_transport(struct jesd_transport_dev *tdev,
+				struct jesd_dev_params *trans_p)
 {
 	int rc = 0, i;
 	struct lane_device *lane_dev;
+	struct jesd204_dev *jdev = tdev->parent;
 
 	if (trans_p->lanes > tdev->max_lanes) {
 		dev_err(tdev->dev, "%s: Invalid lanes (%d), max %d\n",
@@ -1313,6 +1205,12 @@ static int jesd_init_transport(struct transport_device *tdev,
 		goto out;
 	}
 
+	if (jdev->used_lanes >= jdev->max_lanes) {
+		dev_err(tdev->dev, "%s: Parent's all lanes are used\n",
+			tdev->name);
+		rc = -EBUSY;
+		goto out;
+	}
 	/*create lanes*/
 	for (i = 0; i < trans_p->lanes; i++) {
 		lane_dev = kzalloc(sizeof(struct lane_device), GFP_KERNEL);
@@ -1322,27 +1220,38 @@ static int jesd_init_transport(struct transport_device *tdev,
 			rc = -ENOMEM;
 			goto out;
 		}
+		lane_dev->id = i + tdev->id;
+		lane_dev->enabled = 0;
 		tdev->lane_devs[i] = lane_dev;
+		jdev->used_lanes++;
 	}
 
-	tdev->sampling_rate = trans_p->sampling_rate;
+	tdev->data_rate = trans_p->data_rate;
 	tdev->delay = trans_p->delay;
-	tdev->flags = trans_p->tran_flg;
+	tdev->config_flags = trans_p->config_flags;
 	tdev->active_lanes = trans_p->lanes;
-	tdev->mode = NORMAL_MODE;
+	jesd_init_dev_flags(tdev, trans_p->config_flags);
 
-	dev_dbg(tdev->dev, "%s: sample rate %d, dlay %x, flags %x, lanes %d\n",
-		tdev->name, tdev->sampling_rate, tdev->delay, tdev->flags,
+	dev_dbg(tdev->dev, "%s: data rate %d, dlay %x, flags %x, lanes %d\n",
+		tdev->name, tdev->data_rate, tdev->delay, tdev->config_flags,
 		tdev->active_lanes);
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX) {
 		rc = init_tx_transport(tdev);
-	else if (tdev->transport_type == DEVICE_RX)
+		if (rc)
+			goto out;
+	} else {
 		rc = init_rx_transport(tdev);
+		if (rc)
+			goto out;
+	}
 
-	/* init_transport Failed ?*/
-	if (rc)
+	rc = jesd_attach_tbgen_timer(tdev);
+	if (rc) {
+		dev_err(tdev->dev, "%s: Failed to attach tbgen timer, err %d\n",
+			tdev->name, rc);
 		goto out;
+	}
 
 	return rc;
 out:
@@ -1352,19 +1261,15 @@ out:
 }
 
 
-static int config_frames_per_mf(struct transport_device *tdev)
+static int config_frames_per_mf(struct jesd_transport_dev *tdev)
 {
 	u32 ref_clk, *reg, frames_per_mf = 0;
 	int rc = 0;
+
+
+
 #if 0
-	tdev->tbg = (struct tbgen_dev *)get_tbgen_device();
-
-	if (tdev->tbg == NULL) {
-		rc = -EINVAL;
-		goto fail;
-	}
-
-	ref_clk =  get_ref_clock(tdev->tbg);
+	ref_clk =  get_ref_clock(tdev->tbgen_dev_handle);
 
 #else
 	/*XXX: Hardcoded ref clock for bringup. It is not even 122.8 Mhz
@@ -1404,7 +1309,7 @@ static int config_frames_per_mf(struct transport_device *tdev)
 				tdev->name, frames_per_mf);
 		frames_per_mf = tdev->ils.frame_per_mf_k;
 	}
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_fpmf;
 	else
 		reg = &tdev->rx_regs->rx_fpmf;
@@ -1414,14 +1319,14 @@ static int config_frames_per_mf(struct transport_device *tdev)
 	return rc;
 }
 
-static void set_did_bid(struct transport_device *tdev)
+static void set_did_bid(struct jesd_transport_dev *tdev)
 {
 	u32 *did_reg = NULL, *bid_reg = NULL;
 
-	if (tdev->transport_type == DEVICE_TX) {
+	if (tdev->type == JESD_DEV_TX) {
 		did_reg = &tdev->tx_regs->tx_did;
 		bid_reg = &tdev->tx_regs->tx_bid;
-	} else if (tdev->transport_type == DEVICE_RX) {
+	} else {
 		did_reg = &tdev->rx_regs->rx_did;
 		bid_reg = &tdev->rx_regs->rx_bid;
 	}
@@ -1430,9 +1335,9 @@ static void set_did_bid(struct transport_device *tdev)
 	jesd_update_reg(bid_reg, tdev->ils.bank_id, BID_MASK);
 }
 
-static void set_lane_id(struct transport_device *tdev)
+static void set_lane_id(struct jesd_transport_dev *tdev)
 {
-	if (tdev->transport_type == DEVICE_TX) {
+	if (tdev->type == JESD_DEV_TX) {
 		jesd_update_reg(&tdev->tx_regs->tx_lid_0,
 			tdev->ils.lane0_id, LID_MASK);
 		if (tdev->active_lanes == 2)
@@ -1445,11 +1350,11 @@ static void set_lane_id(struct transport_device *tdev)
 
 }
 
-static void config_scr(struct transport_device *tdev)
+static void config_scr(struct jesd_transport_dev *tdev)
 {
 	u32 *reg;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_scr;
 	else
 		reg = &tdev->rx_regs->rx_scr;
@@ -1461,7 +1366,7 @@ static void config_scr(struct transport_device *tdev)
 }
 
 
-static int config_l(struct transport_device *tdev)
+static int config_l(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 	u32 val, *reg = NULL;
@@ -1473,9 +1378,9 @@ static int config_l(struct transport_device *tdev)
 		goto out;
 	}
 	val = tdev->ils.lanes_per_converter_l - 1;
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_scr;
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		reg = &tdev->rx_regs->rx_scr;
 
 	jesd_update_reg(reg, val, LANES_PER_CONV_MASK);
@@ -1485,25 +1390,25 @@ out:
 	return rc;
 }
 
-static void config_octets_per_frm(struct transport_device *tdev)
+static void config_octets_per_frm(struct jesd_transport_dev *tdev)
 {
 	u32 *reg = NULL;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_opf;
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		reg = &tdev->rx_regs->rx_opf;
 
 	iowrite32((tdev->ils.octect_per_frame_f - 1), reg);
 }
 
-static void config_ctrlbits_per_sample(struct transport_device *tdev)
+static void config_ctrlbits_per_sample(struct jesd_transport_dev *tdev)
 {
 	u32 val, *reg = NULL, mask;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_cbps;
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		reg = &tdev->rx_regs->rx_cbps;
 
 	mask = CS_MASK << CS_SHIFT;
@@ -1511,13 +1416,13 @@ static void config_ctrlbits_per_sample(struct transport_device *tdev)
 	jesd_update_reg(reg, val, mask);
 }
 
-static void config_converter_resolution(struct transport_device *tdev)
+static void config_converter_resolution(struct jesd_transport_dev *tdev)
 {
 	u32 val, mask, *reg = NULL;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_cbps;
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		reg = &tdev->rx_regs->rx_cbps;
 
 	val = ((tdev->ils.converter_resolution - 1) & N_MASK) << N_SHIFT;
@@ -1527,13 +1432,13 @@ static void config_converter_resolution(struct transport_device *tdev)
 }
 
 
-static void config_subclass(struct transport_device *tdev)
+static void config_subclass(struct jesd_transport_dev *tdev)
 {
 	u32 *reg = NULL, val, mask;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_nbcw;
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		reg = &tdev->rx_regs->rx_nbcw;
 
 	val = (tdev->ils.subclass_ver & SUBCLASS_MASK) << SUBCLASS_SHIFT;
@@ -1543,13 +1448,13 @@ static void config_subclass(struct transport_device *tdev)
 }
 
 
-static void config_version(struct transport_device *tdev)
+static void config_version(struct jesd_transport_dev *tdev)
 {
 	u32 *reg = NULL, val, mask;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_spcp;
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		reg = &tdev->rx_regs->rx_spcp;
 
 	val = (tdev->ils.jesd_ver & VERSION_MASK) << VERSION_SHIFT;
@@ -1559,7 +1464,7 @@ static void config_version(struct transport_device *tdev)
 }
 
 
-static int jesd_set_ils_pram(struct transport_device *tdev)
+static int jesd_set_ils_pram(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 	u32 *reg = NULL, val, mask;
@@ -1578,10 +1483,10 @@ static int jesd_set_ils_pram(struct transport_device *tdev)
 	if (rc < 0)
 		goto out;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		iowrite32((tdev->ils.conv_per_device_m - 1),
 			&tdev->tx_regs->tx_cpd);
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		iowrite32((tdev->ils.conv_per_device_m - 1),
 			&tdev->rx_regs->rx_cpd);
 
@@ -1591,7 +1496,7 @@ static int jesd_set_ils_pram(struct transport_device *tdev)
 	config_subclass(tdev);
 	config_version(tdev);
 
-	if (tdev->transport_type == DEVICE_TX) {
+	if (tdev->type == JESD_DEV_TX) {
 		/*config NP*/
 		reg = &tdev->tx_regs->tx_nbcw;
 		val = ((tdev->ils.bits_per_converter - 1) & NP_MASK)
@@ -1621,7 +1526,7 @@ static int jesd_set_ils_pram(struct transport_device *tdev)
 		mask = CF_MASK << CF_SHIFT;
 		jesd_update_reg(reg, val, mask);
 
-	} else if (tdev->transport_type == DEVICE_TX) {
+	} else if (tdev->type == JESD_DEV_TX) {
 			/*config NP*/
 		reg = &tdev->rx_regs->rx_nbcw;
 		val = ((tdev->ils.bits_per_converter - 1) & NP_MASK)
@@ -1656,33 +1561,30 @@ out:
 	return rc;
 }
 
-static int shutdown(struct transport_device *tdev)
+static int jesd_dev_stop(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 	/*disable dma and transport*/
-	if (tdev->transport_type == DEVICE_TX) {
+	if (tdev->type == JESD_DEV_TX) {
 		jesd_clear_bit(DMA_DIS_BIT17, &tdev->tx_regs->tx_transcontrol);
 		jesd_clear_bit(TX_FRM_BIT1, &tdev->tx_regs->tx_frm_ctrl);
-	} else if (tdev->transport_type == DEVICE_RX) {
+	} else {
 		jesd_clear_bit(DMA_DIS_BIT17, &tdev->rx_regs->rx_transcontrol);
 		jesd_clear_bit(RX_CTRL_BIT7, &tdev->rx_regs->rx_ctrl_0);
-	} else{
-		rc = -EFAULT;
-		return rc;
 	}
 	tdev->dev_state = SUSPENDED;
 	return rc;
 }
 
-void write_multi_regs(struct transport_device *tdev,
+void write_multi_regs(struct jesd_transport_dev *tdev,
 			u32 offset,
 			u32 len,
 			u32 value)
 {
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		write_reg(&tdev->tx_regs->tx_did, offset,
 						len, &value);
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		write_reg(&tdev->rx_regs->rx_rdid, offset,
 						len, &value);
 }
@@ -1693,32 +1595,28 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 	int rc = -ENOSYS, size = 0, int_arg;
 	u32 count = 0, *regs = NULL;
 	void __user *argp = (void __user *)arg;
-	struct transport_device *tdev = NULL;
-	struct conf_tr trans_p;
-	struct transport_device_info trans_dev_info;
+	struct jesd_transport_dev *tdev = NULL;
+	struct jesd_dev_params dev_params;
+	struct jesd_transport_dev_info trans_dev_info;
 	struct jesd_reg_read_buf regcnf;
 	struct jesd_reg_write_buf write_reg;
-	struct isrconf isrcnf;
 	struct tarns_dev_stats gstats;
-	struct tbgen_params tbgen_tmr_params;
 	struct auto_sync_params *sync_params;
 	struct jesd_reg_write_buf *p;
-	enum jesd_state *state;
 
 	tdev = pfile->private_data;
 
 	switch (cmd) {
-	case JESD_SET_TRANS_PARAMS:
+	case JESD_DEVICE_INIT:
 
-		if (copy_from_user(&trans_p,
-				(struct conf_tr *)arg,
-				 sizeof(struct conf_tr))) {
+		if (copy_from_user(&dev_params,
+				(struct jesd_dev_params *)arg,
+				 sizeof(struct jesd_dev_params))) {
 			rc = -EFAULT;
 			break;
 		}
 
-		rc = jesd_init_transport(tdev, &trans_p);
-		tdev->dev_state = CONFIGURED;
+		rc = jesd_init_transport(tdev, &dev_params);
 		break;
 	case JESD_SET_LANE_PARAMS:
 		if (copy_from_user(&tdev->ils,
@@ -1742,106 +1640,37 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		}
 		rc = jesd_set_ilas_len(tdev, int_arg);
 		break;
-	case JESD_SET_INTERRUPTMASK:
-
-		if (copy_from_user(&isrcnf,
-			(struct isrconf *)arg,
-			sizeof(struct isrconf))) {
-			rc = -EFAULT;
-			break;
-		}
-
-		if (tdev->transport_type == DEVICE_TX) {
-			tdev->irq_tx.irq_txconf =
-						isrcnf.irq_tx.irq_txconf;
-			iowrite32(tdev->irq_tx.irq_txconf & 0x338,
-					&tdev->tx_regs->tx_irq_enable);
-		} else if (tdev->transport_type == DEVICE_RX) {
-			tdev->irq_rx.irq_m.irq_en =
-						isrcnf.irq_m.irq_en;
-			tdev->irq_rx.irq_vm.irq_ven =
-						isrcnf.irq_vm.irq_ven;
-
-			iowrite32(tdev->irq_rx.irq_m.irq_en & 0x357c,
-					&tdev->rx_regs->rx_irq_enable);
-			iowrite32(tdev->irq_rx.irq_vm.irq_ven & 0xff,
-					&tdev->rx_regs->rx_irq_ve_msk);
-		} else
-			rc = -EFAULT;
-
-		break;
-	case JESD_GET_INTERRUPTMASK:
-		isrcnf.irq_tx.irq_txconf = tdev->irq_tx.irq_txconf;
-		isrcnf.irq_m.irq_en = tdev->irq_rx.irq_m.irq_en;
-		isrcnf.irq_vm.irq_ven = tdev->irq_rx.irq_vm.irq_ven;
-
-		if (tdev->transport_type == DEVICE_TX) {
-			isrcnf.irq_m.irq_en = 0;
-			isrcnf.irq_vm.irq_ven = 0;
-		} else if (tdev->transport_type == DEVICE_RX) {
-			isrcnf.irq_tx.irq_txconf = 0;
-		} else
-			rc = -EFAULT;
-			goto fail;
-
-
-		if (copy_to_user((u32 *)argp,
-				&isrcnf, sizeof(struct isrconf)))
-					rc = -EFAULT;
-		break;
-	case JESD_DEIVCE_START:
+	case JESD_DEVICE_START:
 		rc = jesd_start_transport(tdev);
-		if (rc < 0)
-			tdev->dev_state = SYNC_FAILED;
-		else
-			tdev->dev_state = OPERATIONAL;
-		break;
-	case JESD_DEV_RESTART:
-		if (copy_from_user(&tbgen_tmr_params,
-			(struct tbgen_params *)arg,
-			sizeof(struct tbgen_params))) {
-			rc = -EFAULT;
-			break;
-		}
-		jesd_restart_transport(tdev,
-					tbgen_tmr_params.timer_id);
-		if (rc < 0)
-			tdev->dev_state = SYNC_FAILED;
-		else
-			tdev->dev_state = OPERATIONAL;
 		break;
 	case JESD_TX_TEST_MODE:
-		if (tdev->transport_type == DEVICE_TX) {
-			if (copy_from_user(&tdev->tx_tests,
-					(struct conf_tx_tests *)arg,
-					sizeof(struct conf_tx_tests))) {
-				rc = -EFAULT;
-				goto fail;
-			}
-		} else{
+		if (copy_from_user(&tdev->tx_tests,
+				(struct conf_tx_tests *)arg,
+				sizeof(struct conf_tx_tests))) {
 			rc = -EFAULT;
 			goto fail;
 		}
-		jesd_conf_tests(tdev);
+		rc = jesd_conf_tests(tdev);
+		/*XXX: update state machine*/
+#if 0
 		tdev->dev_state = TESTMODE;
+#endif
 		break;
 	case JESD_RX_TEST_MODE:
-		if (tdev->transport_type == DEVICE_TX) {
-			if (copy_from_user(&tdev->rx_tests,
-					(struct conf_rx_tests *)arg,
-					sizeof(struct conf_rx_tests))) {
-				rc = -EFAULT;
-				goto fail;
-			}
-		} else{
+		if (copy_from_user(&tdev->rx_tests,
+				(struct conf_rx_tests *)arg,
+				sizeof(struct conf_rx_tests))) {
 			rc = -EFAULT;
-				goto fail;
+			goto fail;
 		}
-		jesd_conf_tests(tdev);
-		tdev->dev_state = TESTMODE;
+		rc = jesd_conf_tests(tdev);
+		/*XXX: upate state machine */
+#if 0
+	tdev->dev_state = TESTMODE;
+#endif
 		break;
 	case JESD_FORCE_SYNC:
-		force_sync(tdev);
+		rc = jesd_force_sync(tdev);
 		break;
 	case JESD_GET_STATS:
 		memcpy(&gstats.tstats, &tdev->t_stats,
@@ -1851,7 +1680,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		/* only for trans 0 we have two lanes, by default clean this*/
 		memset(&gstats.l1stats, 0, sizeof(struct lane_stats));
 
-		if (tdev->identifier == TRANPORT_0 &&
+		if (tdev->id == TRANPORT_0 &&
 			 tdev->active_lanes == 2) {
 			memcpy(&gstats.l1stats,
 				&tdev->lane_devs[1]->l_stats,
@@ -1903,10 +1732,10 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			goto fail;
 		}
 
-		if (tdev->transport_type == DEVICE_TX) {
+		if (tdev->type == JESD_DEV_TX) {
 			size = sizeof(struct config_registers_tx);
 			regs = (u32 *) tdev->tx_regs;
-		} else if (tdev->transport_type == DEVICE_RX) {
+		} else {
 			size = sizeof(struct config_registers_rx);
 			regs = (u32 *)tdev->rx_regs;
 		}
@@ -1926,34 +1755,35 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		rc = jesd_reg_dump_to_user(regs, regcnf.offset,
 			regcnf.len, regcnf.buf);
 		break;
-	case JESD_SHUTDOWN:
-		shutdown(tdev);
+	case JESD_DEVICE_STOP:
+		rc = jesd_dev_stop(tdev);
 		break;
 	case JESD_GET_DEVICE_INFO:
 
 		memcpy(&trans_dev_info.ils, &tdev->ils,
 						sizeof(struct ils_params));
-		trans_dev_info.init_params.sampling_rate =
-						tdev->sampling_rate;
+		trans_dev_info.init_params.data_rate =
+						tdev->data_rate;
 		trans_dev_info.init_params.delay =
 						tdev->delay;
-		trans_dev_info.init_params.tran_flg =
-						tdev->flags;
+		trans_dev_info.init_params.config_flags =
+						tdev->config_flags;
 		trans_dev_info.init_params.lanes =
 						tdev->active_lanes;
-		trans_dev_info.ilas_len = tdev->ilas_len;
+		trans_dev_info.init_params.ilas_length = tdev->ilas_len;
 		trans_dev_info.dev_state = tdev->dev_state;
 
-		if (copy_to_user((struct transport_device_info *)arg,
+		if (copy_to_user((struct jesd_transport_dev_info *)arg,
 					&trans_dev_info,
-					sizeof(struct transport_device_info)))
+					sizeof(struct jesd_transport_dev_info)))
 				rc = -EFAULT;
 		break;
 	case JESD_GET_LANE_RX_RECEIVED_PARAMS:
 
 /*XXX: Fix register access, it is crap right now!!*/
 #if 0
-		if (tdev->transport_type == DEVICE_RX) {
+		if (((tdev->type == JESD_DEV_RX) ||
+				tdev->type == JESD_DEV_SRX)) {
 			ilsparams = kzalloc(sizeof(struct ils_params),
 							GFP_KERNEL);
 			ilsparams->device_id = tdev->rx_regs->rx_did;
@@ -1992,7 +1822,8 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 #endif
 		break;
 	case JESD_RX_AUTO_SYNC:
-		if (tdev->transport_type == DEVICE_RX) {
+		if (((tdev->type == JESD_DEV_RX) ||
+				tdev->type == JESD_DEV_SRX)) {
 			sync_params = kzalloc(sizeof(struct auto_sync_params),
 							GFP_KERNEL);
 			if (copy_from_user(sync_params,
@@ -2022,18 +1853,6 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		} else
 			return -EINVAL;
 		break;
-
-/*XXX: Fix device state handling*/
-#if 0
-	case JESD_GET_DEVICE_STATE:
-		*state = arg;
-		*state = tdev->dev_state;
-		break;
-	case JESD_SET_DEVICE_STATE:
-		*state = arg;
-		tdev->dev_state = *state;
-		break;
-#endif
 	default:
 		rc = -ENOTTY;
 		break;
@@ -2045,10 +1864,10 @@ fail:
 
 static int jesd204_open(struct inode *inode, struct file *pfile)
 {
-	struct transport_device *tdev = NULL;
+	struct jesd_transport_dev *tdev = NULL;
 	int rc = 0;
 
-	tdev = container_of(inode->i_cdev, struct transport_device, c_dev);
+	tdev = container_of(inode->i_cdev, struct jesd_transport_dev, c_dev);
 	if (tdev != NULL) {
 		pfile->private_data = tdev;
 		atomic_inc(&tdev->ref);
@@ -2061,152 +1880,189 @@ static int jesd204_open(struct inode *inode, struct file *pfile)
 
 int jesd204_release(struct inode *inode, struct file *pfile)
 {
-	struct transport_device *tdev = NULL;
+	struct jesd_transport_dev *tdev = NULL;
 	tdev = pfile->private_data;
 
 	atomic_dec(&tdev->ref);
 	return 0;
 }
 
-static void bh_txhandler(struct transport_device *tdev,
-			u32 in_status_reg,
-			u32 in_isr_mask)
+
+static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 {
-	u32 status_reg = in_status_reg;
-	u32 isr_mask = in_isr_mask;
+	/*XXX: TBD check sync status based on diag_sel*/
 
-	if (jtest_bit(SYSREF_ISR_BIT8, &status_reg)) {
-
-		jesd_set_bit(SYSREF_ISR_BIT8, &tdev->tx_regs->tx_irq_status);
-		/*dfifo*/
-		jesd_set_bit(DFIFO_BIT3, &tdev->tx_regs->tx_transcontrol);
-		jesd_clear_bit(DFIFO_BIT3, &tdev->tx_regs->tx_transcontrol);
-		/*disable sysref rose*/
-		jesd_clear_bit(SYSREF_ISR_BIT8, &tdev->tx_regs->tx_irq_enable);
-		tdev->sysref_rose = 1;
-		wake_up(&tdev->isr_wait);
-		/*sync detected change state and send event*/
-		raise_exception(tdev, SYS_REF_ROSE);
-	}
-	/*by default we support sync and sys_ref_rose and report it*/
-	if (jtest_bit(SYNC_ISR_BIT9, &status_reg)) {
-		/*sync detected change state and send event*/
-		raise_exception(tdev, SYNC_DETECTED);
-		jesd_set_bit(SYNC_ISR_BIT9, &tdev->tx_regs->tx_irq_status);
-		tdev->dev_state = SYNC_START;
-	}
-
-	if (jtest_bit(UNDERF_ISR_BIT3, &isr_mask)) {
-		/*unpacker_underflow supported*/
-		if (jtest_bit(UNDERF_ISR_BIT3, &status_reg))
-			/*unpacker_underflow detected */
-			raise_exception(tdev, UPAC_UF_ERR);
-
-		jesd_set_bit(UNDERF_ISR_BIT3, &tdev->tx_regs->tx_irq_status);
-	}
-
-	if (jtest_bit(WCBOF_ISR_BIT4, &isr_mask)) {
-		/*Write Circular Buffer overflow supported*/
-		if (jtest_bit(WCBOF_ISR_BIT4, &status_reg))
-			/*Write Circular Buffer overflow detected*/
-			raise_exception(tdev, WBUF_OF_ERR);
-
-		jesd_set_bit(WCBOF_ISR_BIT4, &tdev->tx_regs->tx_irq_status);
-	}
-
-	if (jtest_bit(WCBUF_ISR_BIT5, &isr_mask)) {
-		/*Write Circular Buffer underflow supported*/
-		if (jtest_bit(WCBUF_ISR_BIT5, &status_reg))
-			/*Write Circular Buffer underflow detected*/
-			raise_exception(tdev, WBUF_UF_ERR);
-
-		jesd_set_bit(WCBUF_ISR_BIT5, &tdev->tx_regs->tx_irq_status);
-	}
+	tbgen_timer_enable(tdev->timer_handle);
 }
 
-static void bh_rxhandler(struct transport_device *tdev)
+void jesd_link_monitor_worker(struct work_struct *work)
 {
-	/* this is for the nit, uex_k, bad_dis skworr and csum user event*/
-	/*check if deframer isr needs to be triggered*/
-	if (tdev->rx_regs->rx_irq_status & 1)
-		handle_maskvector(tdev);
-	/*do irq*/
-	handle_rx_irq(tdev);
+	struct jesd_transport_dev *tdev;
 
-	/*reset isr that are processred by this thime*/
-	reset_sync_interrupts(tdev);
+	tdev = container_of(work, struct jesd_transport_dev, link_monitor);
+
+	jesd_link_monitor(tdev);
 }
 
-static void tran_tx_isr_tasklet(unsigned long data)
+static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 {
-	struct transport_device *tdev = (struct transport_device *)data;
-	u32 isr_mask = ioread32(&tdev->tx_regs->tx_irq_enable);
-	u32 status_reg = ioread32(&tdev->tx_regs->tx_irq_status);
+	u32 *ctrl_reg, *irq_en_reg, *reg, val, mask;
 
-	spin_lock(&tdev->lock_tx_bf);
-	/*disable for processing*/
-	iowrite32(0x00, &tdev->tx_regs->tx_irq_enable);
-	iowrite32(0x00, &tdev->tx_regs->tx_irq_status);
+	if (tdev->type == JESD_DEV_TX) {
+		ctrl_reg = &tdev->tx_regs->tx_transcontrol;
+		irq_en_reg = &tdev->tx_regs->tx_irq_enable;
+	} else {
+		ctrl_reg = &tdev->rx_regs->rx_transcontrol;
+		irq_en_reg = &tdev->rx_regs->rx_irq_enable;
+	}
 
-	bh_txhandler(tdev, status_reg, isr_mask);
+	/* reset Deskew FIFO */
+	val = DFIFO_SWRESET;
+	mask = DFIFO_SWRESET;
+	jesd_update_reg(ctrl_reg, val, mask);
+	udelay(20);
+	val = ~DFIFO_SWRESET;
+	jesd_update_reg(ctrl_reg, val, mask);
 
-	/*enable as per catche*/
-	iowrite32(status_reg, &tdev->tx_regs->tx_irq_status);
-	iowrite32(isr_mask, &tdev->tx_regs->tx_irq_enable);
-	spin_unlock(&tdev->lock_tx_bf);
+	val = SYSREF_MASK;
+	mask = SYSREF_MASK;
+	jesd_update_reg(ctrl_reg, val, mask);
+
+	val = IRQ_SYSREF_ROSE;
+	mask = IRQ_SYSREF_ROSE;
+	jesd_update_reg(irq_en_reg, val, mask);
+
+	/*Enable Tx/Rx*/
+	if (tdev->type == JESD_DEV_TX) {
+		reg = &tdev->tx_regs->tx_frm_ctrl;
+		val = TRANSMIT_EN;
+		mask = TRANSMIT_EN;
+		jesd_update_reg(reg, val, mask);
+	} else {
+		reg = &tdev->rx_regs->rx_ctrl_0;
+		val = ~RX_DIS;
+		mask = RX_DIS;
+		jesd_update_reg(reg, val, mask);
+	}
+
+	/*Enable TX alignment Timer for Tx or Raise SYNC for RX*/
+	if (tdev->type == JESD_DEV_TX)
+		tbgen_timer_enable(tdev->txalign_timer_handle);
+	else
+		jesd_force_sync(tdev);
+
+	schedule_work(&tdev->link_monitor);
 }
 
-static void tran_rx_isr_tasklet(unsigned long data)
+static void jesd_tx_tasklet(unsigned long data)
 {
-	struct transport_device *tdev = (struct transport_device *)data;
-	u32 isr_mask = ioread32(&tdev->rx_regs->rx_irq_enable);
-	u32 status_reg = ioread32(&tdev->rx_regs->rx_irq_status);
+	struct jesd_transport_dev *tdev = (struct jesd_transport_dev *)data;
+	struct config_registers_tx *tx_regs = tdev->tx_regs;
+	u32 irq_status, *reg, val, mask;
 
-	spin_lock(&tdev->lock_rx_bf);
-	iowrite32(0x00, &tdev->rx_regs->rx_irq_status);
-	iowrite32(0x00, &tdev->rx_regs->rx_irq_enable);
+	irq_status = ioread32(&tx_regs->tx_irq_status);
+	iowrite32(irq_status, &tx_regs->tx_irq_status);
 
-	bh_rxhandler(tdev);
+	if (irq_status & IRQ_SYSREF_ROSE)
+		jesd_handle_sysref_rose(tdev);
 
-	iowrite32(status_reg, &tdev->rx_regs->rx_irq_status);
-	iowrite32(isr_mask, &tdev->rx_regs->rx_irq_enable);
-	spin_unlock(&tdev->lock_rx_bf);
+	/*Enable interrupts we serviced*/
+	val = irq_status;
+	mask = irq_status;
+	reg = &tx_regs->tx_irq_enable;
+	jesd_update_reg(reg, val, mask);
 }
 
-static irqreturn_t do_isr(int irq, void *param)
+static irqreturn_t jesd_tx_isr(int irq, void *param)
 {
-	struct transport_device *tdev = param;
+	struct jesd_transport_dev *tdev = param;
+	struct config_registers_tx *tx_regs = tdev->tx_regs;
+	u32 irq_status, *reg, mask, val;
 
-	if (tdev->transport_type == DEVICE_TX)
-		tasklet_hi_schedule(&tdev->do_tx_tasklet);
-	else if (tdev->transport_type == DEVICE_RX)
-		tasklet_hi_schedule(&tdev->do_rx_tasklet);
+	irq_status = ioread32(&tx_regs->tx_irq_status);
+	if (!irq_status) {
+		dev_info(tdev->dev, "%s: Spurious IRQ\n", tdev->name);
+		return IRQ_NONE;
+	}
+
+	/*Mask off IRQs that we got*/
+	val = ~irq_status;
+	mask = irq_status;
+	reg = &tx_regs->tx_irq_enable;
+	jesd_update_reg(reg, val, mask);
+	tasklet_schedule(&tdev->tx_tasklet);
 
 	return IRQ_HANDLED;
 }
 
-static int transport_register_irq(struct transport_device *tdev)
+static void jesd_rx_tasklet(unsigned long data)
+{
+	struct jesd_transport_dev *tdev = (struct jesd_transport_dev *)data;
+	struct config_registers_rx *rx_regs = tdev->rx_regs;
+	u32 irq_status, *reg, val, mask;
+
+	irq_status = ioread32(&rx_regs->rx_irq_status);
+	iowrite32(irq_status, &rx_regs->rx_irq_status);
+
+	if (irq_status & IRQ_SYSREF_ROSE)
+		jesd_handle_sysref_rose(tdev);
+
+	/*Enable interrupts we serviced*/
+	val = irq_status;
+	mask = irq_status;
+	reg = &rx_regs->rx_irq_enable;
+	jesd_update_reg(reg, val, mask);
+}
+
+static irqreturn_t jesd_rx_isr(int irq, void *param)
+{
+	struct jesd_transport_dev *tdev = param;
+	struct config_registers_rx *rx_regs = tdev->rx_regs;
+	u32 irq_status, *reg, mask, val;
+
+	irq_status = ioread32(&rx_regs->rx_irq_status);
+	if (!irq_status) {
+		dev_info(tdev->dev, "%s: Spurious IRQ\n", tdev->name);
+		return IRQ_NONE;
+	}
+
+	/*Mask off IRQs that we got*/
+	val = ~irq_status;
+	mask = irq_status;
+	reg = &rx_regs->rx_irq_enable;
+	jesd_update_reg(reg, val, mask);
+	tasklet_schedule(&tdev->rx_tasklet);
+
+	return IRQ_HANDLED;
+}
+
+static int transport_register_irq(struct jesd_transport_dev *tdev)
 {
 
 	int rc = 0;
 
 	if (tdev != NULL) {
 
-		rc = request_irq(tdev->irq, do_isr, 0, "jesd", tdev);
+		if (tdev->type == JESD_DEV_TX) {
+			rc = request_irq(tdev->irq, jesd_tx_isr, 0,
+					tdev->name, tdev);
+			if (!rc)
+				tasklet_init(&tdev->tx_tasklet,
+					jesd_tx_tasklet, (unsigned long) tdev);
+		} else {
+			rc = request_irq(tdev->irq, jesd_rx_isr, 0,
+				tdev->name, tdev);
+			if (!rc)
+				tasklet_init(&tdev->rx_tasklet,
+					jesd_rx_tasklet, (unsigned long) tdev);
+		}
 
 		if (rc) {
 			dev_err(tdev->dev, "%s:Failed to register irq\n",
 				tdev->name);
 			goto out;
 		}
-		tasklet_init(&tdev->do_tx_tasklet, tran_tx_isr_tasklet,
-						 (unsigned long)tdev);
-		tasklet_init(&tdev->do_rx_tasklet, tran_rx_isr_tasklet,
-						 (unsigned long)tdev);
 
-		spin_lock_init(&tdev->lock_tx_bf);
-		spin_lock_init(&tdev->lock_rx_bf);
-		spin_lock_init(&tdev->sysref_lock);
 	}
 
 out:
@@ -2222,13 +2078,13 @@ static const struct file_operations jesd204_fops = {
 	.release = jesd204_release
 };
 
-static int create_c_dev(struct transport_device *tdev,
+static int create_c_dev(struct jesd_transport_dev *tdev,
 			int jesd204_major,
 			int jesd_minor)
 {
 	int rc = -ENODEV;
-	struct transport_device *t = tdev;
-	t->devt = MKDEV(jesd204_major, jesd_minor + t->identifier);
+	struct jesd_transport_dev *t = tdev;
+	t->devt = MKDEV(jesd204_major, jesd_minor + t->id);
 
 	cdev_init(&t->c_dev, &jesd204_fops);
 	t->c_dev.owner = THIS_MODULE;
@@ -2237,24 +2093,25 @@ static int create_c_dev(struct transport_device *tdev,
 	return rc;
 }
 
-static struct transport_device *create_jesd_transports(struct jesd204_dev *jdev,
+static struct jesd_transport_dev *
+	create_jesd_transports(struct jesd204_dev *jdev,
 	struct device_node *dev_node, unsigned int id, struct device *dev)
 {
 	int type = jdev->trans_type, rc;
-	struct transport_device *tdev = NULL;
+	struct jesd_transport_dev *tdev = NULL;
 	u32 *base, max_lanes;
 
-	tdev = kzalloc(sizeof(struct transport_device), GFP_KERNEL);
+	tdev = kzalloc(sizeof(struct jesd_transport_dev), GFP_KERNEL);
 
 	if (!tdev) {
 		dev_err(dev, "Failed to allocate transport [%d]\n", id);
 		goto out;
 	}
 	atomic_set(&tdev->ref, 0);
-	tdev->jesd_parent = jdev;
-	tdev->identifier = id;
+	tdev->parent = jdev;
+	tdev->id = id;
 	tdev->dev = dev;
-	tdev->transport_type = type;
+	tdev->type = type;
 
 	base = of_iomap(dev_node, 0);
 
@@ -2264,10 +2121,10 @@ static struct transport_device *create_jesd_transports(struct jesd204_dev *jdev,
 	}
 
 	/*logical assignment of register to the transport*/
-	if (type == DEVICE_TX) {
+	if (type == JESD_DEV_TX) {
 		tdev->tx_regs = (struct config_registers_tx *) base;
 		tdev->rx_regs = NULL;
-	} else if (type == DEVICE_RX) {
+	} else if ((type == JESD_DEV_RX) || (type == JESD_DEV_SRX)) {
 		tdev->rx_regs = (struct config_registers_rx *)base;
 		tdev->tx_regs = NULL;
 	} else {
@@ -2286,6 +2143,21 @@ static struct transport_device *create_jesd_transports(struct jesd204_dev *jdev,
 		dev_info(tdev->dev, "%s: max_lanes %d\n", tdev->name,
 			tdev->max_lanes);
 	}
+	if (tdev->max_lanes > jdev->max_lanes) {
+		dev_err(tdev->dev, "%s: trans lanes [%d] > dev lanes [%d]\n",
+			tdev->name, tdev->max_lanes, jdev->max_lanes);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	rc = of_property_read_u32(dev_node, "timer-id", &tdev->timer_id);
+	if (rc) {
+		dev_err(tdev->dev, "%s: Timer id property not found\n",
+			tdev->name);
+		goto out;
+	}
+
+	INIT_WORK(&tdev->link_monitor, jesd_link_monitor_worker);
 
 	return tdev;
 out:
@@ -2293,7 +2165,7 @@ out:
 	return NULL;
 }
 
-void jesddev_list_cleanup(void)
+void jdev_list_cleanup(void)
 {
 	struct jesd204_dev *cur, *nxt;
 
@@ -2302,29 +2174,27 @@ void jesddev_list_cleanup(void)
 	}
 }
 
-static int get_device_name(struct transport_device *tdev)
+static int get_device_name(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 
-	if (tdev->transport_type == DEVICE_TX) {
-		sprintf(&tdev->name[0], "jesd_tx_%d", pri->tx_dev_num);
-		pri->tx_dev_num = pri->tx_dev_num + 1;
-	} else if (tdev->transport_type == DEVICE_RX) {
-		sprintf(&tdev->name[0], "jesd_rx_%d", pri->rx_dev_num);
-		pri->rx_dev_num = pri->rx_dev_num + 1;
-	} else
+	if (tdev->type == JESD_DEV_TX)
+		sprintf(&tdev->name[0], "jesd_tx_%d", tdev->id);
+	else if ((tdev->type == JESD_DEV_RX) || tdev->type == JESD_DEV_SRX)
+		sprintf(&tdev->name[0], "jesd_rx_%d", tdev->id);
+	else
 			rc = -EINVAL;
 	return rc;
 }
 
-static int enable_transport(struct transport_device *tdev)
+static int enable_transport(struct jesd_transport_dev *tdev)
 {
 
 	u32 *trans_ctrl_reg = NULL;
 
-	if (tdev->transport_type == DEVICE_TX)
+	if (tdev->type == JESD_DEV_TX)
 		trans_ctrl_reg = &tdev->tx_regs->tx_transcontrol;
-	else if (tdev->transport_type == DEVICE_RX)
+	else
 		trans_ctrl_reg = &tdev->rx_regs->rx_transcontrol;
 
 	jesd_set_bit(ENABLE_CLK_BIT0, trans_ctrl_reg);
@@ -2335,80 +2205,71 @@ static int enable_transport(struct transport_device *tdev)
 static int __init jesd204_of_probe(struct platform_device *pdev)
 {
 	int rc = -ENODEV;
-	int jesd_major, jesd_minor;
-	unsigned int id;
-	struct jesd204_dev *jesddev = NULL;
+	int jesd_major, jesd_minor, max_lanes;
+	unsigned int id, i = 0;
+	struct jesd204_dev *jdev = NULL;
 	struct device_node *child = NULL;
 	struct device_node *node = pdev->dev.of_node;
-	dev_t devt;
-	struct transport_device *tdev;
+	struct jesd_transport_dev *tdev = NULL;
 
-	jesddev = kzalloc(sizeof(struct jesd204_dev), GFP_KERNEL);
+	jdev = kzalloc(sizeof(struct jesd204_dev), GFP_KERNEL);
 
-	if (!jesddev) {
+	if (!jdev) {
 		rc = -ENOMEM;
-		goto failed0;
+		goto out;
 	}
 
-	/*accomidate dev*/
-	jesddev->node = pdev->dev.of_node;
+	jdev->dev = &pdev->dev;
+
+	rc = alloc_chrdev_region(&jdev->devt, 0,
+		TRANSPORTS_PER_JESD_DEV, "jesd204");
+	if (rc) {
+		dev_err(jdev->dev, "Char region allocation failed, err %d\n",
+			rc);
+		goto out;
+	}
+
+	jesd_major = MAJOR(jdev->devt);
+	jesd_minor = MINOR(jdev->devt);
+
+	jdev->node = pdev->dev.of_node;
+	rc = of_property_read_u32(node, "lanes", &max_lanes);
+
+	if (rc) {
+		dev_err(tdev->dev, "max_lanes property not found\n\n");
+		goto out;
+	}
+	jdev->max_lanes = max_lanes;
 
 	for_each_child_of_node(node, child) {
 		rc = of_property_read_u32(child,
-						"trans-type",
-						&jesddev->trans_type);
+						"transport-type",
+						&jdev->trans_type);
 		if (rc < 0) {
-			dev_err(&pdev->dev, "Trans type failed  %x",
-				jesddev->trans_type);
-			goto failed2;
+			dev_err(jdev->dev, "Trans type failed  %x",
+				jdev->trans_type);
+			goto out;
 		}
 
-		if (jesddev->trans_type == DEVICE_TX) {
-			rc = alloc_chrdev_region(&devt,
-							0,
-							TRANSPORT_PER_IP,
-							"jesd204-tx");
-		} else if (jesddev->trans_type == DEVICE_RX) {
-			rc = alloc_chrdev_region(&devt,
-							0,
-							TRANSPORT_PER_IP,
-							"jesd204-rx");
-		} else {
-			rc = -EINVAL;
-			dev_info(&pdev->dev, "invalid transport type");
-		}
-		if (rc < 0)
-			goto failed1;
-
-		jesd_major = MAJOR(devt);
-		jesd_minor = MINOR(devt);
-
-		rc = of_property_read_u32(child, "trans-id", &id);
+		rc = of_property_read_u32(child, "transport-id", &id);
 
 		if (rc < 0) {
-			dev_err(&pdev->dev, "%s %x trans id\n",
-				DRIVER_NAME, id);
-			goto failed2;
+			dev_err(jdev->dev, "transport-id property not found\n");
+			goto out;
 		}
 
-		if (id > TRANSPORT_PER_IP) {
-			dev_err(&pdev->dev, "%s %i too many device\n",
-				DRIVER_NAME, id);
-			rc = -ENODEV;
-			goto failed2;
-		}
-		tdev = create_jesd_transports(jesddev, child, id, &pdev->dev);
+		tdev = create_jesd_transports(jdev, child, id, &pdev->dev);
 
 		if (!tdev) {
-			dev_err(&pdev->dev, "Failed to create transport %d\n",
+			dev_err(jdev->dev, "Failed to create transport %d\n",
 				id);
-			goto failed2;
+			goto out;
 		}
 
 		rc = create_c_dev(tdev, jesd_major, jesd_minor);
 		if (rc < 0) {
-			dev_err(&pdev->dev, "cdev add failed\n");
-			goto failed2;
+			dev_err(jdev->dev, "cdev add failed\n");
+			goto out;
 		}
 
 		/* get the maped phygasket node into here */
@@ -2417,8 +2278,8 @@ static int __init jesd204_of_probe(struct platform_device *pdev)
 		tdev->phy = map_phygasket(tdev->phy_node);
 
 		if (tdev->phy == NULL) {
-			dev_err(&pdev->dev, "phy gasket is not mapped\n");
-			goto failed2;
+			dev_err(jdev->dev, "phy gasket is not mapped\n");
+			goto out;
 		}
 
 		tdev->irq = irq_of_parse_and_map(child, 0);
@@ -2426,49 +2287,43 @@ static int __init jesd204_of_probe(struct platform_device *pdev)
 			rc = transport_register_irq(tdev);
 
 			if (rc < 0) {
-				dev_err(&pdev->dev, "irq register failed\n");
-				goto failed2;
+				dev_err(jdev->dev, "irq register failed\n");
+				goto out;
 			}
 		} else {
-			dev_info(&pdev->dev, "%s: No IRQ, disabling events\n",
+			dev_info(jdev->dev, "%s: No IRQ, disabling events\n",
 				tdev->name);
-			tdev->flags |= NO_TRANSPORT_EVENTS;
+			tdev->dev_flags |= DEV_FLG_NO_TRANSPORT_EVENTS;
 		}
 
 		init_waitqueue_head(&tdev->isr_wait);
 		init_waitqueue_head(&tdev->to_wait);
 
-		if (jesddev->trans_type == DEVICE_TX) {
-			device_create(jesd204_class, tdev->dev, tdev->devt,
-					NULL, tdev->name);
-		} else if (jesddev->trans_type == DEVICE_RX) {
-			device_create(jesd204_class, tdev->dev, tdev->devt,
-					NULL, tdev->name);
-		} else {
-			dev_info(&pdev->dev, "invalid tansport\n");
-		}
+		spin_lock_init(&tdev->lock);
+		device_create(jesd204_class, tdev->dev, tdev->devt,
+			NULL, tdev->name);
 		tdev->dev_state = JESD_STANDBY;
-		jesddev->trans_device[id] = tdev;
-		dev_info(&pdev->dev, "%s JESD device created\n", tdev->name);
+		jdev->transports[i] = tdev;
+		dev_info(jdev->dev, "%s JESD device created\n", tdev->name);
+		jesd_major++;
+		i++;
 	}
 
 	if (rc < 0) {
-		dev_info(&pdev->dev, "jesd probe failed\n");
-		goto failed2;
+		dev_info(jdev->dev, "jesd probe failed\n");
+		goto out;
 	}
 
-	list_add_tail(&jesddev->jesd_dev_list, &pri->list);
-	dev_set_drvdata(&pdev->dev, jesddev);
+	list_add_tail(&jdev->jesd_dev_list, &pri->list);
+	dev_set_drvdata(&pdev->dev, jdev);
 
 	enable_transport(tdev);
 	return rc;
 
-failed2:
-	unregister_chrdev_region(devt, TRANSPORT_PER_IP);
-failed1:
-	kfree(jesddev);
-failed0:
-	dev_info(&pdev->dev, "jesd probe failed\n");
+out:
+	if (jdev)
+		unregister_chrdev_region(jdev->devt, TRANSPORTS_PER_JESD_DEV);
+	kfree(jdev);
 	return rc;
 }
 
@@ -2476,32 +2331,33 @@ static int __exit jesd204_of_remove(struct platform_device *pdev)
 {
 	int id = 0;
 	int rc = 0;
-	struct jesd204_dev *jesddev = NULL;
+	struct jesd204_dev *jdev = NULL;
 	u32 *regs = NULL;
 
-	jesddev = (struct jesd204_dev *)dev_get_drvdata(&pdev->dev);
+	jdev = (struct jesd204_dev *)dev_get_drvdata(&pdev->dev);
 
-	if (!jesddev) {
+	if (!jdev) {
 		rc = -ENODEV;
 		goto error;
 	}
 
-	for (id = 0; id < TRANSPORT_PER_IP; id++) {
-		jesddev_list_cleanup();
-		device_destroy(jesd204_class, jesddev->trans_device[id]->devt);
-		cdev_del(&jesddev->trans_device[id]->c_dev);
-		if (jesddev->trans_type == DEVICE_TX)
-			regs = (u32 *) jesddev->trans_device[id]->tx_regs;
-		else if (jesddev->trans_type == DEVICE_RX)
-			regs = (u32 *) jesddev->trans_device[id]->rx_regs;
+	for (id = 0; id < TRANSPORTS_PER_JESD_DEV; id++) {
+		jdev_list_cleanup();
+		device_destroy(jesd204_class, jdev->transports[id]->devt);
+		cdev_del(&jdev->transports[id]->c_dev);
+		if (jdev->trans_type == JESD_DEV_TX)
+			regs = (u32 *) jdev->transports[id]->tx_regs;
+		else if (jdev->trans_type == JESD_DEV_RX)
+			regs = (u32 *) jdev->transports[id]->rx_regs;
 		iounmap(regs);
-		kfree(jesddev->trans_device[id]);
+		cancel_work_sync(&jdev->transports[id]->link_monitor);
+		kfree(jdev->transports[id]);
 	}
 
-	kfree(jesddev);
-	dev_set_drvdata(&pdev->dev, NULL);
+	kfree(jdev);
+
 error:
-	return rc;		/* success */
+	return rc;
 }
 
 

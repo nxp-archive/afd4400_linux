@@ -30,7 +30,7 @@
 
 /** @brief this is to be max devices that we are going to support
 */
-#define TRANSPORT_PER_IP 2
+#define TRANSPORTS_PER_JESD_DEV 2
 #define MAX_LANES 2
 /** @brief max lanes for transport identifier trans 0 == 1 and trans 1 == 2
 */
@@ -325,28 +325,53 @@ struct config_registers_rx {
 #define CF_MASK			0x1f
 #define CF_SHIFT		0
 
-/** @brief \struct lanes which belong to a transport
-*/
+/* Tn_control */
+#define CLKDIV_MASK		0x07
+#define CLKDIV_SHIFT		4
+#define SYSREF_MASK		(1 << 20)
+#define DFIFO_SWRESET		(1 << 3)
+/* Tn_Lane_enable */
+#define LANE_EN_MASK		0xff
+
+/* Tn_M_enable */
+#define M_EN_MASK		0x3
+
+/* Tn_IRQ_STATUS & IRQ_ENABLE*/
+#define IRQ_SYSREF_ROSE		(1 << 8)
+#define IRQ_SYNC_RECIEVED	(1 << 9)
+
+/* Tn_frm_ctl*/
+#define TRANSMIT_EN		(1 << 1)
+
+/* Tn_CTRLREG0*/
+#define FSREQ			(1 << 2)
+#define RX_DIS			(1 << 7)
+
 struct lane_device {
-/* point to the transport we belong*/
-	struct transport_device *trans_dev_params;
-	struct lane_stats *l_stats;
+	struct jesd_transport_dev *tdev;
+	struct lane_stats l_stats;
 	u8 id;
+	u8 enabled;
 };
 /** @brief /stuct jesd devices to be created for each transport
  *	hence the instance is defined in here.
  */
-struct transport_device {
+struct jesd_transport_dev {
 	char name[32];
 	atomic_t ref;
-	u32 flags;
-	u8 mode;
 	enum jesd_state dev_state;
-	u32 transport_type;
-	struct jesd204_dev *jesd_parent;
-	struct tbgen_dev *tbg;
+	enum jesd_dev_type type;
+	u32 config_flags;
+	u32 dev_flags;
+	u32 test_mode_flags;
+	struct jesd204_dev *parent;
+	void *tbgen_dev_handle;
+	void *timer_handle;
+	void *txalign_timer_handle;
+	struct work_struct link_monitor;
+	int timer_id;
 	struct device *dev;
-	unsigned int identifier;
+	unsigned int id;
 	struct lane_device *lane_devs[MAX_LANES];
 	int max_lanes;
 	int active_lanes;
@@ -354,15 +379,14 @@ struct transport_device {
 	struct config_registers_tx *tx_regs;
 	struct config_registers_rx *rx_regs;
 
-	struct tasklet_struct do_tx_tasklet;
-	struct tasklet_struct do_rx_tasklet;
-	spinlock_t lock_tx_bf;
-	spinlock_t lock_rx_bf;
+	struct tasklet_struct tx_tasklet;
+	struct tasklet_struct rx_tasklet;
+	spinlock_t lock;
 
 	u8 delay;
 	u8 ilas_len;
 	struct ils_params ils;
-	unsigned int sampling_rate;
+	unsigned int data_rate;
 
 	/* this would yield the details for the error that is occurred when
 	* the jesd state is error state
@@ -396,14 +420,18 @@ struct transport_device {
 	int sysref_rose;
 	int isr_error;
 	int evnt_jiffs;
-	spinlock_t sysref_lock;
 
 };
 
+/*dev_flags*/
+#define DEV_FLG_NO_TRANSPORT_EVENTS	(1 << 0)
+#define DEV_FLG_PHYGASKET_LOOPBACK_EN	(1 << 1)
+#define DEV_FLG_TEST_PATTERNS_EN	(1 << 2)
+
 struct jesd204_dev {
-	struct transport_device *trans_device[TRANSPORT_PER_IP];
+	struct jesd_transport_dev *transports[TRANSPORTS_PER_JESD_DEV];
 	u8 max_lanes;
-	u8 lanes_grabed;
+	u8 used_lanes;
 	u8 transport_count;
 	u32 trans_type;
 	struct device *dev;
@@ -419,7 +447,7 @@ struct jesd204_private {
 };
 /** @brief xport symbols for jesd
 */
-int jesd_start_transport(struct transport_device *tdev);
+int jesd_start_transport(struct jesd_transport_dev *tdev);
 int  jesd_reg_dump_to_user(u32 *reg, unsigned int offset,
 			unsigned int length, u32 *buf);
 #endif
