@@ -1,8 +1,12 @@
 /*
- *  linux/arch/arm/mach-d4400/epit.c
+ * linux/arch/arm/mach-d4400/epit.c
  *
- *  Copyright 2013 Freescale Semiconductor, Inc.
- *  Copyright (C) 2010 Sascha Hauer <s.hauer@pengutronix.de>
+ * Copyright (C) 2013 Freescale Semiconductor, Inc.
+ *
+ * Author: Arnab Basu <arnab.basu@freescale.com>
+ *
+ * Based on the code of Sascha Hauer <s.hauer@pengutronix.de>
+ * for I.MX
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License

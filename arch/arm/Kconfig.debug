@@ -104,7 +104,7 @@ choice
 		  their output to the second serial port on these devices.
 
 	config DEBUG_D4400_UART
-		bool "D4400 Debug UART"
+		bool "Kernel low-level debugging messages via UART4"
 		depends on SOC_D4400
 		help
 		  Say Y here if you want kernel low-level debugging

@@ -1,5 +1,5 @@
 /*
- *  Driver for Motorola IMX serial ports
+ *  Driver for Motorola IMX and Freescale D4400 serial ports
  *
  *  Based on drivers/char/serial.c, by Linus Torvalds, Theodore Ts'o.
  *
