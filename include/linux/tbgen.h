@@ -237,4 +237,5 @@ int tbgen_timer_enable(struct tbgen_timer *timer);
 int tbgen_timer_set_jesd_ready(struct tbgen_timer *timer, int ready);
 int tbgen_attach_timer(struct tbgen_timer *timer, void *jesd_dev_handle);
 int tbgen_timer_disable(struct tbgen_timer *timer);
+int tbgen_set_sync_loopback(struct tbgen_timer *timer, int enable);
 #endif

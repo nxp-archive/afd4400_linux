@@ -623,6 +623,30 @@ int tbgen_timer_set_jesd_ready(struct tbgen_timer *timer, int ready)
 	return 0;
 }
 
+int tbgen_set_sync_loopback(struct tbgen_timer *timer, int enabled)
+{
+	struct tbg_regs *tbgregs = timer->tbg->tbgregs;
+	u32 *reg, val, mask;
+	int rc = 0;
+
+	if (timer->type != JESD_TX_ALIGNMENT) {
+		dev_err(tbg->dev, "syn loopbak valid only for Tx alignment\n");
+		rc = -EINVAL;
+		goto out;
+	}
+
+	val = (1 << timer->id);
+	mask = val;
+	reg = &tbgregs->debug;
+
+	if (!enabled)
+		val = ~val;
+
+	tbgen_update_reg(reg, val, mask);
+out:
+	return rc;
+}
+
 int tbgen_timer_enable(struct tbgen_timer *timer)
 {
 	return tbgen_timer_ctrl(timer->tbg, timer->type, timer->id, 1);
