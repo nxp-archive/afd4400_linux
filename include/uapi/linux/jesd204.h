@@ -17,15 +17,16 @@
  * a signle state determining enum
  */
 enum jesd_state {
-	JESD_STANDBY,
-	CONFIGURED,
-	SYNC_START,/* sync raised is the one that is used by TX only*/
-	SYNCHRONIZED,/* sync raised is the one that is used by RX only*/
-	SYNC_FAILED,
-	TESTMODE,
-	OPERATIONAL,
-	SUSPENDED,
-	ERROR,
+	JESD_STATE_STANDBY,
+	JESD_STATE_CONFIGURED,
+	JESD_STATE_ENABLED,
+	JESD_STATE_CODE_GRP_SYNC,
+	JESD_STATE_ILAS,
+	JESD_STATE_READY,
+	JESD_STATE_SYNC_FAILED,
+	JESD_STATE_LINK_ERROR,
+	JESD_STATE_STOPPED,
+	JESD_STATE_INVALID
 };
 
 enum jesd_dev_type {
@@ -193,7 +194,7 @@ struct conf_rx_tests {
 };
 /** @brief \struct for write register instance of an offset
  */
-struct jesd_wreg {
+struct jesd_reg_val {
 	__u32 offset;
 	__u32 value;
 };
@@ -201,7 +202,7 @@ struct jesd_wreg {
  * and update the count for number of instances attached.
  */
 struct jesd_reg_write_buf {
-	struct jesd_wreg *regs;
+	struct jesd_reg_val *regs;
 	__u32 count;
 };
 /** @brief \struct register read
@@ -214,7 +215,7 @@ struct jesd_reg_read_buf {
 /** @brief \struct tansport device info
 */
 struct jesd_transport_dev_info {
-	enum jesd_state dev_state;
+	enum jesd_state state;
 	struct ils_params ils;
 	struct jesd_dev_params init_params;
 };
@@ -300,7 +301,7 @@ struct auto_sync_params {
 #define JESD_RX_AUTO_SYNC	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 16), \
 						struct auto_sync_params *)
 #define JESD_GET_DEVICE_STATE   _IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 17), \
-						enum jesd_state *)
+						enum jesd_state)
 #define JESD_READ_PHYGASKET_REG		_IOR(JESD204_IOCTL,\
 						(JESD_IOCTL_IDX + 18), \
 						struct jesd_reg_read_buf *)

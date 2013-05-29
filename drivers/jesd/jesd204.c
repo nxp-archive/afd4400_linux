@@ -51,13 +51,12 @@ static int get_device_name(struct jesd_transport_dev *tdev);
 
 static int jesd_setclkdiv(struct jesd_transport_dev *tdev);
 
-static void write_reg(u32 *reg, unsigned int offset,
-			unsigned int length, u32 *buf);
-
 static int jesd_conf_tests(struct jesd_transport_dev *tdev);
 static void raise_exception(struct jesd_transport_dev *tdev,
 				unsigned int event_typ);
 
+static int jesd_change_state(struct jesd_transport_dev *tdev,
+	enum jesd_state new_state);
 /**@brief inline for set, clear and test bits for 32 bit
 */
 static inline void
@@ -390,7 +389,6 @@ void do_rx_ils(struct jesd_transport_dev *tdev, u32 cgs, u32 fsf)
 		if (ils == ILS_SUCCESS &&
 			fsf == FSF_SUCCESS &&
 				cgs == CGS_SUCCESS) {
-				tdev->dev_state = SYNCHRONIZED;
 			}
 	}
 }
@@ -586,21 +584,44 @@ static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 	return rc;
 }
 
-static void write_reg(u32 *reg,
-			unsigned int offset,
-			unsigned int length,
-			u32 *buf)
+int jesd_reg_write_from_user(struct jesd_transport_dev *tdev,
+	struct jesd_reg_val *user_buf, int count)
 {
-	int i;
+	int size, *reg_base, *reg, i, rc = 0;
+	struct jesd_reg_val *reg_buf = NULL;
 
-	for (i = 0; i < offset; i++)
-		reg++;
-
-	for (i = 0; i < length; i++) {
-		*reg = *buf;
-		reg++;
-		buf++;
+	size = count * sizeof(struct jesd_reg_val);
+	reg_buf = kzalloc(size, GFP_KERNEL);
+	if (!reg_buf) {
+		dev_err(tdev->dev, "Failed to alloc reg buf\n");
+		rc = -ENOMEM;
+		goto out;
 	}
+	if (copy_from_user(reg_buf, user_buf, size)) {
+		rc = -EFAULT;
+		goto out;
+	}
+
+	if (tdev->type == JESD_DEV_TX) {
+		size = sizeof(struct config_registers_tx);
+		reg_base = (u32 *) tdev->tx_regs;
+	} else {
+		size = sizeof(struct config_registers_rx);
+		reg_base = (u32 *)tdev->rx_regs;
+	}
+
+	for (i = 0; i < count; i++) {
+		if (reg_buf[i].offset > size) {
+			dev_err(tdev->dev, "Invalid offset 0x%x\n",
+				reg_buf[i].offset);
+			continue;
+		}
+		reg = (u32 *) ((u32) reg_base + (u32) reg_buf[i].offset);
+		iowrite32(reg_buf[i].value, reg);
+	}
+out:
+	kfree(reg_buf);
+	return rc;
 }
 
 int jesd_reg_dump_to_user(u32 *reg, unsigned int offset, unsigned int length,
@@ -759,6 +780,28 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 	mask = M_EN_MASK;
 	jesd_update_reg(reg, enable_mask, mask);
 
+	/* XXX: setting up sync pipiline to 6 according to validation script
+	 * need to come up with right way to do it
+	 */
+	reg = &tdev->tx_regs->tx_transcontrol;
+	val = 6 << SYNC_PIPELINE_SHIFT;
+	mask = SYNC_PIPELINE_MASK << SYNC_PIPELINE_SHIFT;
+	jesd_update_reg(reg, val, mask);
+
+	if (tdev->dev_flags & DEV_FLG_PHYGASKET_LOOPBACK_EN) {
+		reg = &tdev->tx_regs->tx_transcontrol;
+		val = SYNC_SELECT_TBGEN;
+		mask = SYNC_SELECT_TBGEN;
+		jesd_update_reg(reg, val, mask);
+		tbgen_set_sync_loopback(tdev->timer_handle, 1);
+	} else {
+		reg = &tdev->tx_regs->tx_transcontrol;
+		val = ~SYNC_SELECT_TBGEN;
+		mask = SYNC_SELECT_TBGEN;
+		jesd_update_reg(reg, val, mask);
+		tbgen_set_sync_loopback(tdev->timer_handle, 0);
+	}
+
 	/*Clear sysref rose */
 	reg = &tdev->tx_regs->tx_irq_status;
 	val = ~IRQ_SYSREF_ROSE;
@@ -777,13 +820,6 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 	mask = val;
 	jesd_update_reg(reg, val, mask);
 
-/*Do it in sysref interrupt*/
-#if 0
-	reg = &tdev->tx_regs->tx_frm_ctrl;
-	val = TRANSMIT_EN;
-	mask = TRANSMIT_EN;
-	jesd_udpate_reg(reg, val, mask);
-#endif
 	return rc;
 }
 
@@ -798,6 +834,14 @@ int jesd_setup_rx_transport(struct jesd_transport_dev *tdev)
 	reg = &tdev->rx_regs->rx_lane_en;
 	mask = LANE_EN_MASK;
 	jesd_update_reg(reg, enable_mask, mask);
+
+	/* XXX: setting up sync pipiline to 3 according to validation script
+	 * need to come up with right way to do it
+	 */
+	reg = &tdev->rx_regs->rx_transcontrol;
+	val = 3 << SYNC_PIPELINE_SHIFT;
+	mask = SYNC_PIPELINE_MASK << SYNC_PIPELINE_SHIFT;
+	jesd_update_reg(reg, val, mask);
 
 	/*Clear sysref rose */
 	reg = &tdev->rx_regs->rx_irq_status;
@@ -864,6 +908,8 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 	tbgen_timer_set_jesd_ready(tdev->timer_handle, 1);
 	if (tdev->type == JESD_DEV_TX)
 		tbgen_timer_set_jesd_ready(tdev->txalign_timer_handle, 1);
+
+	jesd_change_state(tdev, JESD_STATE_ENABLED);
 out:
 	return rc;
 }
@@ -1572,37 +1618,82 @@ static int jesd_dev_stop(struct jesd_transport_dev *tdev)
 		jesd_clear_bit(DMA_DIS_BIT17, &tdev->rx_regs->rx_transcontrol);
 		jesd_clear_bit(RX_CTRL_BIT7, &tdev->rx_regs->rx_ctrl_0);
 	}
-	tdev->dev_state = SUSPENDED;
 	return rc;
 }
 
-void write_multi_regs(struct jesd_transport_dev *tdev,
-			u32 offset,
-			u32 len,
-			u32 value)
+static int jesd_change_state(struct jesd_transport_dev *tdev,
+	enum jesd_state new_state)
 {
-	if (tdev->type == JESD_DEV_TX)
-		write_reg(&tdev->tx_regs->tx_did, offset,
-						len, &value);
-	else
-		write_reg(&tdev->rx_regs->rx_rdid, offset,
-						len, &value);
+	enum jesd_state old_state = tdev->state;
+	int rc = -EINVAL;
+
+	if (new_state == old_state)
+		goto out;
+
+	switch (old_state) {
+	case JESD_STATE_STANDBY:
+		if (new_state == JESD_STATE_CONFIGURED)
+			if (JESD_CHCK_CONFIG_MASK(tdev, JESD_CONFIGURED_MASK))
+				rc = 0;
+		break;
+	case JESD_STATE_CONFIGURED:
+		if (new_state == JESD_STATE_ENABLED)
+			rc = 0;
+		break;
+	case JESD_STATE_ENABLED:
+		if (new_state == JESD_STATE_CODE_GRP_SYNC)
+			rc = 0;
+		if (new_state == JESD_STATE_ILAS)
+			rc = 0;
+		if (new_state == JESD_STATE_READY)
+			rc = 0;
+		if (new_state == JESD_STATE_SYNC_FAILED)
+			rc = 0;
+		break;
+	case JESD_STATE_SYNC_FAILED:
+		if (new_state == JESD_STATE_CONFIGURED)
+			rc = 0;
+		if (new_state == JESD_STATE_ENABLED)
+			rc = 0;
+		break;
+	case JESD_STATE_READY:
+		if (new_state == JESD_STATE_STOPPED)
+			rc = 0;
+		if (new_state == JESD_STATE_LINK_ERROR)
+			rc = 0;
+	case JESD_STATE_LINK_ERROR:
+		if (new_state == JESD_STATE_CONFIGURED)
+			rc = 0;
+		if (new_state == JESD_STATE_ENABLED)
+			rc = 0;
+		break;
+	default:
+		dev_info(tdev->dev, "Invalid state transition %d -> %d\n",
+			old_state, new_state);
+		goto out;
+	}
+
+	if (!rc) {
+		dev_info(tdev->dev, "%s: Transitiong state %d -> %d\n",
+			tdev->name, old_state, new_state);
+		tdev->state = new_state;
+	}
+out:
+	return rc;
 }
 
 static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 						unsigned long arg)
 {
 	int rc = -ENOSYS, size = 0, int_arg;
-	u32 count = 0, *regs = NULL;
-	void __user *argp = (void __user *)arg;
+	u32 *regs = NULL;
 	struct jesd_transport_dev *tdev = NULL;
 	struct jesd_dev_params dev_params;
 	struct jesd_transport_dev_info trans_dev_info;
 	struct jesd_reg_read_buf regcnf;
-	struct jesd_reg_write_buf write_reg;
+	struct jesd_reg_write_buf reg_write_buf;
 	struct tarns_dev_stats gstats;
 	struct auto_sync_params *sync_params;
-	struct jesd_reg_write_buf *p;
 
 	tdev = pfile->private_data;
 
@@ -1617,6 +1708,10 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		}
 
 		rc = jesd_init_transport(tdev, &dev_params);
+		if (!rc) {
+			JESD_SET_CONFIG_MASK(tdev, JESD_CONF_DEV_INIT);
+			jesd_change_state(tdev, JESD_STATE_CONFIGURED);
+		}
 		break;
 	case JESD_SET_LANE_PARAMS:
 		if (copy_from_user(&tdev->ils,
@@ -1626,12 +1721,14 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			break;
 		}
 		rc = jesd_set_ils_pram(tdev);
-		if (rc) {
+		if (!rc) {
+			JESD_SET_CONFIG_MASK(tdev, JESD_CONF_ILS_INIT);
+			jesd_change_state(tdev, JESD_STATE_CONFIGURED);
+		} else {
 			/* If ILAS param init fails, then clean thigns up */
 			memset(&tdev->ils, 0, sizeof(struct ils_params));
 			jesd_set_ils_pram(tdev);
 		}
-
 		break;
 	case JESD_SET_ILS_LENGTH:
 		if (get_user(int_arg, (int *) arg)) {
@@ -1639,6 +1736,10 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			break;
 		}
 		rc = jesd_set_ilas_len(tdev, int_arg);
+		if (!rc) {
+			JESD_SET_CONFIG_MASK(tdev, JESD_CONF_ILS_LEN_INIT);
+			jesd_change_state(tdev, JESD_STATE_CONFIGURED);
+		}
 		break;
 	case JESD_DEVICE_START:
 		rc = jesd_start_transport(tdev);
@@ -1651,10 +1752,6 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			goto fail;
 		}
 		rc = jesd_conf_tests(tdev);
-		/*XXX: update state machine*/
-#if 0
-		tdev->dev_state = TESTMODE;
-#endif
 		break;
 	case JESD_RX_TEST_MODE:
 		if (copy_from_user(&tdev->rx_tests,
@@ -1664,10 +1761,6 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			goto fail;
 		}
 		rc = jesd_conf_tests(tdev);
-		/*XXX: upate state machine */
-#if 0
-	tdev->dev_state = TESTMODE;
-#endif
 		break;
 	case JESD_FORCE_SYNC:
 		rc = jesd_force_sync(tdev);
@@ -1700,28 +1793,15 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			sizeof(struct lane_stats));
 		break;
 	case JESD_WRITE_REG:
-		p = (struct jesd_reg_write_buf *) arg;
-		count = p->count;
 
-		write_reg.regs = kzalloc((sizeof(struct jesd_wreg) * count),
-					GFP_KERNEL);
-		if (copy_from_user(&write_reg,
-				(struct jesd_reg_write_buf *)argp,
-				sizeof(struct jesd_reg_write_buf)*count)) {
-				rc = -EFAULT;
-				break;
+		if (copy_from_user(&reg_write_buf,
+			(struct jesd_reg_write_buf *)arg,
+			sizeof(struct jesd_reg_write_buf))) {
+			rc = -EFAULT;
+			break;
 		}
-
-		while (count) {
-			write_multi_regs(tdev,
-					write_reg.regs->offset,
-					1,
-					write_reg.regs->value);
-			write_reg.regs++;
-			count--;
-		}
-
-		kfree(write_reg.regs);
+		rc = jesd_reg_write_from_user(tdev, reg_write_buf.regs,
+			reg_write_buf.count);
 		break;
 	case JESD_READ_REG:
 	case JESD_READ_PHYGASKET_REG:
@@ -1771,7 +1851,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		trans_dev_info.init_params.lanes =
 						tdev->active_lanes;
 		trans_dev_info.init_params.ilas_length = tdev->ilas_len;
-		trans_dev_info.dev_state = tdev->dev_state;
+		trans_dev_info.state = tdev->state;
 
 		if (copy_to_user((struct jesd_transport_dev_info *)arg,
 					&trans_dev_info,
@@ -1853,6 +1933,9 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		} else
 			return -EINVAL;
 		break;
+	case JESD_GET_DEVICE_STATE:
+		put_user(tdev->state, (u32 *) arg);
+		break;
 	default:
 		rc = -ENOTTY;
 		break;
@@ -1890,9 +1973,49 @@ int jesd204_release(struct inode *inode, struct file *pfile)
 
 static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 {
-	/*XXX: TBD check sync status based on diag_sel*/
+	u32 *diag_sel_reg, *diag_data_reg, val1, val2;
+	int requeue = 1;
 
-	tbgen_timer_enable(tdev->timer_handle);
+	if (tdev->type == JESD_DEV_TX) {
+		diag_sel_reg = &tdev->tx_regs->tx_diag_sel;
+		diag_data_reg = &tdev->tx_regs->tx_diag_data;
+	} else {
+		diag_sel_reg = &tdev->rx_regs->rx_diag_sel;
+		diag_data_reg = &tdev->rx_regs->rx_diag_data;
+	}
+
+	iowrite32(DIAG_FRAMER_STATE_SEL, diag_sel_reg);
+
+	val1 = ioread32(diag_data_reg);
+	val2 = ioread32(diag_data_reg);
+	/* RM recommends to use value only when two consecutive reads
+	 * return same value
+	 */
+	 if (val1 != val2) {
+		dev_dbg(tdev->dev, "%s:diag_data not consistent (%x, %x)\n",
+			tdev->name, val1, val2);
+		goto out;
+	}
+
+	switch (val1) {
+	case FRAMER_STATE_CODE_GRP_SYNC:
+		jesd_change_state(tdev, JESD_STATE_CODE_GRP_SYNC);
+		break;
+	case FRAMER_STATE_ILAS:
+		jesd_change_state(tdev, JESD_STATE_ILAS);
+		break;
+	case FRAMER_STATE_USER_DATA:
+		jesd_change_state(tdev, JESD_STATE_READY);
+		tbgen_timer_enable(tdev->timer_handle);
+		requeue = 0;
+		break;
+	default:
+		break;
+	}
+
+out:
+	if (requeue)
+		schedule_work(&tdev->link_monitor);
 }
 
 void jesd_link_monitor_worker(struct work_struct *work)
@@ -2302,7 +2425,7 @@ static int __init jesd204_of_probe(struct platform_device *pdev)
 		spin_lock_init(&tdev->lock);
 		device_create(jesd204_class, tdev->dev, tdev->devt,
 			NULL, tdev->name);
-		tdev->dev_state = JESD_STANDBY;
+		tdev->state = JESD_STATE_STANDBY;
 		jdev->transports[i] = tdev;
 		dev_info(jdev->dev, "%s JESD device created\n", tdev->name);
 		jesd_major++;
@@ -2381,7 +2504,6 @@ static struct platform_driver jesd204_driver = {
 static int __init jesd204_module_init(void)
 {
 	int rc;
-
 
 	pri = kzalloc(sizeof(struct jesd204_private), GFP_KERNEL);
 

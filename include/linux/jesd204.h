@@ -328,8 +328,12 @@ struct config_registers_rx {
 /* Tn_control */
 #define CLKDIV_MASK		0x07
 #define CLKDIV_SHIFT		4
-#define SYSREF_MASK		(1 << 20)
 #define DFIFO_SWRESET		(1 << 3)
+#define SYSREF_MASK		(1 << 20)
+#define SYNC_SELECT_TBGEN	(1 << 21)
+#define SYNC_PIPELINE_MASK	0x1ff
+#define SYNC_PIPELINE_SHIFT	23
+
 /* Tn_Lane_enable */
 #define LANE_EN_MASK		0xff
 
@@ -347,6 +351,12 @@ struct config_registers_rx {
 #define FSREQ			(1 << 2)
 #define RX_DIS			(1 << 7)
 
+/* Tn_DIAG_SEL and Tn_DIAG*/
+#define DIAG_FRAMER_STATE_SEL	2
+#define FRAMER_STATE_CODE_GRP_SYNC	0x0
+#define FRAMER_STATE_ILAS		0x1
+#define FRAMER_STATE_USER_DATA		0x2
+
 struct lane_device {
 	struct jesd_transport_dev *tdev;
 	struct lane_stats l_stats;
@@ -359,9 +369,10 @@ struct lane_device {
 struct jesd_transport_dev {
 	char name[32];
 	atomic_t ref;
-	enum jesd_state dev_state;
+	enum jesd_state state;
 	enum jesd_dev_type type;
 	u32 config_flags;
+	u32 config_bitmap;
 	u32 dev_flags;
 	u32 test_mode_flags;
 	struct jesd204_dev *parent;
@@ -427,6 +438,17 @@ struct jesd_transport_dev {
 #define DEV_FLG_NO_TRANSPORT_EVENTS	(1 << 0)
 #define DEV_FLG_PHYGASKET_LOOPBACK_EN	(1 << 1)
 #define DEV_FLG_TEST_PATTERNS_EN	(1 << 2)
+
+/*config_bitmap*/
+#define JESD_CONF_ILS_LEN_INIT		(1 << 0)
+#define JESD_CONF_ILS_INIT		(1 << 1)
+#define JESD_CONF_DEV_INIT		(1 << 2)
+#define JESD_CONFIGURED_MASK		(JESD_CONF_ILS_LEN_INIT |	\
+					JESD_CONF_ILS_INIT |		\
+					JESD_CONF_DEV_INIT)
+#define JESD_SET_CONFIG_MASK(tdev, mask) (tdev->config_bitmap |= mask)
+#define JESD_CLR_CONFIG_MASK(tdev, mask) (tdev->config_bitmap &= ~mask)
+#define JESD_CHCK_CONFIG_MASK(tdev, mask) (tdev->config_bitmap & mask)
 
 struct jesd204_dev {
 	struct jesd_transport_dev *transports[TRANSPORTS_PER_JESD_DEV];
