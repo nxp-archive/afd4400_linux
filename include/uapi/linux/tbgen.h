@@ -31,6 +31,7 @@ enum tbgen_dev_state {
 	TBG_STATE_PLL_FAILED,
 	TBG_STATE_RFG_FAILED,
 	TBG_STATE_RFG_RESET,
+	TBG_STATE_INVALID
 };
 
 enum strobe_mode {
@@ -148,4 +149,7 @@ struct tbgen_device_info {
 #define TBGEN_GET_DEV_INFO		_IOR(TDGEN_NUM, (IOCTL_IDX + 12), \
 						struct tbgen_device_info*)
 #define TBGEN_RESET			_IO(TDGEN_NUM, (IOCTL_IDX + 13))
+#define TBGEN_RECAPTURE_FRAME_SYNC	_IO(TDGEN_NUM, (IOCTL_IDX + 14))
+#define TBGEN_GET_STATE			_IOR(TDGEN_NUM, (IOCTL_IDX + 15), \
+						int)
 #endif

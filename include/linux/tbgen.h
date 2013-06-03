@@ -40,10 +40,10 @@ struct tbgen_timer {
 };
 
 /* status flags */
-#define STATUS_FLG_ENABLED		(1 << 0)
-#define STATUS_FLG_CONFIGURED		(1 << 1)
-#define STATUS_FLG_JESD_READY		(1 << 2)
-#define STATUS_FLG_JESD_ATACHED		(1 << 3)
+#define STATUS_FLG_ENABLED			(1 << 0)
+#define STATUS_FLG_CONFIGURED			(1 << 1)
+#define STATUS_FLG_CAPTURE_SYSREF		(1 << 2)
+#define STATUS_FLG_JESD_ATACHED			(1 << 3)
 #define SET_STATUS_FLAG(timer, flag) (timer->status_flags |= flag)
 #define CLEAR_STATUS_FLAG(timer, flag) (timer->status_flags &= ~flag)
 #define CHECK_STATUS_FLAG(timer, flag) (timer->status_flags & flag)
@@ -234,7 +234,7 @@ struct tbgen_timer *tbgen_get_timer(struct tbgen_dev *tbg, enum timer_type type,
 	int timer_id);
 
 int tbgen_timer_enable(struct tbgen_timer *timer);
-int tbgen_timer_set_jesd_ready(struct tbgen_timer *timer, int ready);
+int tbgen_timer_set_sysref_capture(struct tbgen_timer *timer, int enabled);
 int tbgen_attach_timer(struct tbgen_timer *timer, void *jesd_dev_handle);
 int tbgen_timer_disable(struct tbgen_timer *timer);
 int tbgen_set_sync_loopback(struct tbgen_timer *timer, int enable);

@@ -100,6 +100,41 @@ static void write_reg(u32 *reg,
 	}
 }
 
+void tbgen_notify_sysref_recapture(struct tbgen_dev *tbg)
+{
+	int id = 0;
+	struct tbgen_timer *timer;
+
+	for (id = 0; id < MAX_TX_ALIGNMENT_TIMERS; id++) {
+		timer = &tbg->tbg_txtmr[id];
+		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_CAPTURE_SYSREF))
+			jesd_enable_sysref_capture(timer->jesd_dev_handle);
+	}
+
+	for (id = 0; id < MAX_AXRF_ALIGNMENT_TIMERS; id++) {
+		timer = &tbg->tbg_tx_axrf[id];
+		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_CAPTURE_SYSREF))
+			jesd_enable_sysref_capture(timer->jesd_dev_handle);
+	}
+
+	for (id = 0; id < MAX_RX_ALIGNMENT_TIMERS; id++) {
+		timer = &tbg->tbg_rxtmr[id];
+		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_CAPTURE_SYSREF))
+			jesd_enable_sysref_capture(timer->jesd_dev_handle);
+	}
+
+	for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++) {
+		timer = &tbg->tbg_srxtmr[id];
+		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_CAPTURE_SYSREF))
+			jesd_enable_sysref_capture(timer->jesd_dev_handle);
+	}
+}
+
+static void tbgen_update_last_10ms_counter(struct tbgen_dev *tbg)
+{
+	tbg->last_10ms_counter = tbgen_get_l10_mcntr(tbg);
+}
+
 static int tbgen_handle_rfg_irq(struct tbgen_dev *tbg)
 {
 	int disable_fs_irq = 0;
@@ -108,22 +143,26 @@ static int tbgen_handle_rfg_irq(struct tbgen_dev *tbg)
 
 	spin_lock_irqsave(&tbg->lock, flags);
 
-	if (tbg->sync_state == SYNC_CPRI_RX_RFP) {
+	switch (tbg->sync_state) {
+	case SYNC_CPRI_RX_RFP:
 		/* Change SYNC source to SYSREF_IN */
 		reg = &tbg->tbgregs->rfg_cr;
 		val = tbgen_read_reg(reg);
 		val &= ~SYNC_SEL_CPRI_RX_RFP;
 		tbgen_write_reg(reg, val);
 		tbg->sync_state = SYNC_SYSREF_IN_CONFIGURE;
-
-	} else if (tbg->sync_state == SYNC_SYSREF_IN_CONFIGURE) {
-
-		tbg->last_10ms_counter = tbgen_get_l10_mcntr(tbg);
+		break;
+	case SYNC_SYSREF_IN_CONFIGURE:
+	case SYNC_SYSREF_IN_CONFIGURED:
+		tbgen_update_last_10ms_counter(tbg);
 		disable_fs_irq = 1;
 		tbg->sync_state = SYNC_SYSREF_IN_CONFIGURED;
-		/*XXX: Notify JESD to recatture SYNC*/
+		tbgen_notify_sysref_recapture(tbg);
+		break;
+	default:
+		/*Nothing*/
+		break;
 	}
-
 	spin_unlock_irqrestore(&tbg->lock, flags);
 
 	return disable_fs_irq;
@@ -168,6 +207,34 @@ int tbgen_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 	/* XXX: TBD - Enable/programe TBGEN PLL using, using clk_get/enable.
 	 * For medusa programming TBGEN PLL is not required
 	 */
+out:
+	return retcode;
+}
+
+int rfg_recapture_frame_sync(struct tbgen_dev *tbg)
+{
+	int retcode = 0;
+	struct tbg_regs *tbgregs = tbg->tbgregs;
+	u32 val, *reg, mask;
+	unsigned long flags;
+
+	if (tbg->state != TBG_STATE_READY) {
+		dev_err(tbg->dev, "Can not recapture frame sync in %d state\n",
+			tbg->state);
+		retcode = -EINVAL;
+		goto out;
+	}
+
+	spin_lock_irqsave(&tbg->lock, flags);
+
+	/* Enable Frame sync IRQ */
+	reg = &tbgregs->cntrl_1;
+	val = IRQ_FS;
+	mask = IRQ_FS;
+	tbgen_update_reg(reg, val, mask);
+
+	spin_unlock_irqrestore(&tbg->lock, flags);
+
 out:
 	return retcode;
 }
@@ -606,7 +673,7 @@ int tbgen_attach_timer(struct tbgen_timer *timer, void *jesd_dev_handle)
 	return 0;
 }
 
-int tbgen_timer_set_jesd_ready(struct tbgen_timer *timer, int ready)
+int tbgen_timer_set_sysref_capture(struct tbgen_timer *timer, int enabled)
 {
 	struct tbgen_dev *tbg = timer->tbg;
 
@@ -615,10 +682,10 @@ int tbgen_timer_set_jesd_ready(struct tbgen_timer *timer, int ready)
 			__func__, timer->type, timer->id);
 		return -EINVAL;
 	}
-	if (ready)
-		SET_STATUS_FLAG(timer, STATUS_FLG_JESD_READY);
+	if (enabled)
+		SET_STATUS_FLAG(timer, STATUS_FLG_CAPTURE_SYSREF);
 	else
-		CLEAR_STATUS_FLAG(timer, STATUS_FLG_JESD_READY);
+		CLEAR_STATUS_FLAG(timer, STATUS_FLG_CAPTURE_SYSREF);
 
 	return 0;
 }
@@ -663,7 +730,7 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 {
 	int retcode = 0;
 	u32 *ctrl_reg, *osethi_reg, *osetlo_reg, val, mask;
-	u64 start_timer;
+	u64 start_time, current_time;
 	struct tbgen_timer *timer;
 	struct txalign_timer_regs *tx_timer_regs;
 	struct gen_timer_regs *generic_timer_regs;
@@ -748,11 +815,20 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 			goto out;
 		}
 		/*Program Timer fire time */
-		start_timer = tbg->last_10ms_counter;
-		start_timer += timer->timer_param.offset;
-		val = start_timer & 0xffffffff;
+		start_time = tbg->last_10ms_counter;
+		start_time += timer->timer_param.offset;
+		current_time = tbgen_get_l10_mcntr(tbg);
+		if (current_time > start_time) {
+			dev_info(tbg->dev, "%s: Timer id %d, type %d missed\n",
+				__func__, timer_id, type);
+			dev_info(tbg->dev, "%s: Fire time 0x%llx, curr %llx\n",
+				__func__, start_time, current_time);
+			spin_unlock(&timer->lock);
+			goto out;
+		}
+		val = start_time & 0xffffffff;
 		tbgen_write_reg(osetlo_reg, val);
-		val = (start_timer >> 32) & 0xffffffff;
+		val = (start_time >> 32) & 0xffffffff;
 		tbgen_write_reg(osethi_reg, val);
 
 		/*Enable Timer*/
@@ -816,6 +892,9 @@ static int tbgen_change_state(struct tbgen_dev *tbg,
 {
 	enum tbgen_dev_state old_state = tbg->state;
 	int retcode = -EINVAL;
+
+	if (old_state == new_state)
+		return 0;
 
 	switch (old_state) {
 	case TBG_STATE_STANDBY:
@@ -921,6 +1000,9 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 			tbgen_change_state(tbg, TBG_STATE_READY);
 		}
 		break;
+	case TBGEN_RECAPTURE_FRAME_SYNC:
+		retcode = rfg_recapture_frame_sync(tbg);
+		break;
 	case TBGEN_CONFIG_TIMER:
 
 		if (copy_from_user(&alignment_timer_params,
@@ -1016,6 +1098,12 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 		 * 3. Reset TBGEN
 		 * 4. Reprogram all timers again from strored timer_param
 		 */
+		break;
+	case TBGEN_GET_STATE:
+		if (put_user(tbg->state, (int *)arg))
+			retcode = -EFAULT;
+		else
+			retcode = 0;
 		break;
 	default:
 		retcode = -ENOTTY;
