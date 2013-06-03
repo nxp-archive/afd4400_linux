@@ -32,6 +32,8 @@
 */
 #define TRANSPORTS_PER_JESD_DEV 2
 #define MAX_LANES 2
+#define JESD_SYNC_TIMEOUT_MS	100
+
 /** @brief max lanes for transport identifier trans 0 == 1 and trans 1 == 2
 */
 #define TRANPORT_0 0
@@ -333,6 +335,7 @@ struct config_registers_rx {
 #define SYNC_SELECT_TBGEN	(1 << 21)
 #define SYNC_PIPELINE_MASK	0x1ff
 #define SYNC_PIPELINE_SHIFT	23
+#define SW_DMA_ENABLE		(1 << 17)
 
 /* Tn_Lane_enable */
 #define LANE_EN_MASK		0xff
@@ -370,6 +373,7 @@ struct jesd_transport_dev {
 	char name[32];
 	atomic_t ref;
 	enum jesd_state state;
+	enum jesd_state old_state;
 	enum jesd_dev_type type;
 	u32 config_flags;
 	u32 config_bitmap;
@@ -431,7 +435,8 @@ struct jesd_transport_dev {
 	int sysref_rose;
 	int isr_error;
 	int evnt_jiffs;
-
+	unsigned long sync_expire;
+	unsigned long sync_timeout_ms;
 };
 
 /*dev_flags*/
@@ -469,7 +474,7 @@ struct jesd204_private {
 };
 /** @brief xport symbols for jesd
 */
-int jesd_start_transport(struct jesd_transport_dev *tdev);
+void jesd_enable_sysref_capture(struct jesd_transport_dev *tdev);
 int  jesd_reg_dump_to_user(u32 *reg, unsigned int offset,
 			unsigned int length, u32 *buf);
 #endif

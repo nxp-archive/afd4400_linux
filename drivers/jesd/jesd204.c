@@ -57,6 +57,11 @@ static void raise_exception(struct jesd_transport_dev *tdev,
 
 static int jesd_change_state(struct jesd_transport_dev *tdev,
 	enum jesd_state new_state);
+
+static void jesd_marks_syref_capture_ready(struct jesd_transport_dev *tdev,
+	int enable);
+static void jesd_restore_state(struct jesd_transport_dev *tdev);
+
 /**@brief inline for set, clear and test bits for 32 bit
 */
 static inline void
@@ -165,58 +170,6 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 		do_patter_generator(tdev->phy, &tdev->tx_tests.tx_patgen);
 
 out:
-	return rc;
-}
-
-void stop_link(struct jesd_transport_dev *tdev, u32 timer_id)
-{
-/*XXX: Revisit link stopping */
-
-}
-
-void start_link(struct jesd_transport_dev *tdev)
-{
-	/*XXX: This function will be removed */
-}
-
-static int enable_dis(struct jesd_transport_dev *tdev)
-{
-	int rc = 0;
-
-	jesd_clear_bit(RX_DIS_BIT7, &tdev->rx_regs->rx_ctrl_0);
-
-	rc = wait_event_interruptible_timeout(tdev->to_wait,
-			(jtest_bit(1, &tdev->rx_regs->rx_diag_sel) == 1)
-			&&
-			(jtest_bit(0, &tdev->rx_regs->rx_diag_sel) == 0),
-			tdev->evnt_jiffs);
-
-	if (rc < 0)
-		raise_exception(tdev, START_TIMEOUT);
-
-
-	return rc;
-}
-
-static int enable_tx(struct jesd_transport_dev *tdev)
-{
-	int rc = 0;
-	unsigned int tx_en = 1;
-	uint frm_ctrl;
-
-	tx_en = tx_en << 1;
-	frm_ctrl = (ioread32(&tdev->tx_regs->tx_frm_ctrl) | tx_en);
-	iowrite32(frm_ctrl, &tdev->tx_regs->tx_frm_ctrl);
-
-	rc = wait_event_interruptible_timeout(tdev->to_wait,
-			(jtest_bit(1, &tdev->tx_regs->tx_diag_sel) == 1)
-			&&
-			(jtest_bit(0, &tdev->tx_regs->tx_diag_sel) == 0),
-			tdev->evnt_jiffs);
-
-	if (rc < 0)
-		raise_exception(tdev, START_TIMEOUT);
-
 	return rc;
 }
 
@@ -461,90 +414,6 @@ void handle_maskvector(struct jesd_transport_dev *tdev)
 	}
 }
 
-void handle_rx_irq(struct jesd_transport_dev *tdev)
-{
-	u32 i;
-	u32 isr_bit = 0;
-	u32 status = tdev->rx_regs->rx_irq_status;
-	u32 irq_enable = ioread32(&tdev->rx_regs->rx_irq_enable);
-	for (i = 2; i < 13; i++) {
-		isr_bit = (irq_enable & (1<<i));
-
-		switch (isr_bit) {
-		case 0x4:
-			if (status & isr_bit) {
-				raise_exception(tdev, PAC_OF_ERR);
-				if (tdev->t_stats.ofpacker < 255)
-					tdev->t_stats.ofpacker++;
-				else
-					tdev->t_stats.ofpacker = 0;
-			}
-			break;
-		case 0x8:
-			if (status & isr_bit) {
-				raise_exception(tdev, PAC_UF_ERR);
-				if (tdev->t_stats.ufpacker < 255)
-					tdev->t_stats.ufpacker++;
-				else
-					tdev->t_stats.ufpacker = 0;
-			}
-			break;
-		case 0x10:
-			if (status & isr_bit) {
-				raise_exception(tdev, RBUF_OF_ERR);
-				if (tdev->t_stats.ofrcbuf < 255)
-					tdev->t_stats.ofrcbuf++;
-				else
-					tdev->t_stats.ofrcbuf = 0;
-			}
-			break;
-		case 0x20:
-			if (status & isr_bit) {
-				raise_exception(tdev, RBUF_UF_ERR);
-				if (tdev->t_stats.ufrcbuf < 255)
-					tdev->t_stats.ufrcbuf++;
-				else
-					tdev->t_stats.ufrcbuf = 0;
-			}
-			break;
-		case 0x40:
-			if (status & isr_bit) {
-				raise_exception(tdev, SFIFO_ERR);
-				if (tdev->t_stats.ufrcbuf < 255)
-					tdev->t_stats.ofsfifo++;
-				else
-					tdev->t_stats.ofsfifo = 0;
-			}
-			break;
-		case 0x100:
-			if (status & isr_bit) {
-				/*dfifo*/
-				jesd_set_bit(DFIFO_BIT3,
-					&tdev->rx_regs->rx_transcontrol);
-				/*reset done*/
-				jesd_clear_bit(DFIFO_BIT3,
-					&tdev->rx_regs->rx_transcontrol);
-				/*mask detection masked*/
-				jesd_set_bit(SYSREF_MASK_BIT20,
-					&tdev->rx_regs->rx_transcontrol);
-				/*disable sysref rose*/
-				jesd_clear_bit(SYSREF_ISR_BIT8,
-					&tdev->tx_regs->tx_irq_enable);
-				tdev->sysref_rose = 1;
-				wake_up(&tdev->isr_wait);
-				raise_exception(tdev, SYS_REF_ROSE);
-			}
-			break;
-		case 0x400:
-			if (status & isr_bit)
-				raise_exception(tdev, PHY_DATA_LOST);
-			break;
-		default:
-			break;
-		}
-	}
-}
-
 static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 {
 	int line_rate, m, s, np, l;
@@ -761,6 +630,38 @@ static int jesd_set_delays(struct jesd_transport_dev *tdev)
 		rc = -EINVAL;
 	return rc;
 }
+
+void jesd_enable_sysref_capture(struct jesd_transport_dev *tdev)
+{
+	u32 *irq_status_reg, *irq_enable_reg, *ctrl_reg;
+	u32 val, mask;
+
+	if (tdev->type == JESD_DEV_TX) {
+		irq_status_reg = &tdev->tx_regs->tx_irq_status;
+		irq_enable_reg = &tdev->tx_regs->tx_irq_enable;
+		ctrl_reg = &tdev->tx_regs->tx_transcontrol;
+	} else {
+		irq_status_reg = &tdev->rx_regs->rx_irq_status;
+		irq_enable_reg = &tdev->rx_regs->rx_irq_enable;
+		ctrl_reg = &tdev->rx_regs->rx_transcontrol;
+	}
+	/*Clear sysref rose */
+	val = ~IRQ_SYSREF_ROSE;
+	mask = IRQ_SYSREF_ROSE;
+	jesd_update_reg(irq_status_reg, val, mask);
+
+	/*unmask sysref detection  */
+	val = ~SYSREF_MASK;
+	mask = SYSREF_MASK;
+	jesd_update_reg(ctrl_reg, val, mask);
+
+	/*enable sysref rose IRQ*/
+	val = IRQ_SYSREF_ROSE;
+	mask = val;
+	jesd_update_reg(irq_enable_reg, val, mask);
+
+}
+
 static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0, i;
@@ -802,21 +703,9 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 		tbgen_set_sync_loopback(tdev->timer_handle, 0);
 	}
 
-	/*Clear sysref rose */
-	reg = &tdev->tx_regs->tx_irq_status;
-	val = ~IRQ_SYSREF_ROSE;
-	mask = IRQ_SYSREF_ROSE;
-	jesd_update_reg(reg, val, mask);
-
-	/*unmask sysref detection  */
-	reg = &tdev->tx_regs->tx_transcontrol;
-	val = ~SYSREF_MASK;
-	mask = SYSREF_MASK;
-	jesd_update_reg(reg, val, mask);
-
-	/*enable sysref rose IRQ*/
+	/*enable SYNC recievied IRQ*/
 	reg = &tdev->tx_regs->tx_irq_enable;
-	val = IRQ_SYSREF_ROSE | IRQ_SYNC_RECIEVED;
+	val = IRQ_SYNC_RECIEVED;
 	mask = val;
 	jesd_update_reg(reg, val, mask);
 
@@ -843,24 +732,6 @@ int jesd_setup_rx_transport(struct jesd_transport_dev *tdev)
 	mask = SYNC_PIPELINE_MASK << SYNC_PIPELINE_SHIFT;
 	jesd_update_reg(reg, val, mask);
 
-	/*Clear sysref rose */
-	reg = &tdev->rx_regs->rx_irq_status;
-	val = ~IRQ_SYSREF_ROSE;
-	mask = IRQ_SYSREF_ROSE;
-	jesd_update_reg(reg, val, mask);
-
-	/*unmask sysref detection  */
-	reg = &tdev->rx_regs->rx_transcontrol;
-	val = ~SYSREF_MASK;
-	mask = SYSREF_MASK;
-	jesd_update_reg(reg, val, mask);
-
-	/*enable sysref rose IRQ*/
-	reg = &tdev->rx_regs->rx_irq_enable;
-	val = IRQ_SYSREF_ROSE | IRQ_SYNC_RECIEVED;
-	mask = val;
-	jesd_update_reg(reg, val, mask);
-
 	return rc;
 }
 
@@ -880,6 +751,12 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
 
+	rc = jesd_change_state(tdev, JESD_STATE_ENABLED);
+	if (rc) {
+		dev_err(tdev->dev, "%s:Cannot be enabled in state %d\n",
+			__func__, tdev->old_state);
+		goto out;
+	}
 	rc = jesd_config_phygasket(tdev);
 	if (rc) {
 		dev_err(tdev->dev, "Failed to configure phy-gasket, err %d\n",
@@ -904,31 +781,21 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 		goto out;
 	}
 
-	/*Inform TBGEN that link is configured */
-	tbgen_timer_set_jesd_ready(tdev->timer_handle, 1);
-	if (tdev->type == JESD_DEV_TX)
-		tbgen_timer_set_jesd_ready(tdev->txalign_timer_handle, 1);
-
-	jesd_change_state(tdev, JESD_STATE_ENABLED);
+	/* Makrk jesd link ready for sysref capture*/
+	jesd_marks_syref_capture_ready(tdev, 1);
+	return rc;
 out:
+	jesd_restore_state(tdev);
 	return rc;
 }
 
-
-int jesd_restart_transport(struct jesd_transport_dev *tdev,
-				u32 timer_id)
+static void jesd_marks_syref_capture_ready(struct jesd_transport_dev *tdev,
+	int enable)
 {
-	int rc = 0;
-
-	stop_link(tdev, timer_id);
-	start_link(tdev);
-
+	tbgen_timer_set_sysref_capture(tdev->timer_handle, enable);
 	if (tdev->type == JESD_DEV_TX)
-		rc = enable_tx(tdev);
-	else
-		rc = enable_dis(tdev);
-
-	return rc;
+		tbgen_timer_set_sysref_capture(tdev->txalign_timer_handle,
+			enable);
 }
 
 static int jesd_force_sync(struct jesd_transport_dev *tdev)
@@ -1607,18 +1474,69 @@ out:
 	return rc;
 }
 
+static int jesd_tx_stop(struct jesd_transport_dev *tdev)
+{
+	u32 *reg, val, mask;
+	struct config_registers_tx *tx_regs = tdev->tx_regs;
+
+	/* Stop timers */
+	tbgen_timer_disable(tdev->timer_handle);
+	tbgen_timer_disable(tdev->txalign_timer_handle);
+
+	reg = &tx_regs->tx_frm_ctrl;
+	val = ~TRANSMIT_EN;
+	mask = TRANSMIT_EN;
+	jesd_update_reg(reg, val, mask);
+
+	return 0;
+}
+
+static int jesd_rx_stop(struct jesd_transport_dev *tdev)
+{
+	u32 *reg, val, mask;
+	struct config_registers_rx *rx_regs = tdev->rx_regs;
+
+	reg = &rx_regs->rx_transcontrol;
+	val = ~SW_DMA_ENABLE;
+	mask = SW_DMA_ENABLE;
+	jesd_update_reg(reg, val, mask);
+
+	/* Stop timer*/
+	tbgen_timer_disable(tdev->timer_handle);
+
+	reg = &rx_regs->rx_ctrl_0;
+	val = RX_DIS;
+	mask = RX_DIS;
+	jesd_update_reg(reg, val, mask);
+
+	return 0;
+}
+
 static int jesd_dev_stop(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
-	/*disable dma and transport*/
-	if (tdev->type == JESD_DEV_TX) {
-		jesd_clear_bit(DMA_DIS_BIT17, &tdev->tx_regs->tx_transcontrol);
-		jesd_clear_bit(TX_FRM_BIT1, &tdev->tx_regs->tx_frm_ctrl);
-	} else {
-		jesd_clear_bit(DMA_DIS_BIT17, &tdev->rx_regs->rx_transcontrol);
-		jesd_clear_bit(RX_CTRL_BIT7, &tdev->rx_regs->rx_ctrl_0);
+
+	rc = jesd_change_state(tdev, JESD_STATE_STOPPED);
+	if (rc) {
+		dev_err(tdev->dev, "%s: Cannot be stopped in %d state\n",
+			__func__, tdev->state);
+		goto out;
 	}
+
+	if (tdev->type == JESD_DEV_TX)
+		rc = jesd_tx_stop(tdev);
+	else
+		rc = jesd_rx_stop(tdev);
+
 	return rc;
+out:
+	jesd_restore_state(tdev);
+	return rc;
+}
+
+static void jesd_restore_state(struct jesd_transport_dev *tdev)
+{
+	tdev->state = tdev->old_state;
 }
 
 static int jesd_change_state(struct jesd_transport_dev *tdev,
@@ -1662,6 +1580,7 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 		if (new_state == JESD_STATE_LINK_ERROR)
 			rc = 0;
 	case JESD_STATE_LINK_ERROR:
+	case JESD_STATE_STOPPED:
 		if (new_state == JESD_STATE_CONFIGURED)
 			rc = 0;
 		if (new_state == JESD_STATE_ENABLED)
@@ -1677,6 +1596,7 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 		dev_info(tdev->dev, "%s: Transitiong state %d -> %d\n",
 			tdev->name, old_state, new_state);
 		tdev->state = new_state;
+		tdev->old_state = old_state;
 	}
 out:
 	return rc;
@@ -1934,7 +1854,10 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			return -EINVAL;
 		break;
 	case JESD_GET_DEVICE_STATE:
-		put_user(tdev->state, (u32 *) arg);
+		if (put_user(tdev->state, (u32 *) arg))
+			rc = -EFAULT;
+		else
+			rc = 0;
 		break;
 	default:
 		rc = -ENOTTY;
@@ -2007,6 +1930,8 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 	case FRAMER_STATE_USER_DATA:
 		jesd_change_state(tdev, JESD_STATE_READY);
 		tbgen_timer_enable(tdev->timer_handle);
+		/* We don't need sysref now till link is restarted */
+		jesd_marks_syref_capture_ready(tdev, 0);
 		requeue = 0;
 		break;
 	default:
@@ -2014,8 +1939,15 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 	}
 
 out:
-	if (requeue)
-		schedule_work(&tdev->link_monitor);
+	if (requeue) {
+		if (tdev->sync_timeout_ms < jiffies) {
+			schedule_work(&tdev->link_monitor);
+		} else {
+			dev_err(tdev->dev, "%s: Failed to syncronize\n",
+				tdev->name);
+			jesd_change_state(tdev, JESD_STATE_SYNC_FAILED);
+		}
+	}
 }
 
 void jesd_link_monitor_worker(struct work_struct *work)
@@ -2074,6 +2006,7 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 	else
 		jesd_force_sync(tdev);
 
+	tdev->sync_expire = jiffies + msecs_to_jiffies(tdev->sync_timeout_ms);
 	schedule_work(&tdev->link_monitor);
 }
 
@@ -2235,7 +2168,7 @@ static struct jesd_transport_dev *
 	tdev->id = id;
 	tdev->dev = dev;
 	tdev->type = type;
-
+	tdev->sync_timeout_ms = JESD_SYNC_TIMEOUT_MS;
 	base = of_iomap(dev_node, 0);
 
 	if (!base) {
