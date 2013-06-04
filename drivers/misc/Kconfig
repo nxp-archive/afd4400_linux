@@ -549,6 +549,13 @@ config VSPA
 	 The VSPA kernel driver is the part of user space library providing
 	 primitives for the VSPA driver in user space
 
+config AD9368
+	tristate "AD9368 RFIC driver"
+	depends on SPI
+	help
+	 Support for AD9368-1 (RF reciever) AD9368-2 (RF tranceiver) RFICs
+	 from Analog devices.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

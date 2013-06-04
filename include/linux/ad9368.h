@@ -1,0 +1,167 @@
+/*
+ * include/linux/ad9368.h
+ *
+ * Copyright 2013 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
+ */
+
+#ifndef __AD9368_H__
+#define __AD9368_H__
+
+#include <linux/cdev.h>
+#include <linux/types.h>
+#include <uapi/linux/ad9368.h>
+
+
+/* For creating instruction word/command */
+#define OPCODE_WRITE		0x8000
+#define OPCODE_READ		0x0000
+#define BYTES_TRANSFER_MASK	0x7000
+#define SHIFT_BYTES_TRANSFER	12
+#define REG_ADDRESS_MASK	0x03FF
+#define REG_AD9525_ADDRESS_MASK	0x07FF
+#define COMMAND_MASK		0xFFFF0000
+#define COMMAND_LEN		2
+#define OPCODE_WRITE_AD9368	0x80
+#define OPCODE_READ_AD9525	0x80
+#define OPCODE_WRITE_AD9525	0x00
+#define OPCODE_INIT_REG		0x00
+#define OPCODE_INIT_VAL		0x01
+#define OPCODE_MIRROR_VAL	0x81
+#define AD9525_READBACK_REG	0x04
+#define AD9525_PUSH_WRITE1_REG	0x02
+#define AD9525_PUSH_WRITE2_REG	0x32
+
+#define TRANSACTION_BYTES		3
+#define MAX_READ_TRANSACTION_SIZE	8
+#define RXBUF_SIZE			10
+#define NUM_GPIOS			2
+#define MAX_GPIO_CONFIGS		(1 << NUM_GPIOS)
+#define GPIO_INVAL			(~0)
+
+#define BBPLL_LOCK_MASK 0x80
+#define DEVICE_ID_AD93681 0
+#define DEVICE_ID_AD9525  1
+#define DEVICE_ID_AD93682 2
+#define PRODUCT_CODE_AD93681_REG 0x04
+#define PRODUCT_CODE_AD9525_REG 0x04
+#define PRODUCT_ID_MASK 0x08
+#define PRODUCT_ID_9368 0x08
+#define REV_MASK	0x07
+
+/* Calibration status Registers */
+#define REG_CH1_OVERFLOW	0x05E
+#define REG_RX_CAL_STATUS	0x244
+#define REG_TX_CAL_STATUS	0x284
+#define REG_CALIBRATION_CONTROL	0x016
+#define REG_CALIBRATION_CONFIG1	0x169
+#define REG_RX_CP_CONFIG	0x23D
+#define REG_TX_CP_CONFIG	0x27D
+
+#define VAL_CAL_CONF1_TRACKOFF	0xC0
+
+/* Calibration status masks */
+#define MASK_BBPLL_LOCK		0x80
+#define MASK_RX_CP_CAL_VALID	0x80
+#define MASK_TX_CP_CAL_VALID	0x80
+#define MASK_RX_BB_TUNE		0x80
+#define MASK_TX_BB_TUNE		0x40
+#define MASK_DC_CAL_BBSTART	0x00
+#define MASK_DC_CAL_RFSTART	0x01
+#define MASK_TXQUAD_CAL		0x10
+
+/*ENSM config1 register*/
+#define REG_ENSM_CONF1			0x014
+#define ENSM_CONF1_TO_ALERT		(1 << 0)
+#define ENSM_CONF1_AUTO_GAIN_LOCK	(1 << 1)
+#define ENSM_CONF1_FORCE_ALERT		(1 << 2)
+#define ENSM_CONF1_LEVEL_MODE		(1 << 3)
+#define ENSM_CONF1_ENSM_PIN_CTL_EN	(1 << 4)
+#define ENSM_CONF1_FORCE_TX_ON		(1 << 5)
+#define ENSM_CONF1_FORCE_RX_ON		(1 << 6)
+#define ENSM_CONF_RX_EN_CAL		(1 << 7)
+
+/*ENSM state - Read only*/
+#define REG_DEV_STATE			0x017
+#define ENSM_STATE_SHIFT		0x0
+#define ENSM_STATE_MASK			0x0f
+
+#define ENSM_STATE_SLEEP_WAIT		0x0
+#define ENSM_STATE_ALERT		0x5
+#define ENSM_STATE_TX			0x6
+#define ENSM_STATE_TX_FLUSH		0x7
+#define ENSM_STATE_RX			0x8
+#define ENSM_STATE_RX_FLUSH		0x9
+#define ENSM_STATE_FDD			0xA
+#define ENSM_STATE_FDD_FLUSH		0xB
+#define ENSM_STATE_INVALID		0xff
+
+#define MAX_RFICS 20
+struct rf_device_id {
+	char name[RF_NAME_SIZE];
+	int device_id;
+};
+
+enum band_config_mode {
+	GPIO_MODE,
+	FPGA_MODE,
+	INVALID_MODE
+};
+
+struct ad_dev_info {
+	struct spi_device *ad_spi;
+	u8	rx_buf[13];
+	u8 prev_ensm_state;
+	int device_id;
+	int ensm_pin_ctl_en;
+	unsigned int freq_band;
+	spinlock_t	spi_lock;
+	int reset_gpio;
+	int pa_en_gpio;
+	int lna_en_gpio;
+	int rf_num;
+};
+
+struct rf_phy_dev {
+	char	name[RF_NAME_SIZE];
+	struct device *dev;
+	u32	phy_id;
+	struct	rf_phy_ops *ops;
+	struct	list_head list;
+	struct cdev cdev;
+	dev_t dev_t;
+	atomic_t ref;
+	void	*priv;
+};
+
+struct rf_phy_ops {
+	int	(*init)(struct rf_phy_dev *phy,
+				struct rf_init_params *params);
+
+	int	(*run_cmds)(struct rf_phy_dev *phy,
+				struct rf_phy_cmd *cmds, int count);
+
+	int	(*read_regs)(struct rf_phy_dev *phy, u32 start,
+				u32 count, u32 *buff);
+
+	int	(*write_reg)(struct rf_phy_dev *phy, u32 reg,
+			 u32 data, u8 probe);
+	int	(*set_tx_atten)(struct rf_phy_dev *phy, u32 reg, u32 data);
+	int	(*en_dis_tx)(struct rf_phy_dev *phy, u32 tx_if, u32 cmd);
+	int	(*get_rx_gain)(struct rf_phy_dev *phy,
+			struct rf_rx_gain *rx_gain);
+	int	(*set_rx_gain)(struct rf_phy_dev *phy,
+			struct rf_rx_gain *rx_gain);
+	int	(*start)(struct rf_phy_dev *phy);
+	int	(*stop)(struct rf_phy_dev *phy);
+	int	(*set_gain_ctrl_mode)(struct rf_phy_dev *phy,
+			struct rf_gain_ctrl *gain_ctrl);
+	int	(*spi_ioc_transfer)(struct rf_phy_dev *phy,
+			struct spi_ioc_transfer *u_xfers, unsigned n_xfers);
+};
+
+#endif /* __AD9368_H__ */
