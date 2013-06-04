@@ -231,12 +231,17 @@ static int __init epit_clockevent_init(struct clk *timer_clk)
 void __init epit_timer_init(void __iomem *base, int irq)
 {
 	struct clk *timer_clk;
+	struct clk *timer_ipg_clk;
 
-	timer_clk = clk_get_sys("d4400-epit", NULL);
+	timer_clk = clk_get_sys("d4400-epit", "sync_ref");
 	if (IS_ERR(timer_clk)) {
 		pr_err("d4400 epit: unable to get clk\n");
 		return;
 	}
+
+        timer_ipg_clk = clk_get_sys("d4400-epit", "ip");
+        if (!IS_ERR(timer_ipg_clk))
+                clk_prepare_enable(timer_ipg_clk);
 
 	clk_prepare_enable(timer_clk);
 
