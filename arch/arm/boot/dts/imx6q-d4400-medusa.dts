@@ -93,7 +93,7 @@
 			cpri@0x0C100000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
-				compatible = "fsl,d4400-cpri";
+				compatible = "fsl,medusa-cpri";
 				id = <1>;
 				ranges;
 				reg = <0x0C107E00 0x400>;
