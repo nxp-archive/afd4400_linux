@@ -108,6 +108,9 @@ struct cpri_dev {
 	unsigned int irq_err;
 	struct tasklet_struct *err_tasklet;
 	unsigned int framers;
+	u32 dev_flags;
+#define CPRI_MEDUSA_OCRAM			(1 << 5)
+#define CPRI_D4400				(1 << 6)
 	struct list_head list;
 	struct cpri_framer **framer;
 };
@@ -377,7 +380,6 @@ struct cpri_framer {
 	struct cpri_dev *cpri_dev;
 	struct cdev cdev;
 	dev_t dev_t;
-	raw_spinlock_t regs_lock;
 	struct device_node *sfp_dev_node;
 	struct sfp_dev *sfp_dev;
 	/* ISR events and bottom half */
@@ -443,9 +445,13 @@ struct cpri_framer {
 	unsigned char notification_state;
 };
 
-#define TEVENT_LINERATE_SETUP_TEXPIRED		(1 << 1)
-#define TEVENT_PROTVER_SETUP_TEXPIRED		(1 << 2)
-#define TEVENT_ETHRATE_SETUP_TEXPIRED		(1 << 3)
+#define CLASS_NAME	"cp"
+#define DEV_NAME	"cp"
+
+#define TEVENT_LITIMER_EXPIRED			(1 << 1)
+#define TEVENT_LINERATE_SETUP_TEXPIRED		(1 << 2)
+#define TEVENT_PROTVER_SETUP_TEXPIRED		(1 << 3)
+#define TEVENT_ETHRATE_SETUP_TEXPIRED		(1 << 4)
 
 #define IEVENT_SFP_TXFAULT			(1 << 1)
 #define IEVENT_SFP_LOS				(1 << 2)
@@ -716,6 +722,7 @@ struct cpri_framer {
 /* Control word constants */
 #define CHAN_MAX				64
 #define WDOFF_B0				0
+#define WDOFF_B2				2
 #define MAX_CWBYTES				16
 #define NUM_IDX					4
 #define WORD_IDX0				0
@@ -745,67 +752,51 @@ static inline void cpri_write(u32 val, void __iomem *addr)
 	writel(val, addr);
 }
 
-static inline void cpri_reg_clear(raw_spinlock_t *lock,
-				void __iomem *addr,
+static inline void cpri_reg_clear(void __iomem *addr,
 				u32 mask)
 {
 	u32 val;
-	unsigned long flags;
 
-	raw_spin_lock_irqsave(lock, flags);
 	val = cpri_read(addr);
 	val &= ~mask;
 	cpri_write(val, addr);
-	raw_spin_unlock_irqrestore(lock, flags);
 }
 
-static inline void cpri_reg_set(raw_spinlock_t *lock,
-				void __iomem *addr,
+static inline void cpri_reg_set(void __iomem *addr,
 				u32 mask)
 {
 	u32 val;
-	unsigned long flags;
 
-	raw_spin_lock_irqsave(lock, flags);
 	val = cpri_read(addr);
 	val |= mask;
 	cpri_write(val, addr);
-	raw_spin_unlock_irqrestore(lock, flags);
 }
 
-static inline void cpri_reg_set_val(raw_spinlock_t *lock,
-				void __iomem *addr,
+static inline void cpri_reg_set_val(void __iomem *addr,
 				u32 mask,
 				u32 val)
 {
 	u32 tmp = 0;
-	unsigned long flags;
 	register u32 cnt = 0;
 
 	cnt = ffs(mask);
 	cnt--;
 
-	raw_spin_lock_irqsave(lock, flags);
 	tmp = cpri_read(addr);
 	tmp |= mask;
 	tmp &= (~mask  | (val << cnt));
 	cpri_write(tmp, addr);
-	raw_spin_unlock_irqrestore(lock, flags);
 }
 
-static inline u32 cpri_reg_get_val(raw_spinlock_t *lock,
-			const void __iomem *addr, u32 mask)
+static inline u32 cpri_reg_get_val(const void __iomem *addr, u32 mask)
 {
 	u32 val;
-	unsigned long flags;
 	register u32 cnt = 0;
 
 	cnt = ffs(mask);
 	cnt--;
 
-	raw_spin_lock_irqsave(lock, flags);
 	val = cpri_read(addr);
-	raw_spin_unlock_irqrestore(lock, flags);
 
 	return (val & mask)>>cnt;
 }
@@ -815,34 +806,16 @@ struct cpri_reg_data {
 	u32 val;
 };
 
-static inline void cpri_reg_vset_val(raw_spinlock_t *lock,
-			void __iomem *addr, struct cpri_reg_data *data)
+static inline void cpri_reg_vset_val(void __iomem *addr,
+		struct cpri_reg_data *data)
 {
 	u32 tmp = 0;
-	u32 mask, val;
-	unsigned long flags;
-	register u32 cnt = 0;
 
-	raw_spin_lock_irqsave(lock, flags);
 	tmp = cpri_read(addr);
-
-	while (data->mask != 0) {
-
-		mask = data->mask;
-		val = data->val;
-		cnt = 0;
-
-		cnt = ffs(mask);
-		cnt--;
-
-		tmp |= mask;
-		tmp &= (~mask  | (val << cnt));
-
-		data++;
-	}
+	tmp |= data->mask;
+	tmp &= (~(data->mask) | data->val);
 
 	cpri_write(tmp, addr);
-	raw_spin_unlock_irqrestore(lock, flags);
 }
 
 /* CPRI base prototypes */
@@ -858,7 +831,7 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 void cpri_linkrate_autoneg(struct work_struct *work);
 void cpri_proto_ver_autoneg(struct work_struct *work);
 void cpri_eth_autoneg(struct work_struct *work);
-void cpri_setup_vendor_autoneg(struct work_struct *work);
+void cpri_setup_vendor_autoneg(struct cpri_framer *framer);
 void cpri_autoneg_all(struct work_struct *work);
 
 /* Control word function prototypes */
@@ -900,4 +873,7 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child);
 void axc_buf_cleanup(struct cpri_framer *framer);
 int populate_segment_table_data(struct cpri_framer *framer);
 void cleanup_segment_table_data(struct cpri_framer *framer);
+void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state);
+int cpri_state_validation(enum cpri_state present_state,
+		enum cpri_state new_state);
 #endif /* __CPRI_H */

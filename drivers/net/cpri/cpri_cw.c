@@ -13,9 +13,9 @@
 
 #include <linux/cpri.h>
 
-static void cw_write(raw_spinlock_t *lock, u32 *addr, u8 data, u32 mask)
+static void cw_write(u32 *addr, u8 data, u32 mask)
 {
-	cpri_reg_set_val(lock, addr, (u32) data, mask);
+	cpri_reg_set_val(addr, (u32) data, mask);
 }
 
 static void set_cw_data(u8 *cw_word, u32 data)
@@ -27,9 +27,9 @@ static void set_cw_data(u8 *cw_word, u32 data)
 	return;
 }
 
-static u32 cw_read(raw_spinlock_t *lock, u32 *addr, u32 mask)
+static u32 cw_read(u32 *addr, u32 mask)
 {
-	return cpri_reg_get_val(lock, addr, mask);
+	return cpri_reg_get_val(addr, mask);
 }
 
 void clear_control_tx_table(struct cpri_framer *framer)
@@ -41,16 +41,16 @@ void clear_control_tx_table(struct cpri_framer *framer)
 		value = i;
 		value = value << TCTA_ADDR_OFFSET;
 		value |= TCT_WRITE_MASK;
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tctrlattrib,
+		cpri_reg_set_val(&regs->cpri_tctrlattrib,
 				MASK_ALL, value);
 
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrldata0,
+		cpri_reg_clear(&regs->cpri_tctrldata0,
 			MASK_ALL);
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrldata1,
+		cpri_reg_clear(&regs->cpri_tctrldata1,
 			MASK_ALL);
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrldata2,
+		cpri_reg_clear(&regs->cpri_tctrldata2,
 			MASK_ALL);
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrldata3,
+		cpri_reg_clear(&regs->cpri_tctrldata3,
 			MASK_ALL);
 	}
 }
@@ -72,10 +72,11 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 	channels = hf_channels->channels;
 
 	/* Enable cw insertion */
-	cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
+	cpri_reg_set(&regs->cpri_config,
 			TX_CW_INSERT_EN_MASK);
 
 	for (i = 0; i < count; i++) {
+		mask = 0;
 		/* Find control word and select it in CPRInTCTIE */
 		cw = FIND_CW_NUM(channels[i].chan, channels[i].word_bitmap);
 		if (cw <= 79) {
@@ -91,7 +92,7 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 			if (cw >= 64)
 				mask = 1 << (cw-48);
 
-			cpri_reg_set(&framer->regs_lock,
+			cpri_reg_set(
 				&regs->cpri_tctrlinserttb1, mask);
 		}
 		if (cw >= 128) {
@@ -107,36 +108,37 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 			if (cw >= 192)
 				mask = 1 << (cw-176);
 
-			cpri_reg_set(&framer->regs_lock,
+			cpri_reg_set(
 				&regs->cpri_tctrlinserttb2, mask);
 		}
 
 		/* Write data in CPRInTCD0 - CPRInTCD3 */
 		addr = (&regs->cpri_tctrldata0);
 		idx = channels[i].word_bitmap;
+		mask = 24;
 		for (j = 1; j <= MAX_CWBYTES; j++) {
 			data = channels[i].words[idx][j-1];
 			mask = BYTE_MASK << mask;
-			cw_write(&framer->regs_lock, addr, data, mask);
-			mask += SIZE_BYTE;
+			cw_write(addr, data, mask);
+			mask -= SIZE_BYTE;
 			if (j % SIZE_REGBYTES == 0) {
 				addr++;
-				mask = 0;
+				mask = 24;
 			}
 		}
 
 		/* Write cw address in CPRInTCA */
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tctrlattrib,
+		cpri_reg_set_val(&regs->cpri_tctrlattrib,
 				TCT_ADDR_MASK, (u32) cw);
 
 		/* Write command in CPRInTCA */
-		cpri_reg_set(&framer->regs_lock, &regs->cpri_tctrlattrib,
+		cpri_reg_set(&regs->cpri_tctrlattrib,
 				TCT_WRITE_MASK);
 	}
 
 out:
 	/* Disable cw insertion */
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_config,
+	cpri_reg_clear(&regs->cpri_config,
 			TX_CW_INSERT_EN_MASK);
 
 	/* TBD: we need to check with IP team do we have to wait for 1
@@ -168,19 +170,19 @@ static int cpri_read_txctrlword(struct cpri_framer *framer)
 		cw = FIND_CW_NUM(channels[i].chan, channels[i].word_bitmap);
 
 		/* Write cw address in CPRInTCA */
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tctrlattrib,
+		cpri_reg_set_val(&regs->cpri_tctrlattrib,
 				TCT_ADDR_MASK, (u32) cw);
 
 		/* Read command in CPRInTCA */
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrlattrib,
+		cpri_reg_clear(&regs->cpri_tctrlattrib,
 				TCT_WRITE_MASK);
 
 		/* Read data From CPRInTCD0 - CPRInTCD3 */
 		addr = (&regs->cpri_tctrldata0);
 		idx = channels[i].word_bitmap;
-		for (j = 0; j <= MAX_CWBYTES; ) {
+		for (j = 0; j < MAX_CWBYTES; ) {
 			mask = MASK_ALL;
-			data = cw_read(&framer->regs_lock, addr, mask);
+			data = cw_read(addr, mask);
 			set_cw_data(&channels[i].words[idx][j], data);
 			j = j + SIZE_REGBYTES;
 			addr++;
@@ -210,15 +212,15 @@ static int cpri_read_rxctrlword(struct cpri_framer *framer)
 		cw = FIND_CW_NUM(channels[i].chan, channels[i].word_bitmap);
 
 		/* Write cw address in CPRInRCA */
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_rctrlattrib,
+		cpri_reg_set_val(&regs->cpri_rctrlattrib,
 				TCT_ADDR_MASK, (u32) cw);
 
 		/* Read data From CPRInRCD0 - CPRInRCD3 */
 		addr = (&regs->cpri_rctrldata0);
 		idx = channels[i].word_bitmap;
-		for (j = 0; j <= MAX_CWBYTES; ) {
+		for (j = 0; j < MAX_CWBYTES; ) {
 			mask = MASK_ALL;
-			data = cw_read(&framer->regs_lock, addr, mask);
+			data = cw_read(addr, mask);
 			set_cw_data(&channels[i].words[idx][j], data);
 			j = j + SIZE_REGBYTES;
 			addr++;

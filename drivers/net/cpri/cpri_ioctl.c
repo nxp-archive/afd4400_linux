@@ -34,7 +34,7 @@
 
 #include <linux/cpri.h>
 
-static void cpri_reg_write_bulk(raw_spinlock_t *lock, void *base,
+static void cpri_reg_write_bulk(void *base,
 		u32 offset, unsigned int length, u32 value)
 {
 	int i;
@@ -43,12 +43,12 @@ static void cpri_reg_write_bulk(raw_spinlock_t *lock, void *base,
 	base = (char *)base + offset;
 
 	for (i = 0; i < length; i++) {
-		cpri_reg_set_val(lock, base, mask, value);
+		cpri_reg_set_val(base, mask, value);
 		base += (sizeof(u32));
 	}
 }
 
-static void cpri_reg_read_bulk(raw_spinlock_t *lock, void *base,
+static void cpri_reg_read_bulk(void *base,
 		u32 offset, unsigned int length, u32 *buf)
 {
 	int i;
@@ -57,7 +57,7 @@ static void cpri_reg_read_bulk(raw_spinlock_t *lock, void *base,
 	base = (char *)base + offset;
 
 	for (i = 0; i < length; i++) {
-		buf[i] = cpri_reg_get_val(lock, base, mask);
+		buf[i] = cpri_reg_get_val(base, mask);
 		base += (sizeof(u32));
 	}
 }
@@ -66,7 +66,7 @@ static void cpri_reset_bfn(struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 
-	cpri_reg_set(&framer->regs_lock, &regs->cpri_tx_control,
+	cpri_reg_set(&regs->cpri_tx_control,
 			TX_RESET_BFN_MASK);
 }
 
@@ -79,7 +79,7 @@ static void cpri_fill_framer_stats(struct cpri_framer *framer)
 	 * by the irq handlers.Autoneg errors are updtaed in the
 	 * autoneg state machine. Rest of the stats are updated here
 	 */
-	stats->rx_line_coding_violation = cpri_reg_get_val(&framer->regs_lock,
+	stats->rx_line_coding_violation = cpri_reg_get_val(
 						&regs->cpri_lcv, CNT_LCV_MASK);
 }
 
@@ -165,78 +165,78 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 	info->dev_flags |= framer->dev_flags;
 
 	/* Current framer hw status */
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_LOS_MASK))
 		info->hw_status |= RX_LOS_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_STATE_MASK))
 		info->hw_status |= RX_STATE_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_HFN_STATE_MASK))
 		info->hw_status |= RX_HFN_STATE_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_BFN_STATE_MASK))
 		info->hw_status |= RX_BFN_STATE_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_LOS_HOLD_MASK))
 		info->hw_status |= RX_LOS_HOLD_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_STATE_HOLD_MASK))
 		info->hw_status |= RX_STATE_HOLD_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_FREQ_ALARM_HOLD_MASK))
 		info->hw_status |= RX_FREQ_ALARM_HOLD_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_RFP_HOLD_MASK))
 		info->hw_status |= RX_RFP_HOLD_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_status,
 				RX_RFP_HOLD_MASK))
 		info->hw_status |= RX_RFP_HOLD_STATUS;
 
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_hwreset,
 				RESET_GEN_DONE_HOLD_MASK))
 		info->hw_status |= RESET_GEN_DONE_HOLD_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_hwreset,
 				RESET_GEN_DONE_MASK))
 		info->hw_status |= RESET_GEN_DONE_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_hwreset,
 				RESET_DETECT_HOLD_MASK))
 		info->hw_status |= RESET_DETECT_HOLD_STATUS;
 
-	if (cpri_reg_get_val(&framer->regs_lock,
+	if (cpri_reg_get_val(
 				&regs->cpri_hwreset,
 				RESET_DETECT_MASK))
 		info->hw_status |= RESET_DETECT_STATUS;
 
 	/* Current recovered BFN and HFN */
-	info->current_bfn = (u16) cpri_reg_get_val(&framer->regs_lock,
+	info->current_bfn = (u16) cpri_reg_get_val(
 					&regs->cpri_bfn,
 					RECOVERED_BFN_CNT_MASK);
 
-	info->current_hfn = (u8) cpri_reg_get_val(&framer->regs_lock,
+	info->current_hfn = (u8) cpri_reg_get_val(
 					&regs->cpri_hfn,
 					RECOVERED_HFN_CNT_MASK);
 
@@ -248,6 +248,32 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 	memcpy((struct cpri_dev_init_params *)&info->init_params,
 		(struct cpri_dev_init_params *)&framer->framer_param,
 		sizeof(struct cpri_dev_init_params));
+}
+
+static void cpri_configure_irq_events(struct cpri_framer *framer)
+{
+	struct cpri_framer_regs __iomem *regs = framer->regs;
+
+	/* Enable timing interrupt events here - control events are enabled
+	 * after their respective initialisation
+	 */
+	cpri_reg_set(&regs->cpri_rctrltiminginten,
+			BFN_TIMING_EVENT_EN_MASK
+			| HFN_TIMING_EVENT_EN_MASK);
+
+	cpri_reg_set(&regs->cpri_tctrltiminginten,
+			BFN_TIMING_EVENT_EN_MASK
+			| HFN_TIMING_EVENT_EN_MASK);
+
+	/* TBD: CPRIICR is not set in this driver. It is not clear
+	 * why we have this physical interrupt line and the similar
+	 * configuration like the above
+	 */
+	/* Enable all error events by default */
+#if 0 /* temporarily commented on medusa bcz of clock error hang issue */
+	cpri_reg_set(&regs->cpri_errinten,
+			CPRI_ERR_EVT_ALL);
+#endif
 }
 
 static int cpri_init_framer(struct cpri_framer *framer)
@@ -262,78 +288,62 @@ static int cpri_init_framer(struct cpri_framer *framer)
 	if (ret != 0)
 		return ret;
 	if (param->ctrl_flags & CPRI_DAISY_CHAINED)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_auxctrl,
+		cpri_reg_set(&regs->cpri_auxctrl,
 				AUX_MODE_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				 &regs->cpri_auxctrl,
-				AUX_MODE_MASK);
+		cpri_reg_clear(&regs->cpri_auxctrl,
+			AUX_MODE_MASK);
 
 	if (param->ctrl_flags & CPRI_DEV_SLAVE)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_config,
-				SLAVE_MODE_MASK);
+		cpri_reg_set(&regs->cpri_config,
+			SLAVE_MODE_MASK);
 
 	if (param->ctrl_flags & CPRI_DEV_MASTER)
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_config,
+		cpri_reg_clear(&regs->cpri_config,
 				SLAVE_MODE_MASK);
 
 	/* CPRI config params */
 	if (param->ctrl_flags & CPRI_SET_10_ACKS)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_config,
-				CONF_SET_10_ACKS_MASK);
+		cpri_reg_set(&regs->cpri_config,
+			CONF_SET_10_ACKS_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_config,
-				CONF_SET_10_ACKS_MASK);
+		cpri_reg_clear(&regs->cpri_config,
+			CONF_SET_10_ACKS_MASK);
 
 	if (param->ctrl_flags & CPRI_CNT_6_RESET)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_config,
-				CONF_CNT_6_RESET_MASK);
+		cpri_reg_set(&regs->cpri_config,
+			CONF_CNT_6_RESET_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_config,
-				CONF_CNT_6_RESET_MASK);
+		cpri_reg_clear(&regs->cpri_config,
+			CONF_CNT_6_RESET_MASK);
 
 	if (param->ctrl_flags & CPRI_SYNC_PULSE_MODE)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_config,
-				CONF_SYNC_PULSE_MODE_MASK);
+		cpri_reg_set(&regs->cpri_config,
+			CONF_SYNC_PULSE_MODE_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_config,
-				CONF_SYNC_PULSE_MODE_MASK);
+		cpri_reg_clear(&regs->cpri_config,
+			CONF_SYNC_PULSE_MODE_MASK);
 
 	if (param->ctrl_flags & CPRI_TX_CW_INSERT)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_config,
-				TX_CW_INSERT_EN_MASK);
+		cpri_reg_set(&regs->cpri_config,
+			TX_CW_INSERT_EN_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_config,
+		cpri_reg_clear(&regs->cpri_config,
 				TX_CW_INSERT_EN_MASK);
 
 	/* Control word params */
 	if (param->ctrl_flags & CPRI_CW)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_auxcwdmasken,
-				CW_EN_MASK);
+		cpri_reg_set(&regs->cpri_auxcwdmasken,
+			CW_EN_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_auxcwdmasken,
-				CW_EN_MASK);
+		cpri_reg_clear(&regs->cpri_auxcwdmasken,
+			CW_EN_MASK);
 
 	if (param->ctrl_flags & CPRI_CW130)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_auxcwdmasken,
-				CW130_EN_MASK);
+		cpri_reg_set(&regs->cpri_auxcwdmasken,
+			CW130_EN_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_auxcwdmasken,
+		cpri_reg_clear(&regs->cpri_auxcwdmasken,
 				CW130_EN_MASK);
 
 #if 0
@@ -345,115 +355,97 @@ static int cpri_init_framer(struct cpri_framer *framer)
 
 	/* Remote reset params */
 	if (param->ctrl_flags & CPRI_C1_REM_RES_OP)
-		cpri_reg_set(&framer->cpri_dev->lock,
-				&cregs->cpri_remresetoutputctrl,
+		cpri_reg_set(&cregs->cpri_remresetoutputctrl,
 				C1_REM_RES_OP_EN_MASK);
 	else
-		cpri_reg_clear(&framer->cpri_dev->lock,
-				&cregs->cpri_remresetoutputctrl,
+		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
 				C1_REM_RES_OP_EN_MASK);
 
 	if (param->ctrl_flags & CPRI_C1_REM_RES_ACK_OP)
-		cpri_reg_set(&framer->cpri_dev->lock,
-				&cregs->cpri_remresetoutputctrl,
-				C1_REM_RES_ACK_OP_EN_MASK);
+		cpri_reg_set(&cregs->cpri_remresetoutputctrl,
+			C1_REM_RES_ACK_OP_EN_MASK);
 	else
-		cpri_reg_clear(&framer->cpri_dev->lock,
-				&cregs->cpri_remresetoutputctrl,
-				C1_REM_RES_ACK_OP_EN_MASK);
+		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
+			C1_REM_RES_ACK_OP_EN_MASK);
 
 	if (param->ctrl_flags & CPRI_C2_REM_RES_OP)
-		cpri_reg_set(&framer->cpri_dev->lock,
-				&cregs->cpri_remresetoutputctrl,
-				C2_REM_RES_OP_EN_MASK);
+		cpri_reg_set(&cregs->cpri_remresetoutputctrl,
+			C2_REM_RES_OP_EN_MASK);
 	else
-		cpri_reg_clear(&framer->cpri_dev->lock,
-				&cregs->cpri_remresetoutputctrl,
+		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
 				C2_REM_RES_OP_EN_MASK);
 
 	if (param->ctrl_flags & CPRI_C2_REM_RES_ACK_OP)
-		cpri_reg_set(&framer->cpri_dev->lock,
-				&cregs->cpri_remresetoutputctrl,
+		cpri_reg_set(&cregs->cpri_remresetoutputctrl,
 				C2_REM_RES_ACK_OP_EN_MASK);
 	else
-		cpri_reg_clear(&framer->cpri_dev->lock,
-				&cregs->cpri_remresetoutputctrl,
+		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
 				C2_REM_RES_ACK_OP_EN_MASK);
 
 	/* Rx control param */
 	if (param->ctrl_flags & CPRI_RX_IQ_SYNC)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_rctrl,
-				IQ_SYNC_EN_MASK);
+		cpri_reg_set(&regs->cpri_rctrl,
+			IQ_SYNC_EN_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
+		cpri_reg_clear(
 				&regs->cpri_rctrl,
 				IQ_SYNC_EN_MASK);
 
 	/* Tx control param */
 	if (param->ctrl_flags & CPRI_TX_IQ_SYNC)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_rctrl,
+		cpri_reg_set(&regs->cpri_tctrl,
 				IQ_SYNC_EN_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_rctrl,
+		cpri_reg_clear(&regs->cpri_rctrl,
 				IQ_SYNC_EN_MASK);
 
 	/* General Rx sync param */
 	if (param->ctrl_flags & CPRI_GEN_RX_IQ_SYNC)
-		cpri_reg_set(&framer->cpri_dev->lock,
-				&cregs->cpri_rgensync,
+		cpri_reg_set(&cregs->cpri_rgensync,
 				IQ_SYNC_EN_MASK);
 	else
-		cpri_reg_clear(&framer->cpri_dev->lock,
-				&cregs->cpri_rgensync,
+		cpri_reg_clear(&cregs->cpri_rgensync,
 				IQ_SYNC_EN_MASK);
 
 	/* General Tx sync param */
 	if (param->ctrl_flags & CPRI_GEN_TX_IQ_SYNC)
-		cpri_reg_set(&framer->cpri_dev->lock,
-				&cregs->cpri_tgensync,
+		cpri_reg_set(&cregs->cpri_tgensync,
 				IQ_SYNC_EN_MASK);
 	else
-		cpri_reg_clear(&framer->cpri_dev->lock,
-				&cregs->cpri_tgensync,
+		cpri_reg_clear(&cregs->cpri_tgensync,
 				IQ_SYNC_EN_MASK);
 
 	/* ECC error indication config param */
 	if (param->ctrl_flags & CPRI_SINGLE_BIT_ECC_ERROR_OUTPUT)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_eccerrindicateen,
+		cpri_reg_set(&regs->cpri_eccerrindicateen,
 				SINGLE_BIT_ECC_ERROR_OUTPUT_EN_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_eccerrindicateen,
+		cpri_reg_clear(&regs->cpri_eccerrindicateen,
 				SINGLE_BIT_ECC_ERROR_OUTPUT_EN_MASK);
 
 	if (param->ctrl_flags & CPRI_MULTI_BIT_ECC_ERROR_OUTPUT)
-		cpri_reg_set(&framer->regs_lock,
-				&regs->cpri_eccerrindicateen,
-				MULTI_BIT_ECC_ERROR_OUTPUT_EN_MASK);
+		cpri_reg_set(&regs->cpri_eccerrindicateen,
+			MULTI_BIT_ECC_ERROR_OUTPUT_EN_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
-				&regs->cpri_eccerrindicateen,
+		cpri_reg_clear(&regs->cpri_eccerrindicateen,
 				MULTI_BIT_ECC_ERROR_OUTPUT_EN_MASK);
 
 	/* Tx framer size setting */
-	cpri_reg_set_val(&framer->regs_lock,
-			&regs->cpri_tbufsize,
+	cpri_reg_set_val(&regs->cpri_tbufsize,
 			FR_BUF_SIZE_MASK,
 			param->tx_framer_buffer_size);
 
 	/* VSS AXI transaction size setting */
-	cpri_reg_set_val(&framer->regs_lock,
-			&regs->cpri_rvssaxisize,
+	cpri_reg_set_val(&regs->cpri_rvssaxisize,
 			AXI_TRANSAC_SIZE_MASK,
 			param->axi_vss_rx_trans_size);
-	cpri_reg_set_val(&framer->regs_lock,
-			&regs->cpri_tvssaxisize,
+	cpri_reg_set_val(&regs->cpri_tvssaxisize,
 			AXI_TRANSAC_SIZE_MASK,
 			param->axi_vss_tx_trans_size);
+
+	/* Configure framer events */
+	cpri_configure_irq_events(framer);
+
 	return 0;
 }
 
@@ -462,20 +454,20 @@ static void cpri_set_test_mode(unsigned int mode, struct cpri_framer *framer)
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 
 	if (mode & UL_TRANSPARENT)
-		cpri_reg_set(&framer->regs_lock,
+		cpri_reg_set(
 				&regs->cpri_mapcfg,
 				RX_TRANSPARENT_MODE_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
+		cpri_reg_clear(
 				&regs->cpri_mapcfg,
 				RX_TRANSPARENT_MODE_MASK);
 
 	if (mode & DL_TRANSPARENT)
-		cpri_reg_set(&framer->regs_lock,
+		cpri_reg_set(
 				&regs->cpri_mapcfg,
 				TX_TRANSPARENT_MODE_MASK);
 	else
-		cpri_reg_clear(&framer->regs_lock,
+		cpri_reg_clear(
 				&regs->cpri_mapcfg,
 				TX_TRANSPARENT_MODE_MASK);
 }
@@ -497,75 +489,116 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 	if (ctrl->ctrl_mask & DEV_START_DL) {
 
 		/* Enable Tx */
-		cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
+		cpri_reg_set(&regs->cpri_config,
 			CONF_TX_EN_MASK);
 
 		/* Set Tx control interrupt events */
-		cpri_reg_set(&framer->regs_lock, &regs->cpri_tctrl,
+		cpri_reg_set(&regs->cpri_tctrl,
 			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
 
 		/* Set Tx map offset values */
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tmapoffset,
+		cpri_reg_set_val(&regs->cpri_tmapoffset,
 			MAP_OFFSET_X_MASK, map_sync_offset.tx_map_offset_bf);
 
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tmapoffset,
+		cpri_reg_set_val(&regs->cpri_tmapoffset,
 			MAP_OFFSET_Z_MASK, map_sync_offset.tx_map_offset_hf);
 
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tstartoffset,
+		cpri_reg_set_val(&regs->cpri_tstartoffset,
 			MAP_OFFSET_X_MASK, map_sync_offset.tx_start_offset_bf);
 
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tstartoffset,
+		cpri_reg_set_val(&regs->cpri_tstartoffset,
 			MAP_OFFSET_Z_MASK, map_sync_offset.tx_start_offset_hf);
 
-		framer->framer_state = OPERATIONAL;
+		cpri_state_machine(framer,
+					CPRI_STATE_OPERATIONAL);
 		framer->dev_flags |= CPRI_DATA_MODE;
 
 	} else if (ctrl->ctrl_mask & DEV_START_UL) {
 
 		/* Enable Rx */
-		cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
+		cpri_reg_set(&regs->cpri_config,
 			CONF_RX_EN_MASK);
 
 		/* Set Rx control interrupt events */
-		cpri_reg_set(&framer->regs_lock, &regs->cpri_rctrl,
+		cpri_reg_set(&regs->cpri_rctrl,
 			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
 
 		/* Set Rx map offset values */
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_rmapoffset,
+		cpri_reg_set_val(&regs->cpri_rmapoffset,
 			MAP_OFFSET_X_MASK, map_sync_offset.rx_map_offset_bf);
 
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_rmapoffset,
+		cpri_reg_set_val(&regs->cpri_rmapoffset,
 			MAP_OFFSET_Z_MASK, map_sync_offset.rx_map_offset_hf);
 
-		framer->framer_state = OPERATIONAL;
+		cpri_state_machine(framer,
+					CPRI_STATE_OPERATIONAL);
 		framer->dev_flags |= CPRI_DATA_MODE;
 
 	} else if (ctrl->ctrl_mask & DEV_STANDBY) {
 
-		framer->framer_state = STANDBY;
+		cpri_state_machine(framer,
+					CPRI_STATE_STANDBY);
 
 		/* Disable Tx and Rx */
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_config,
+		cpri_reg_clear(&regs->cpri_config,
 			CONF_TX_EN_MASK|CONF_RX_EN_MASK);
 
 		/* Disable Tx and Rx AxCs */
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_raxcctrl,
+		cpri_reg_set_val(&regs->cpri_raxcctrl,
 			MASK_ALL, 0);
 
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_taxcctrl,
+		cpri_reg_set_val(&regs->cpri_taxcctrl,
 			MASK_ALL, 0);
 
 		/* Clear all control interrupt events */
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_rctrl,
+		cpri_reg_clear(&regs->cpri_rctrl,
 			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
 
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrl,
+		cpri_reg_clear(&regs->cpri_tctrl,
 			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
 
 	} else
 		return -EINVAL;
 
 	return 0;
+}
+
+static int validate_cpri_state(struct cpri_framer *framer, unsigned int cmd)
+{
+	int ret = 0;
+
+	/* this is commented temporarily need to enable after sfp functionality
+	 */
+#if 0
+	if (framer->framer_state == CPRI_STATE_SFP_DETACHED &&
+			(framer->sfp_dev == NULL)) {
+		ret = -EINVAL;
+	}
+#endif
+
+	switch (cmd) {
+
+	case CPRI_SET_AXC_PARAM:
+	case CPRI_GET_AXC_PARAM:
+	case CPRI_GET_MAP_TABLE:
+	case CPRI_CTRL_AXC:
+		ret = cpri_state_validation(framer->framer_state,
+				CPRI_STATE_AXC_CONFIG);
+		break;
+
+	case CPRI_MAP_INIT_AXC:
+	case CPRI_MAP_CLEAR_AXC:
+		ret = cpri_state_validation(framer->framer_state,
+				CPRI_STATE_AXC_MAP_INIT);
+		break;
+	case CPRI_START_AUTONEG:
+	case CPRI_START_RECONFIG:
+		ret = cpri_state_validation(framer->framer_state,
+				CPRI_STATE_LINE_RATE_AUTONEG);
+		break;
+	}
+
+	return ret;
 }
 
 long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
@@ -581,6 +614,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	struct cpri_reg *wregset;
 	struct cpri_reg_read_buf rreg;
 	u32 *buf = NULL;
+	unsigned int framer_state;
 
 	struct sfp_reg_write_buf sfp_wreg;
 	struct sfp_reg *sfp_wregset;
@@ -592,6 +626,12 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
 		dev_err(dev, "invalid case, CMD=%d\n", cmd);
+		return -EINVAL;
+	}
+
+	if (validate_cpri_state(framer, cmd)) {
+		dev_err(dev, "cpri cmd discarded 'check cpri_state': %d\n",
+				framer->framer_state);
 		return -EINVAL;
 	}
 
@@ -643,12 +683,14 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case CPRI_SET_STATE:
-		if (copy_from_user(&framer->framer_state,
+		if (copy_from_user(&framer_state,
 				(enum cpri_state *)ioargp,
 				sizeof(enum cpri_state)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
+		cpri_state_machine(framer,
+					framer_state);
 
 		break;
 
@@ -692,7 +734,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		cpri_reg_read_bulk(&framer->regs_lock, (u32 *)regs,
+		cpri_reg_read_bulk((u32 *)regs,
 			rreg.start_offset, rreg.count, (u32 *)buf);
 
 		if (copy_to_user((u32 *)rreg.reg_buff, (u32 *)buf,
@@ -728,7 +770,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		for (i = 0; i < count; i++) {
-			cpri_reg_write_bulk(&framer->regs_lock, (u32 *)regs,
+			cpri_reg_write_bulk((u32 *)regs,
 				(wregset + i)->offset, 1, (wregset + i)->value);
 		}
 
@@ -748,7 +790,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		cpri_reg_read_bulk(&framer->regs_lock, (u32 *)comm_regs,
+		cpri_reg_read_bulk((u32 *)comm_regs,
 			rreg.start_offset, rreg.count, (u32 *)buf);
 
 		if (copy_to_user((u32 *)rreg.reg_buff, (u32 *)buf,
@@ -786,7 +828,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		for (i = 0; i < count; i++) {
-			cpri_reg_write_bulk(&framer->regs_lock,
+			cpri_reg_write_bulk(
 				(u32 *)comm_regs, (wregset + i)->offset,
 				1, (wregset + i)->value);
 		}

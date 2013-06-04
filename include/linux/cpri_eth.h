@@ -20,6 +20,16 @@
 #include <linux/interrupt.h>
 #include <linux/of_platform.h>
 #include <linux/of_net.h>
+/* For TX BD, 16b word size accesses are made from cpri eth for len and flags*/
+#define BD_FLAG_SHIFT	24
+#define BD_LEN_SHIFT	8
+#define BD_LENGTH_MASK		0x00ffff00
+/* needed for write ops */
+#define BD_LFLAG_FSHIFT(flags) ((flags) << BD_FLAG_SHIFT)
+#define BD_LFLAG_LSHIFT(len) ((len << BD_LEN_SHIFT) & BD_LENGTH_MASK)
+/* needed for read ops */
+#define BD_LSTATUS_LSHIFT(len) ((len >> BD_LEN_SHIFT) & BD_LENGTH_MASK)
+#define BD_LSTATUS_SSHIFT(status) ((status) >> BD_FLAG_SHIFT)
 
 struct cpri_eth_extra_stats {
 	unsigned long kernel_dropped;
@@ -41,52 +51,30 @@ struct cpri_eth_extra_stats {
 	unsigned long short_frame;
 };
 
-union cpri_eth_tx_bd_entity {
-	struct {
-		u8 ctrl;
-		u16 pkt_len;
-		u8  buf_ptr_msb;
+struct cpri_eth_bd_entity {
+		u32  lstatus;
 		u32 buf_ptr;
-	} f;	/* fields */
-
-	struct {
-		u32 w1;
-		u32 w2;
-	} w;	/* words */
-} __packed;
-
-union cpri_eth_rx_bd_entity {
-	struct {
-		u8  ctrl;
-		u16 pkt_len;
-		u8  buf_ptr_msb;
-		u32 buf_ptr;
-	} f;	/* fields */
-
-	struct {
-		u32 w1;
-		u32 w2;
-	} w;	/* words */
-} __packed;
-
+};
 
 struct cpri_eth_rx_bd {
+	struct net_device *ndev;
 	raw_spinlock_t rxlock;
-	union cpri_eth_rx_bd_entity *rx_bd_base;
+	struct cpri_eth_bd_entity *rx_bd_base;
 	dma_addr_t rx_bd_dma_base;
 	struct	sk_buff **rx_skbuff;
-	union cpri_eth_rx_bd_entity *rx_bd_current;
+	struct cpri_eth_bd_entity *rx_bd_current;
 	unsigned int skb_currx;
 	unsigned char rx_bd_ring_size;
 };
 
 struct cpri_eth_tx_bd {
+	struct net_device *ndev;
 	raw_spinlock_t txlock;
-	union cpri_eth_tx_bd_entity *tx_bd_base;
+	struct cpri_eth_bd_entity *tx_bd_base;
 	dma_addr_t tx_bd_dma_base;
 	struct sk_buff **tx_skbuff;
-	union cpri_eth_tx_bd_entity *tx_bd_current;
-	union cpri_eth_tx_bd_entity *tx_bd_dirty;
+	struct cpri_eth_bd_entity *tx_bd_current;
+	struct cpri_eth_bd_entity *tx_bd_dirty;
 	unsigned int skb_curtx;
 	unsigned int skb_dirtytx;
 	unsigned int  num_txbdfree;
@@ -133,20 +121,20 @@ struct cpri_eth_priv {
 
 #define CPRI_ETH_BD_TO_LE(bd_le, bd) \
 do {\
-	(bd_le)->w.w1 = be32_to_cpu((bd)->w.w1); \
-	(bd_le)->w.w2 = be32_to_cpu((bd)->w.w2); \
+	(bd_le)->lstatus = be32_to_cpu((bd)->lstatus); \
+	(bd_le)->buf_ptr = be32_to_cpu((bd)->buf_ptr); \
 } while (0)
 
 #define CPRI_ETH_BD_TO_BE(bd_be, bd) \
 do {\
-	(bd_be)->w.w1 = cpu_to_be32((bd)->w.w1); \
-	(bd_be)->w.w2 = cpu_to_be32((bd)->w.w2); \
+	(bd_be)->buf_ptr = cpu_to_be32((bd)->buf_ptr); \
+	(bd_be)->lstatus = cpu_to_be32((bd)->lstatus); \
 } while (0)
 
 
 #define CPRI_ETH_NAPI_WEIGHT		64
 #define CPRI_ETH_RXBUF_ALIGNMENT	256
-#define CPRI_ETH_TX_TIMEOUT		(1*HZ)
+#define CPRI_ETH_TX_TIMEOUT		(1000*HZ)
 #define CPRI_ETH_DISABLED		0
 #define CPRI_ETH_ENABLED		1
 #define CPRI_ETH_BD_RING_ALIGN		16
@@ -159,13 +147,13 @@ do {\
 
 
 /* Defaults */
-#define CPRI_ETH_DEF_TX_RING_SIZE	254
-#define CPRI_ETH_DEF_RX_RING_SIZE	254
+#define CPRI_ETH_DEF_TX_RING_SIZE	8
+#define CPRI_ETH_DEF_RX_RING_SIZE	8
 #define CPRI_ETH_DEF_TX_START_THRESH	4
 #define CPRI_ETH_DEF_RX_BUF_SIZE	2816
 #define CPRI_ETH_DEF_MTU		1500
-#define CPRI_ETH_DEF_RX_COAL_THRESH	64
-#define CPRI_ETH_DEF_TX_COAL_THRESH	64
+#define CPRI_ETH_DEF_RX_COAL_THRESH	0
+#define CPRI_ETH_DEF_TX_COAL_THRESH	0
 
 /* Flags */
 #define CPRI_ETH_HW_CRC_STRIP		0x00000001
@@ -256,16 +244,16 @@ do {\
 #define CPRI_ETH_TX_COAL_STATUS_MASK		0x000000ff
 /* CPRInRERPR */
 #define CPRI_ETH_RX_BD_R_PTR_WRAP_MASK		0x00000100
-#define CPRI_ETH_RX_BD_R_PTR_MASK		0x000000ff
+#define CPRI_ETH_RX_BD_R_PTR_MASK		0x000001ff
 /* CPRInTERPR */
 #define CPRI_ETH_TX_BD_R_PTR_WRAP_MASK		0x00000100
-#define CPRI_ETH_TX_BD_R_PTR_MASK		0x000000ff
+#define CPRI_ETH_TX_BD_R_PTR_MASK		0x000001ff
 /* CPRInREWPR */
 #define CPRI_ETH_RX_BD_W_PTR_WRAP_MASK		0x00000100
-#define CPRI_ETH_RX_BD_W_PTR_MASK		0x000000ff
+#define CPRI_ETH_RX_BD_W_PTR_MASK		0x000001ff
 /* CPRInTEWPR */
 #define CPRI_ETH_TX_BD_W_PTR_WRAP_MASK		0x00000100
-#define CPRI_ETH_TX_BD_W_PTR_MASK		0x000000ff
+#define CPRI_ETH_TX_BD_W_PTR_MASK		0x000001ff
 /* CPRInRETHBD */
 #define CPRI_ETH_RX_BD_EMPTY_MASK		0x80000000
 #define CPRI_ETH_RX_BD_BOF_MASK			0x10000000

@@ -60,12 +60,10 @@ static void set_delay_config(struct cpri_framer *framer)
 	struct cpri_delays_raw_cfg *cfg = &framer->delay_cfg;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 
-	cpri_reg_set_val(&framer->regs_lock,
-				&regs->cpri_exdelaycfg,
+	cpri_reg_set_val(&regs->cpri_exdelaycfg,
 				TX_EX_DELAY_MASK,
 				cfg->tx_ex_delay);
-	cpri_reg_set_val(&framer->regs_lock,
-				&regs->cpri_exdelaycfg,
+	cpri_reg_set_val(&regs->cpri_exdelaycfg,
 				RX_EX_DELAY_PERIOD_MASK,
 				cfg->rx_ex_delay_period);
 }
@@ -75,18 +73,18 @@ static void interface_reconfig(struct cpri_framer *framer)
 	struct cpri_framer_regs __iomem  *regs = framer->regs;
 
 	/* Disable Tx and Rx */
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_config,
+	cpri_reg_clear(&regs->cpri_config,
 			CONF_TX_EN_MASK|CONF_RX_EN_MASK);
 
 	/* Reset CPRIn_RACCR, CPRIn_TACCR, CPRIn_RCR & CPRIn_TCR */
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_raxcctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_taxcctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_rctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_raxcctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_taxcctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_rctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_tctrl, 0xFFFFFFFF);
 
 	/* Reset CPRIn_MAP_CONFIG and CPRIn_MAP_TBL_CONFIG */
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_mapcfg, 0xFFFFFFFF);
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_maptblcfg, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_mapcfg, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_maptblcfg, 0xFFFFFFFF);
 }
 
 static void link_reconfig(struct cpri_framer *framer)
@@ -97,13 +95,13 @@ static void link_reconfig(struct cpri_framer *framer)
 	int i;
 
 	/* Disable Tx and Rx*/
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_config,
+	cpri_reg_clear(&regs->cpri_config,
 			CONF_TX_EN_MASK|CONF_RX_EN_MASK);
 	/* Reset CPRIn_RACCR, CPRIn_TACCR, CPRIn_RCR & CPRIn_TCR */
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_raxcctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_taxcctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_rctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_tctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_raxcctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_taxcctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_rctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_tctrl, 0xFFFFFFFF);
 	/* max 1 sec wait for CPRInRSR and CPRInTSR registers to clear */
 	for (i = 0; i < 10; i++) {
 		rsr = cpri_read(&regs->cpri_rstatus);
@@ -125,7 +123,8 @@ void link_monitor(unsigned long ptr)
 	get_txprotver(framer, &tx_prot_ver);
 	get_rxprotver(framer, &rx_prot_ver);
 	if (rx_prot_ver == tx_prot_ver) {
-		framer->framer_state = PROT_VER_MISMATCH;
+		cpri_state_machine(framer,
+				CPRI_STATE_LINK_ERROR);
 		 /* TBD: Notify user */
 		err = -ENOLINK;
 	}
@@ -133,7 +132,8 @@ void link_monitor(unsigned long ptr)
 	get_txethrate(framer, &tx_eth_rate);
 	get_rxethrate(framer, &rx_eth_rate);
 	if (tx_eth_rate == rx_eth_rate) {
-		framer->framer_state = ETHLINK_RATE_MISMATCH;
+		cpri_state_machine(framer,
+				CPRI_STATE_LINK_ERROR);
 		 /* TBD: Notify user */
 		err = -ENOLINK;
 	}
@@ -157,7 +157,8 @@ void ethptr_monitor(unsigned long ptr)
 	get_txprotver(framer, &tx_prot_ver);
 	get_rxprotver(framer, &rx_prot_ver);
 	if (rx_prot_ver != tx_prot_ver) {
-		framer->framer_state = PROT_VER_MISMATCH;
+		cpri_state_machine(framer,
+				CPRI_STATE_LINK_ERROR);
 		del_timer_sync(&framer->ethptr_poller);
 		/* TBD: Notify  user */
 	}
@@ -165,10 +166,11 @@ void ethptr_monitor(unsigned long ptr)
 	if (framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) {
 		set_txethrate(param->eth_rates[param->eth_rates_count],
 			framer);
-		valid_ptr = cpri_reg_get_val(&framer->regs_lock,
+		valid_ptr = cpri_reg_get_val(
 			&regs->cpri_cmstatus, RX_FAST_CM_PTR_VALID_MASK);
 		if (valid_ptr) {
-			framer->framer_state = ETH_LINK_PROPOSED;
+			cpri_state_machine(framer,
+				CPRI_STATE_LINK_ERROR);
 			del_timer_sync(&framer->ethptr_poller);
 			/* TBD: Notify  user */
 		}
@@ -184,7 +186,7 @@ void l1_timer_expiry_hndlr(unsigned long ptr)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)ptr;
 
-	framer->framer_state = L1TIMER_EXPIRED;
+	framer->timer_expiry_events = TEVENT_LITIMER_EXPIRED;
 	/* TBD: Notify user */
 }
 
@@ -217,10 +219,13 @@ static void set_autoneg_param(struct cpri_framer *framer,
 
 	/* Rx scrambler setting */
 	if (param->flags & CPRI_RX_SCRAMBLER_EN)
-		cpri_reg_set(&framer->regs_lock, &regs->cpri_rscrseed,
+		cpri_reg_set(&regs->cpri_rscrseed,
 				RX_SCR_EN_MASK);
 
 	cpri_init_autoneg_timers(framer);
+
+	cpri_state_machine(framer,
+			CPRI_STATE_CONFIGURED);
 }
 
 static void update_delay(struct cpri_framer *framer)
@@ -228,24 +233,24 @@ static void update_delay(struct cpri_framer *framer)
 	struct cpri_delays_raw *delay_out = &framer->delay_out;
 	struct cpri_framer_regs  __iomem *regs = framer->regs;
 
-	delay_out->rx_ext_buf_delay_valid = cpri_reg_get_val(&framer->regs_lock,
+	delay_out->rx_ext_buf_delay_valid = cpri_reg_get_val(
 			&regs->cpri_exdelaystatus, RX_EX_BUF_DELAY_VALID_MASK);
 
-	delay_out->rx_ext_buf_delay = cpri_reg_get_val(&framer->regs_lock,
+	delay_out->rx_ext_buf_delay = cpri_reg_get_val(
 			&regs->cpri_exdelaystatus, RX_EX_BUF_DELAY_MASK);
 
 
-	delay_out->rx_byte_delay = cpri_reg_get_val(&framer->regs_lock,
+	delay_out->rx_byte_delay = cpri_reg_get_val(
 			&regs->cpri_rdelay, RX_BYTE_DELAY_MASK);
 
-	delay_out->rx_buf_delay = cpri_reg_get_val(&framer->regs_lock,
+	delay_out->rx_buf_delay = cpri_reg_get_val(
 			&regs->cpri_rdelay, RX_BUF_DELAY_MASK);
 
-	delay_out->rx_align_delay = cpri_reg_get_val(&framer->regs_lock,
+	delay_out->rx_align_delay = cpri_reg_get_val(
 			&regs->cpri_rdelay, RX_ALIGN_DELAY_MASK);
 
 
-	delay_out->rx_roundtrip_delay = cpri_reg_get_val(&framer->regs_lock,
+	delay_out->rx_roundtrip_delay = cpri_reg_get_val(
 			&regs->cpri_exdelaystatus, RX_ROUND_TRIP_DELAY_MASK);
 }
 
@@ -291,36 +296,29 @@ static void update_bf_data(struct cpri_framer *framer)
 		dev_err(dev, "Segment table population failed\n");
 }
 
-void cpri_setup_vendor_autoneg(struct work_struct *work)
+void cpri_setup_vendor_autoneg(struct cpri_framer *framer)
 {
-	struct cpri_framer *framer = container_of(work, struct cpri_framer,
-						vendorautoneg_task);
 	enum cpri_prot_ver tx_prot_ver, rx_prot_ver;
-	u8 tx_eth_rate, rx_eth_rate;
-
-	/* Set framer state */
-	framer->framer_state = VENDOR_CONFIG;
+	struct device *dev = framer->cpri_dev->dev;
 
 	/* Check Tx/Rx protocol version */
 	get_txprotver(framer, &tx_prot_ver);
 	get_rxprotver(framer, &rx_prot_ver);
 	if (tx_prot_ver != rx_prot_ver) {
-		framer->framer_state = PROT_VER_MISMATCH;
+		cpri_state_machine(framer,
+				CPRI_STATE_LINK_ERROR);
 		/* TBD: Notify  user */
 		framer->stats.vendor_config_failures++;
+		dev_err(dev, "cpri prot version mismatch\n");
+		return;
 	}
 
-	/* Check Tx/Rx eth rate */
-	get_txethrate(framer, &tx_eth_rate);
-	get_rxethrate(framer, &rx_eth_rate);
-	if (tx_eth_rate != rx_eth_rate) {
-		framer->framer_state = ETHLINK_RATE_MISMATCH;
-		/* TBD: Notify  user */
-		framer->stats.vendor_config_failures++;
-	}
 
+/* end here */
 	/* Setup ethernet DMA here */
 	cpri_eth_enable(framer);
+	cpri_state_machine(framer,
+			CPRI_STATE_AUTONEG_COMPLETE);
 }
 
 static int check_ethrate(struct cpri_framer *framer)
@@ -334,22 +332,22 @@ static int check_ethrate(struct cpri_framer *framer)
 	static u8 txhfcnt;
 
 
-	txhfcnt = (u8) cpri_reg_get_val(&framer->regs_lock,
+	txhfcnt = (u8) cpri_reg_get_val(
 			&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
 
 	/* if c&m ptr invalid */
 	while (1) {
-		hf_cnt = (u8) cpri_reg_get_val(&framer->regs_lock,
+		hf_cnt = (u8) cpri_reg_get_val(
 			&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
 		/* Check whether two HF passed */
 		hf_cnt -= txhfcnt;
 		if (hf_cnt >= 5) {
-			status = cpri_reg_get_val(&framer->regs_lock,
+			status = cpri_reg_get_val(
 				&regs->cpri_cmstatus,
 				RX_FAST_CM_PTR_VALID_MASK);
 			if (status)
 				break;
-			txhfcnt = (u8) cpri_reg_get_val(&framer->regs_lock,
+			txhfcnt = (u8) cpri_reg_get_val(
 				&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
 		}
 		if (framer->timer_expiry_events ==
@@ -362,11 +360,11 @@ static int check_ethrate(struct cpri_framer *framer)
 
 
 	if (status) {
-		tx_eth_rate = (u8) cpri_reg_get_val(&framer->regs_lock,
+		tx_eth_rate = (u8) cpri_reg_get_val(
 					&regs->cpri_cmconfig,
 					TX_FAST_CM_PTR_MASK);
 
-		rx_eth_rate = (u8) cpri_reg_get_val(&framer->regs_lock,
+		rx_eth_rate = (u8) cpri_reg_get_val(
 					&regs->cpri_cmstatus,
 					RX_FAST_CM_PTR_MASK);
 
@@ -390,7 +388,6 @@ static void eth_setup_timer_expiry_hndlr(unsigned long ptr)
 	struct cpri_framer *framer = (struct cpri_framer *)ptr;
 
 	framer->timer_expiry_events = TEVENT_ETHRATE_SETUP_TEXPIRED;
-	framer->framer_state = ETHLINK_SETUP_TIMER_EXPIRED;
 	 /* TBD: Notify user */
 }
 
@@ -398,6 +395,7 @@ void cpri_eth_autoneg(struct work_struct *work)
 {
 	struct cpri_framer *framer = container_of(work, struct cpri_framer,
 						ethautoneg_task);
+	struct cpri_dev *cpdev = framer->cpri_dev;
 	struct cpri_autoneg_params *param = &(framer->autoneg_param);
 	struct timer_list eth_setup_timer;
 	struct cpri_framer_regs *regs = framer->regs;
@@ -405,23 +403,20 @@ void cpri_eth_autoneg(struct work_struct *work)
 	u8 tx_eth_rate;
 	int i, err = 0;
 
-	/* Set framer state */
-	framer->framer_state = ETHLINK_AUTONEG;
-
 	/* Init eth rate expiry timer */
 	init_timer(&eth_setup_timer);
 	eth_setup_timer.function = eth_setup_timer_expiry_hndlr;
 	eth_setup_timer.data = (unsigned long) framer;
 
 	/* Turn ON Tx */
-	cpri_reg_set(&framer->regs_lock, &regs->cpri_config, CONF_TX_EN_MASK);
+	cpri_reg_set(&regs->cpri_config, CONF_TX_EN_MASK);
 
 
 	framer->timer_expiry_events = 0;
 
 	for (i = param->eth_rates_count; i >= 1 ; i--) {
 		tx_eth_rate = param->eth_rates[i - 1];
-		cpri_reg_set_val(&framer->regs_lock,
+		cpri_reg_set_val(
 			&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK,
 			(u32)tx_eth_rate);
 		/* Setup eth rate expiry timer */
@@ -441,11 +436,19 @@ void cpri_eth_autoneg(struct work_struct *work)
 out_fail:
 	dev_info(dev, "eth autoneg fail\n");
 	framer->stats.cnm_auto_neg_failures++;
-	framer->framer_state = PASSIVELINK;
 	framer->dev_flags |= CPRI_PASSIVE_LINK;
+	cpri_state_machine(framer,
+			CPRI_STATE_LINK_ERROR);
 
 out_pass:
+	cpri_reg_set(&cpdev->regs->cpri_intctrl[0],
+			IEVENT_ETH_MASK);
 	del_timer_sync(&eth_setup_timer);
+	/* do vendor config autoneg */
+	cpri_state_machine(framer,
+			CPRI_STATE_ETH_RATE_AUTONEG);
+	cpri_setup_vendor_autoneg(framer);
+	/* Set framer state */
 }
 
 static void proto_setup_timer_expiry_hndlr(unsigned long ptr)
@@ -454,7 +457,6 @@ static void proto_setup_timer_expiry_hndlr(unsigned long ptr)
 	struct cpri_framer *framer = (struct cpri_framer *)ptr;
 
 	framer->timer_expiry_events = TEVENT_PROTVER_SETUP_TEXPIRED;
-	framer->framer_state = PROT_VER_SETUP_TIMER_EXPIRED;
 	/* TBD: Notify user */
 }
 
@@ -474,9 +476,6 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 	u32 pver;
 	static u8 txhfcnt;
 
-	/* Set framer state */
-	framer->framer_state = PROT_VER_AUTONEG;
-
 	/* Setup protocol ver expiry timer */
 	init_timer(&proto_setup_timer);
 	proto_setup_timer.function = proto_setup_timer_expiry_hndlr;
@@ -487,12 +486,10 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 	add_timer(&proto_setup_timer);
 
 	/* Turn ON Tx */
-	cpri_reg_set(&framer->regs_lock, &regs->cpri_config, CONF_TX_EN_MASK);
-	cpri_reg_set_val(&framer->regs_lock,
-			&regs->cpri_tprotver,
+	cpri_reg_set(&regs->cpri_config, CONF_TX_EN_MASK);
+	cpri_reg_set_val(&regs->cpri_tprotver,
 			PROTO_VER_MASK, 2);
-	txhfcnt = (u8) cpri_reg_get_val(&framer->regs_lock,
-					&regs->cpri_thfnctr,
+	txhfcnt = (u8) cpri_reg_get_val(&regs->cpri_thfnctr,
 					TX_HFN_COUNTER_MASK);
 
 
@@ -500,20 +497,18 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 
 		/* Update the received scramble seed value */
 		result->rx_scramble_seed_val =
-			cpri_reg_get_val(&framer->regs_lock,
-				&regs->cpri_rscrseed, SCR_SEED_MASK);
+			cpri_reg_get_val(&regs->cpri_rscrseed, SCR_SEED_MASK);
 
 
 		/* Check whether two HF passed */
-		hf_cnt = (u8) cpri_reg_get_val(&framer->regs_lock,
-					&regs->cpri_thfnctr,
+		hf_cnt = (u8) cpri_reg_get_val(&regs->cpri_thfnctr,
 					TX_HFN_COUNTER_MASK);
 		hf_cnt -= txhfcnt;
 		if (hf_cnt >= 2) {
 			dev_info(dev, "proto ver - 2HF passed\n");
 			/* Get last set proto ver */
-			pver = cpri_reg_get_val(&framer->regs_lock,
-				&regs->cpri_tprotver, PROTO_VER_MASK);
+			pver = cpri_reg_get_val(
+					&regs->cpri_tprotver, PROTO_VER_MASK);
 			tproto_ver = (pver == 1) ? VER_1 : VER_2;
 			get_rxprotver(framer, &rproto_ver);
 			if (rproto_ver == tproto_ver) {
@@ -526,15 +521,12 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 			} else {
 				/* Change Tx proto ver */
 				if (tproto_ver == VER_1)
-					cpri_reg_set_val(&framer->regs_lock,
-							&regs->cpri_tprotver,
+					cpri_reg_set_val(&regs->cpri_tprotver,
 							PROTO_VER_MASK, 2);
 				else
-					cpri_reg_set_val(&framer->regs_lock,
-							&regs->cpri_tprotver,
+					cpri_reg_set_val(&regs->cpri_tprotver,
 							PROTO_VER_MASK, 1);
 				txhfcnt = (u8) cpri_reg_get_val(
-						&framer->regs_lock,
 						&regs->cpri_thfnctr,
 						TX_HFN_COUNTER_MASK);
 			}
@@ -545,10 +537,15 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 
 	if (framer->timer_expiry_events == TEVENT_PROTVER_SETUP_TEXPIRED)
 		dev_info(dev, "proto ver autoneg timer expired\n");
-	if (err != 0)
-		framer->stats.proto_auto_neg_failures++;
-
 	del_timer_sync(&proto_setup_timer);
+	if (err != 0) {
+		framer->stats.proto_auto_neg_failures++;
+		cpri_state_machine(framer,
+				CPRI_STATE_LINK_ERROR);
+	} else
+		cpri_state_machine(framer,
+				CPRI_STATE_PROT_VER_AUTONEG);
+
 }
 
 static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
@@ -566,23 +563,23 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 
 	/* Update Tx proto ver and Tx scrambler seed */
 	if (rate > RATE4_3072_0M) {
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tprotver,
+		cpri_reg_set_val(&regs->cpri_tprotver,
 				PROTO_VER_MASK, 2);
 
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tscrseed,
+		cpri_reg_set_val(&regs->cpri_tscrseed,
 				SCR_SEED_MASK, param->tx_scr_seed);
 	} else
-		cpri_reg_set_val(&framer->regs_lock, &regs->cpri_tprotver,
+		cpri_reg_set_val(&regs->cpri_tprotver,
 				PROTO_VER_MASK, 1);
 
 	/* Set max Tx ethernet rate/ptr */
 	tx_eth_rate = param->eth_rates[param->eth_rates_count-1];
 
 	/* Turn on Tx and enable tx for 1 HF */
-	cpri_reg_set(&framer->regs_lock, &regs->cpri_config, CONF_TX_EN_MASK);
+	cpri_reg_set(&regs->cpri_config, CONF_TX_EN_MASK);
 	txhfcnt = 0;
 	while (framer->timer_expiry_events != TEVENT_LINERATE_SETUP_TEXPIRED) {
-		txhfcnt = (u8) cpri_reg_get_val(&framer->regs_lock,
+		txhfcnt = (u8) cpri_reg_get_val(
 				&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
 		if (txhfcnt >= 1)
 			break;
@@ -590,7 +587,7 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 		schedule_timeout_interruptible(msecs_to_jiffies(1));
 	}
 	/* Turn OFF Tx */
-	cpri_reg_clear(&framer->regs_lock, &regs->cpri_config, CONF_TX_EN_MASK);
+	cpri_reg_clear(&regs->cpri_config, CONF_TX_EN_MASK);
 
 	dev_info(dev, "line rate autoneg successful\n");
 
@@ -607,7 +604,7 @@ static int check_framesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 	/* Check hfn sync status */
 	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK);
 	while (framer->timer_expiry_events != TEVENT_LINERATE_SETUP_TEXPIRED) {
-		line_sync_acheived = cpri_reg_get_val(&framer->regs_lock,
+		line_sync_acheived = cpri_reg_get_val(
 					&regs->cpri_status, mask);
 		if (line_sync_acheived)
 			return 0;
@@ -632,12 +629,12 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 	 * Set Tx protocol ver ? Set Tx seed ?
 	 * Identify channels and what data to send ?
 	 */
-	cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
+	cpri_reg_set(&regs->cpri_config,
 				CONF_RX_EN_MASK);
 
 	do {
 		/* Turn ON Tx for 'tx_on_dur_sec' */
-		cpri_reg_set(&framer->regs_lock, &regs->cpri_config,
+		cpri_reg_set(&regs->cpri_config,
 				CONF_TX_EN_MASK);
 #if 0
 		/* Enable SFP Tx */
@@ -646,7 +643,7 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 		schedule_timeout_interruptible(param->tx_on_time * HZ);
 
 		/* Turn OFF Tx for 'tx_off_dur_sec'*/
-		cpri_reg_clear(&framer->regs_lock, &regs->cpri_config,
+		cpri_reg_clear(&regs->cpri_config,
 				CONF_TX_EN_MASK);
 
 		/* Disable SFP Tx */
@@ -678,7 +675,6 @@ static void linerate_setup_timer_expiry_hndlr(unsigned long ptr)
 	struct cpri_framer *framer = (struct cpri_framer *)ptr;
 
 	framer->timer_expiry_events = TEVENT_LINERATE_SETUP_TEXPIRED;
-	framer->framer_state = LINK_RATE_SETUP_TIMER_EXPIRED;
 }
 
 void cpri_linkrate_autoneg(struct work_struct *work)
@@ -695,9 +691,6 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	int err = 0;
 	unsigned long timer_dur;
 
-
-	/* Set framer state */
-	framer->framer_state = LINE_RATE_AUTONEG;
 	/* Setup line rate timer */
 	init_timer(&linerate_timer);
 	linerate_timer.function = linerate_setup_timer_expiry_hndlr;
@@ -708,11 +701,11 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	for (rate = high; rate >= low; rate--) {
 		dev_dbg(dev, "trying new link rate\n");
 		/* Disable framer clock */
-		if (framer->id)
-			cpri_reg_clear(&framer->cpri_dev->lock,
+		if (framer->id == 2)
+			cpri_reg_clear(
 				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
 		else
-			cpri_reg_clear(&framer->cpri_dev->lock,
+			cpri_reg_clear(
 				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
 #if 0
 		/* Init and set highest possible line rate for serdes only when
@@ -731,11 +724,11 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		 */
 
 		/* Enable framer clock */
-		if (framer->id)
-			cpri_reg_set(&framer->cpri_dev->lock,
+		if (framer->id == 2)
+			cpri_reg_set(
 				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
 		else
-			cpri_reg_set(&framer->cpri_dev->lock,
+			cpri_reg_set(
 				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
 
 		mdelay(1);
@@ -756,13 +749,17 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		del_timer_sync(&linerate_timer);
 		framer->timer_expiry_events = 0;
 	}
-
 	del_timer_sync(&linerate_timer);
 	update_bf_data(framer);
 
 	if (err != 0) {
 		framer->stats.l1_auto_neg_failures++;
 		dev_err(dev, "line rate autoneg failed\n");
+		cpri_state_machine(framer,
+				CPRI_STATE_LINK_ERROR);
+	} else {
+		cpri_state_machine(framer,
+				CPRI_STATE_LINE_RATE_AUTONEG);
 	}
 }
 
@@ -771,19 +768,16 @@ void cpri_autoneg_all(struct work_struct *work)
 	struct cpri_framer *framer = container_of(work, struct cpri_framer,
 						allautoneg_task);
 	enum cpri_state *state = &(framer->framer_state);
-	struct device *dev = framer->cpri_dev->dev;
-	struct net_device *ndev = framer->eth_priv->ndev;
 	unsigned long timer_dur;
 	int err = 0;
 
-	*state = STANDBY;
 
 	framer->timer_expiry_events = 0;
 
-	while (*state != L1TIMER_EXPIRED) {
+	while (*state != CPRI_STATE_AUTONEG_COMPLETE) {
 		/* do line rate autoneg */
 		cpri_linkrate_autoneg(&framer->lineautoneg_task);
-		if (*state != LINE_RATE_AUTONEG) {
+		if (*state != CPRI_STATE_LINE_RATE_AUTONEG) {
 			err = -ENOLINK;
 			goto out;
 		}
@@ -795,56 +789,24 @@ void cpri_autoneg_all(struct work_struct *work)
 
 		/* do proto ver autoneg */
 		cpri_proto_ver_autoneg(&framer->protoautoneg_task);
-		if (*state != PROT_VER_AUTONEG) {
+		if (*state != CPRI_STATE_PROT_VER_AUTONEG) {
 			err = -ENOLINK;
 			goto out;
 		}
 
 		/* do eth rate autoneg */
 		cpri_eth_autoneg(&framer->ethautoneg_task);
-		if (*state != ETHLINK_AUTONEG) {
-			err = -ENOLINK;
-			goto out_passive;
-		}
-
-		/* do vendor config autoneg */
-		cpri_setup_vendor_autoneg(&framer->vendorautoneg_task);
-		if ((*state != PASSIVELINK) && (*state != VENDOR_CONFIG)) {
+		if (*state != CPRI_STATE_ETH_RATE_AUTONEG) {
 			err = -ENOLINK;
 			goto out;
 		} else {
-			*state = AUTONEG_COMPLETED;
+			cpri_state_machine(framer,
+				CPRI_STATE_AUTONEG_COMPLETE);
 			break;
 		}
+
 	}
 
-out_passive:
-
-	if (*state == AUTONEG_COMPLETED || *state == PASSIVELINK) {
-
-		dev_info(dev, "autoneg passed\n");
-		*state = OPERATIONAL;
-
-		/* Update autoneg output data */
-		update_delay(framer);
-		update_bf_data(framer);
-
-		/* Setup poller for checking Tx/Rx eth rate and
-		 * proto ver mismatch periodically
-		 */
-		timer_dur = jiffies + framer->link_poll_dur_sec * HZ;
-		framer->link_poller.expires = timer_dur;
-		add_timer(&framer->link_poller);
-
-		/* Setup poller for checking change in eth ptr */
-		if (*state != PASSIVELINK)
-			netif_carrier_on(ndev);
-		else {
-			timer_dur = jiffies + framer->passive_poll_dur_sec * HZ;
-			framer->ethptr_poller.expires = timer_dur;
-			add_timer(&framer->ethptr_poller);
-		}
-	}
 
 out:
 	/* Transition 6 or 14 or error in individual anutoneg phase */
@@ -902,9 +864,6 @@ static int process_autoneg_cmd(enum autoneg_cmd cmd, struct cpri_framer *framer)
 		break;
 	case CPRI_DO_CNM_AUTONEG:
 		schedule_work(&framer->ethautoneg_task);
-		break;
-	case CPRI_DO_VENDOR_AUTONEG:
-		schedule_work(&framer->vendorautoneg_task);
 		break;
 	case CPRI_DO_AUTONEG_ALL:
 		schedule_work(&framer->allautoneg_task);
