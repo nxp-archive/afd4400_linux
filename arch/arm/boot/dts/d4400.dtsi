@@ -39,6 +39,17 @@
         clocks {
                 #address-cells = <1>;
                 #size-cells = <0>;
+                osc1 {
+                        compatible = "fsl,d4400-osc1-dev-clk", "fixed-clock";
+                        clock-frequency = <122880000>;
+                };
+
+                osc2 {
+                        compatible = "fsl,d4400-osc2-sgmii-clk", "fixed-clock";
+                        clock-frequency = <125000000>;
+                };
+
+
         };
 
         intc: interrupt-controller@01015000 {
@@ -71,7 +82,7 @@
                         #address-cells = <1>;
                         #size-cells = <1>;
                         reg = <0x1000000 0x200000>;
-                        ranges = <0x0 0x80000 0x180000>;
+                        ranges = <0x0 0x1080000 0x180000>;
 
                         mmdc0: mmdc@0 { /* MMDC0 */
                                 reg = <0x0 0x4000>;
@@ -150,23 +161,14 @@
                         epit@68000 {
 				compatible = "fsl,d4400-epit";
                                 reg = <0x68000 0x4000>;
-                                interrupts = <0 22 0x04>;
+                                interrupts = <0 22 0x01>;
                         };
 
                         uart1: serial@6c000 {
                                  compatible = "fsl,d4400-uart";
                                  reg = <0x6c000 0x4000>;
                                  interrupts = <0 0 0x04>;
-			/* FIXME-D4400: update this when clocks
-			 *   enum is defined in ccm. Change for all UART's
-			 */
-                                 clocks = <&clks 160>, <&clks 161>;
-
-			/* FIXME-D4400: want to change this to
-			 * something like "per" and "mod"
-			 * as per D4400 RM 29.4.2.1 and clock-bindings.txt.
-			 * Change for all UART's
-			 */
+                                 clocks = <&clks 57>, <&clks 18>;
                                  clock-names = "ipg", "per";
                                  status = "disabled";
                         };
@@ -175,7 +177,7 @@
                                  compatible = "fsl,d4400-uart";
                                  reg = <0x70000 0x4000>;
                                  interrupts = <0 1 0x04>;
-                                 clocks = <&clks 160>, <&clks 161>;
+                                 clocks = <&clks 59>, <&clks 20>;
                                  clock-names = "ipg", "per";
                                  status = "disabled";
                         };
@@ -184,7 +186,7 @@
                                  compatible = "fsl,d4400-uart";
                                  reg = <0x74000 0x4000>;
                                  interrupts = <0 2 0x04>;
-                                 clocks = <&clks 160>, <&clks 161>;
+                                 clocks = <&clks 61>, <&clks 22>;
                                  clock-names = "ipg", "per";
                                  status = "disabled";
                         };
@@ -192,8 +194,8 @@
                         uart4: serial@78000 {
                                  compatible = "fsl,d4400-uart";
                                  reg = <0x78000 0x4000>;
-                                 interrupts = <0 3 0x04>;
-                                 clocks = <&clks 160>, <&clks 161>;
+                                 interrupts = <0 3 0x01>;
+                                 clocks = <&clks 63>, <&clks 24>;
                                  clock-names = "ipg", "per";
                                  status = "disabled";
                         };
@@ -204,11 +206,14 @@
                         #address-cells = <1>;
                         #size-cells = <1>;
                         reg = <0x1200000 0x2e00000>;
-                        ranges = <0x0 0x80000 0x2d80000>;
-
+                        ranges = <0x0 0x1280000 0x2d80000>;
 			iim@78000 {
 				compatible = "fsl,d4400-iim";
 				reg = <0x78000 0x4000>;
+			};
+			scm: gpcr@C0000 {
+                                 compatible = "fsl,d4400-scm";
+                                 reg = <0xC0000 0x4000>;
 			};
                 };
 
@@ -217,7 +222,7 @@
                         #address-cells = <1>;
                         #size-cells = <1>;
                         reg = <0x4000000 0x2000000>;
-                        ranges = <0x0 0x80000 0x1f80000>;
+                        ranges = <0x0 0x4080000 0x1f80000>;
 
                         iomuxc@0c000 {
                                 compatible = "fsl,d4400-iomuxc";
