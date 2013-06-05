@@ -1,0 +1,108 @@
+* Clock bindings for Freescale D4400
+
+Required properties:
+- compatible: Should be "fsl,d4400-ccm"
+- reg: Address and length of the register set
+- interrupts: Should contain CCM interrupt
+- #clock-cells: Should be <1>
+
+The clock consumer should specify the desired clock by having the clock
+ID in its "clocks" phandle cell.  The following is a full list of d4400
+clocks and IDs.
+
+	Clock		ID
+	-----------------
+	dummy		0
+	osc1_dev	1
+	osc2_sgmii	2
+	sys_pll		3
+	ddr_pll		4
+	tbgen_pll	5
+	tbgen_half_pll	6
+	ref		7
+	sys		8
+	arm		9
+	per		10
+	vsp_clk		11
+	ram		12
+	sys_bus		13
+	ahb		14
+	ip		15
+	gpc		16
+	uart1_serial	17
+	uart1_per	18
+	uart2_serial	19
+	uart2_per	20
+	uart3_serial	21
+	uart3_per	22
+	uart4_serial	23
+	uart4_per	24
+	weim_sel	25
+	weim_clk	26
+	div_pll_sys	27
+	etsec_rtc	28
+	sync_ref	29
+	async_ckil	30
+	sync_ckil	31
+	ecspi1_sel	32
+	ecspi1_clk	33
+	ecspi2_sel	34
+	ecspi2_clk	35
+	ecspi3_sel	36
+	ecspi3_clk	37
+	ecspi4_sel	38
+	ecspi4_clk	39
+	ecspi5_sel	40
+	ecspi5_clk	41
+	ecspi6_sel	42
+	ecspi6_clk	43
+	ecspi7_sel	44
+	ecspi_clk	45
+	ecspi8_sel	46
+	ecspi8_clk	47
+	vspa_dp_sel	48
+	vspa_dp_clk	49
+	ccm_at		50
+	trace		51
+	ddr_pll_by	52
+	mmdc_sel	53
+	mmdc_clk	54
+	epit_ipg        55
+	epit_per        56
+	uart1_ipg	57
+	uart1_pen	58
+	uart2_ipg	59
+	uart2_pen	60
+        uart3_ipg	61
+	uart3_pen	62
+	uart4_ipg	63
+	uart4_pen	64
+	i2c1_per	65
+	i2c2_per	66
+	i2c3_per	67
+	i2c4_per	68
+	i2c5_per	69
+	i2c6_per	70
+	i2c7_per	71
+	i2c8_per	72
+	i2c9_per	73
+	i2c10_per	74
+	i2c11_per	75
+	clk_max		76
+
+Examples:
+clks: ccm@014000 {
+	compatible = "fsl,d4400-ccm";
+	reg = <0x14000 0x4000>;
+	#clock-cells = <1>;
+};
+
+uart1: serial@06c000 {
+	compatible = "fsl,d4400-uart";
+	reg = <0x6C000 0x4000>;
+	interrupts = <0 0 0x04>;
+	clocks = <&clks 57>, <&clks 18>;
+	clock-names = "ipg", "per";
+	status = "disabled";
+};
+

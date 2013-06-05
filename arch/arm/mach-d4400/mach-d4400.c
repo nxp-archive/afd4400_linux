@@ -112,12 +112,12 @@ static void __init d4400_init_irq(void)
 {
 	l2x0_of_init(0, ~0UL);
 	of_irq_init(d4400_irq_match);
+	d4400_clock_map_io();
 }
 
 static void __init d4400_timer_init(void)
 {
-/*	d4400_clocks_init(); */ /*FIXME - Add clock driver code */
-/*	twd_local_timer_of_register();*/ /* FIXME */
+	d4400_clocks_init();
 	d4400_print_silicon_rev("D4400", d4400_revision());
 }
 static void __init d4400_init_machine(void)
