@@ -14,161 +14,16 @@
 
 #include <uapi/linux/jesd204.h> /*user and kernel interface header*/
 
-/** @brief driver name jesd204 in here
-*/
 #define DRIVER_NAME "jesd204"
 
-/** @brief a true false local for jesd204
-*/
-#define JFALSE 0
-#define JTRUE1
-
-/** @brief device type, for TX its 1 as identifier and for rx its 2
-*/
-#define DEVICE_TX	1
-#define DEVICE_RX	2
-
-/** @brief this is to be max devices that we are going to support
-*/
 #define TRANSPORTS_PER_JESD_DEV 2
 #define MAX_LANES 2
 #define JESD_SYNC_TIMEOUT_MS	100
 
-/** @brief max lanes for transport identifier trans 0 == 1 and trans 1 == 2
-*/
-#define TRANPORT_0 0
-#define TRANPORT_1 1
-/** @brief max lanes for transport identifier trans 0 == 1 and trans 1 == 2
-*/
-#define LANEID_FOR_PRIMARY 1
-#define LANEID_FOR_SECONDARY 2
-
-#define LANEID_FOR_0 0
-#define LANEID_FOR_1 1
-
-/** @brief mask bits def's are in here
-*/
-#define UNDERF_ISR_BIT3		3
-#define WCBOF_ISR_BIT4		4
-#define WCBUF_ISR_BIT5		5
-#define SYSREF_ISR_BIT8		8
-#define SYNC_ISR_BIT9		9
-#define DFIFO_BIT3		3
-
-#define SKEW_ERR_BIT4		4
-#define UEX_K_BIT5		5
-#define NIT_BIT6		6
-#define PARITY_ERR_BIT7		7
-
-#define BP_8b10_BIT0		0
-#define REVERSE_8b10_BIT1	1
-
-#define FRMR_TPL_BIT0		0
-#define FRMR_DLL_BIT1		1
-#define S_RST_BIT1		1
-
-#define REP_DAT_BIT5		5
-#define QUEUE_TST_BIT4		4
-
-#define ILS_MODE_BIT7		7
-#define RX_DEV_BIT2		2
-
-#define ENABLE_CLK_BIT0		0
-#define SCR_CTRL_L0_BIT0	0
-#define SCR_CTRL_L1_BIT1	1
-
-#define L2SIDES_BIT0		0
-#define BYP_ILAS_BIT2		2
-#define BYP_ACG_BIT3		3
-#define IDLE_SELECT_BIT1	1
-
-#define WC_RC_PROTECT_BIT18	18
-#define OCT_FIRST_BIT9		9
-#define IQ_SWAP_BIT7		7
-#define PHY_FIRT_BIT8		8
-#define TN_CHK_CSUM_BIT12	12
-
-#define SCRAMBL_BIT7		7
-#define DMA_DIS_BIT17		17
-#define TX_FRM_BIT1		1
-#define RX_CTRL_BIT7		7
+#define DEVICE_TX	0
+#define DEVICE_RX	1
 
 
-#define RX_DIS_BIT7		7
-#define SYSREF_MASK_BIT20	20
-
-#define SW_DMA_BIT17		17
-
-#define BAD_DIS_SYNC		0
-#define NIT_SYNC		1
-#define UX_CHAR_SYNC		2
-#define SYNC_ASSERT_BIT7	7
-#define SYNC_ASSERT_BIT6	6
-#define SYNC_ASSERT_BIT5	5
-
-
-
-/**@brief isr def's, a linked isr def's*/
-#define	ILS_SUCCESS		1
-#define	ILS_FAIL		(ILS_SUCCESS + 1)
-#define	CGS_SUCCESS		(ILS_FAIL + 1)
-#define	CGS_FAIL		(CGS_SUCCESS + 1)
-#define	CGS_NOT_CONFIGED	(CGS_FAIL + 1)
-#define	FSF_SUCCESS		(CGS_NOT_CONFIGED + 1)
-#define	FSF_FAIL		(FSF_SUCCESS + 1)
-#define	FSF_NOT_CONFIGED	(FSF_FAIL + 1)
-#define	CSUM_SUCCESS		(FSF_NOT_CONFIGED + 1)
-#define	CSUM_FAIL		(CSUM_SUCCESS + 1)
-#define	CSUM_NOT_CONFIGED	(CSUM_FAIL + 1)
-#define	UEX_K_FAIL		(CSUM_NOT_CONFIGED + 1)
-#define	NIT_FAIL		(UEX_K_FAIL + 1)
-#define	BAD_DIS_FAIL		(NIT_FAIL + 1)
-#define	PAC_OF_ERR		(BAD_DIS_FAIL + 1)
-#define	PAC_UF_ERR		(PAC_OF_ERR + 1)
-#define	RBUF_OF_ERR		(PAC_UF_ERR + 1)
-#define	RBUF_UF_ERR		(RBUF_OF_ERR + 1)
-#define	SFIFO_ERR		(RBUF_UF_ERR + 1)
-#define	SYS_REF_ROSE		(SFIFO_ERR + 1)
-#define	PHY_DATA_LOST		(SYS_REF_ROSE + 1)
-#define	SYNC_DETECTED		(PHY_DATA_LOST + 1)
-#define	UPAC_UF_ERR		(SYNC_DETECTED + 1)
-#define	WBUF_OF_ERR		(UPAC_UF_ERR + 1)
-#define	WBUF_UF_ERR		(WBUF_OF_ERR + 1)
-#define START_TIMEOUT		(WBUF_UF_ERR + 1)
-/*mark the end if needed do append*/
-#define	ERROR_END		(START_TIMEOUT + 1)
-/* isr def's end*/
-
-/**@brief misc offsets, mask, mac's
-*/
-#define	RESET_IRQ_VECTOR	0x80
-#define	NORMAL_MODE		0x00
-#define	TEST_MODE		0x00
-/* this is totaly dummy for signal handlers*/
-#define	SIG_TEST		0x40
-
-/** @brief error state for jesd204
- * error state that the device could be in
- */
-enum error_identifier {
-	no_error,
-	unpack_uf,
-	pack_uf,
-	pack_of,
-	rcbuf_uf,
-	rcbuf_of,
-	wcbuf_uf,
-	wcbuf_of,
-	baddis_t,
-	nit_t,
-	uexk_t,
-	fsync_err,
-	cgs_err,
-	csum_err,
-	ils_err,
-	sync_fail,
-	sig_fail,
-};
 /** @brief shall have all the instance for all registers include reserved sets
  *too, supported by the ip
 */
@@ -330,12 +185,18 @@ struct config_registers_rx {
 /* Tn_control */
 #define CLKDIV_MASK		0x07
 #define CLKDIV_SHIFT		4
+#define CLK_ENABLE		(1 << 0)
 #define DFIFO_SWRESET		(1 << 3)
 #define SYSREF_MASK		(1 << 20)
 #define SYNC_SELECT_TBGEN	(1 << 21)
 #define SYNC_PIPELINE_MASK	0x1ff
 #define SYNC_PIPELINE_SHIFT	23
 #define SW_DMA_ENABLE		(1 << 17)
+#define OTHR_TRANS_IDLE_SELECT	(1 << 1)
+#define SWAP_IQ			(1 << 7)
+#define PHYPACK_MS_OCTECT_FIRST	(1 << 9)
+#define PHYORDER_MS_BIT_FIRST	(1 << 8)
+#define STRICT_CGS		(1 << 19)
 
 /* Tn_Lane_enable */
 #define LANE_EN_MASK		0xff
@@ -348,8 +209,10 @@ struct config_registers_rx {
 #define IRQ_SYNC_RECIEVED	(1 << 9)
 
 /* Tn_frm_ctl*/
+#define L2SIDES_EN		(1 << 0)
 #define TRANSMIT_EN		(1 << 1)
-
+#define BYP_ILAS		(1 << 2)
+#define BYP_AGC			(1 << 3)
 /* Tn_CTRLREG0*/
 #define FSREQ			(1 << 2)
 #define RX_DIS			(1 << 7)
@@ -360,6 +223,32 @@ struct config_registers_rx {
 #define FRAMER_STATE_ILAS		0x1
 #define FRAMER_STATE_USER_DATA		0x2
 
+/* Tn_SCR_IN_CTRL */
+#define L0_SCR_EN	(1 << 0)
+#define L1_SCR_EN	(1 << 1)
+
+/* Tn_L_SCR */
+#define SCR_EN		(1 << 7)
+
+/* Tn_SYNC_ASSERT_MASK_CTL */
+#define UNEX_K_S	(1 << 5)
+#define NIT_DIS_S	(1 << 6)
+#define BAD_DIS_S	(1 << 7)
+#define ERR_THRESHOLD_MASK	0xff
+
+/* Tn_FRM_TEST */
+#define BYP_8B10B	(1 << 0)
+#define REV_FRM_DOUT	(1 << 1)
+
+/* Tn_JDEC_TEST */
+#define TRANSPORT_TEST_SEQ_EN		(1 << 0)
+#define DATA_LINK_TEST_PATTRN_EN	(1 << 1)
+
+/* Tn_CTRL_REG2 */
+#define AUTO_ECNTR_RESET	(1 << 3)
+#define QUEUE_TEST_ERR		(1 << 4)
+#define REP_DATA_TEST		(1 << 5)
+#define ILS_TEST_MODE		(1 << 7)
 struct lane_device {
 	struct jesd_transport_dev *tdev;
 	struct lane_stats l_stats;
@@ -403,10 +292,6 @@ struct jesd_transport_dev {
 	struct ils_params ils;
 	unsigned int data_rate;
 
-	/* this would yield the details for the error that is occurred when
-	* the jesd state is error state
-	*/
-	enum error_identifier err_tp;
 	/*error and debug details*/
 	struct transport_stats t_stats;
 
@@ -468,12 +353,11 @@ struct jesd204_dev {
 };
 
 struct jesd204_private {
-	struct list_head list; /*point to list of jesd204_dev's*/
+	struct list_head list;
 	u8 tx_dev_num;
 	u8 rx_dev_num;
 };
-/** @brief xport symbols for jesd
-*/
+
 void jesd_enable_sysref_capture(struct jesd_transport_dev *tdev);
 int  jesd_reg_dump_to_user(u32 *reg, unsigned int offset,
 			unsigned int length, u32 *buf);

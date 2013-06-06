@@ -44,21 +44,15 @@ struct jesd_dev_params {
 };
 
 /* config_flags */
-#define	RESERVED_BIT_0		0
-#define	MS_OCT_FIRST_VALID	1/*for tx*/
-#define	WCBUF_PROTECT_VALID	2/*for tx*/
-#define	BYP_ACG_VALID		3/*only for tx*/
-#define	BYP_ILAS_VALID		4/*only for tx*/
-#define	L2SIDES_VALID		5/*only for tx*/
-#define	SCR_CTRL_L1_VALID	6/*only for tx*/
-#define	SCR_CTRL_L0_VALID	7/*only for tx*/
-#define	IDLE_SELECT_VALID	8/*common for tx and rx transport*/
-#define	IQ_SWAP_VALID		9/*common for tx and rx transport*/
-#define	PHY_BIT_FIRST_VALID	10/*for rx*/
-#define	TN_CHK_CSUM_VALID	11/*for rx*/
-#define	PHY_OCT_FIRST_VALID	12/*for rx*/
-#define	RCBUF_PROTECT_VALID	13/*for rx*/
-
+#define CONF_SCRAMBLING_EN		(1 << 0)
+#define CONF_LANE_SYNC_BOTH_SIDES_EN	(1 << 1)
+#define CONF_BYPASS_AGC			(1 << 2)
+#define CONF_BYPASS_ILAS		(1 << 3)
+#define CONF_USE_OTHER_TRANSPORTS_IDLE	(1 << 4)
+#define CONF_SWAP_IQ			(1 << 5)
+#define CONF_PHY_MS_OCTET_FIRST_EN	(1 << 6)
+#define CONF_PHY_ORDER_MS_BIT_FIRST_EN	(1 << 7)
+#define CONF_STRICT_CGS			(1 << 8)
 #define CONF_PHYGASKET_LOOPBACK_EN	(1 << 16)
 /** @brief \struct ils params
  */
@@ -258,18 +252,16 @@ struct tarns_dev_stats {
 	struct lane_stats *l0stats;
 	struct lane_stats *l1stats;
 };
-/** @brief auto sync params
- *	sync_err_bitmap: the bit map is as given below:
- *--------------------------------------------------
- *|Bit7 |Bit6 |Bit5 |Bit4 |Bit3 |Bit2 |Bit1 |Bit0   |
- *--------------------------------------------------
- *|NA   |NA   |NA   |NA	  |NA   |UX K |NIT  |BAD DIS|
- *--------------------------------------------------
- */
+
 struct auto_sync_params {
-	uint8_t  sync_err_bitmap;
+	uint8_t  sync_assert_mask;
 	uint8_t	 error_threshold;
 };
+
+/* sync_assert_mask */
+#define SYNC_ASSERT_BAD_DIS		(1 << 0)
+#define SYNC_ASSERT_NIT			(1 << 1)
+#define SYNC_ASSERT_UNEXPECTED_K_CHARS	(1 << 2)
 
 #define JESD204_IOCTL 'j'
 #define JESD_IOCTL_IDX	0x801

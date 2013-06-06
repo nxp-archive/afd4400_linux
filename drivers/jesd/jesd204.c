@@ -32,11 +32,8 @@
 #include <linux/jesd204.h>
 #include <linux/phygasket.h>
 
-#define JESD_TEST
-
 #define TRANS_TX_NAME "jesd_tx"
 #define TRANS_RX_NAME "jesd_rx"
-
 
 static struct class *jesd204_class;
 static struct jesd204_private *pri;
@@ -51,10 +48,6 @@ static int get_device_name(struct jesd_transport_dev *tdev);
 
 static int jesd_setclkdiv(struct jesd_transport_dev *tdev);
 
-static int jesd_conf_tests(struct jesd_transport_dev *tdev);
-static void raise_exception(struct jesd_transport_dev *tdev,
-				unsigned int event_typ);
-
 static int jesd_change_state(struct jesd_transport_dev *tdev,
 	enum jesd_state new_state);
 
@@ -62,41 +55,8 @@ static void jesd_marks_syref_capture_ready(struct jesd_transport_dev *tdev,
 	int enable);
 static void jesd_restore_state(struct jesd_transport_dev *tdev);
 
-/**@brief inline for set, clear and test bits for 32 bit
-*/
-static inline void
-jclear_bit(int nr, void *addr)
-{
-	*((__u32 *) addr + (nr >> 5)) &= ~(1 << (nr & 31));
-}
-
-static inline void
-jset_bit(int nr, void *addr)
-{
-	*((__u32 *) addr + (nr >> 5)) |= (1 << (nr & 31));
-}
-
-static inline int
-jtest_bit(int nr, const void *addr)
-{
-	return 1 & (((const __u32 *) addr)[nr >> 5] >> (nr & 31));
-}
-
-void jesd_set_bit(int nr, void *addr)
-{
-	u32 reg_val = 0;
-	reg_val = ioread32(addr);
-	jset_bit(nr, &reg_val);
-	iowrite32(reg_val, addr);
-}
-
-void jesd_clear_bit(int nr, void *addr)
-{
-	u32 reg_val = 0;
-	reg_val = ioread32(addr);
-	jclear_bit(nr, &reg_val);
-	iowrite32(reg_val, addr);
-}
+static int jesd_conf_auto_sync(struct jesd_transport_dev *tdev,
+	struct auto_sync_params *sync_params);
 
 void jesd_update_reg(u32 *reg, u32 val, u32 mask)
 {
@@ -116,12 +76,6 @@ void jesd_write_reg(u32 *reg, u32 val)
 void jesd_read_reg(u32 *reg)
 {
 	ioread32(reg);
-}
-
-static void handel_skew_err(void)
-{
-	/*yet to be impelemented
-	invalid function until req is cleared */
 }
 
 static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
@@ -173,245 +127,11 @@ out:
 	return rc;
 }
 
-static void raise_exception(struct jesd_transport_dev *tdev,
-			unsigned int event_typ)
-{
-	/*XXX: Implement event notification*/
-}
-
-
 void lane_stats_update(struct jesd_transport_dev *tdev,
 						u32 stats_field,
 						u32 lane_id)
 {
-	switch (stats_field) {
-	case ILS_FAIL:
-		tdev->lane_devs[lane_id]->l_stats.ils_error++;
-		break;
-	case CGS_FAIL:
-		tdev->lane_devs[lane_id]->l_stats.cgs_error++;
-		break;
-	case FSF_FAIL:
-		tdev->lane_devs[lane_id]->l_stats.frm_sync_error++;
-		break;
-	case UEX_K_FAIL:
-		tdev->lane_devs[lane_id]->l_stats.uexk_threshold++;
-		if (tdev->lane_devs[lane_id]->l_stats.uexk_threshold > 255) {
-			tdev->rx_regs->rx_bad_parrity |= lane_id;
-			 /*reset counter after we reach the limit*/
-			tdev->rx_regs->rx_ux_char |= 0x20;
-			tdev->lane_devs[lane_id]->l_stats.uexk_threshold = 0;
-		}
-		break;
-	case NIT_FAIL:
-		tdev->lane_devs[lane_id]->l_stats.nit_threshold++;
-		if (tdev->lane_devs[lane_id]->l_stats.uexk_threshold > 255) {
-			tdev->rx_regs->rx_bad_parrity |= lane_id;
-			tdev->rx_regs->rx_nit |= 0x20;
-			tdev->lane_devs[lane_id]->l_stats.uexk_threshold = 0;
-		}
-		break;
-	case BAD_DIS_FAIL:
-		tdev->lane_devs[lane_id]->l_stats.baddis_threshold++;
-		if (tdev->lane_devs[lane_id]->l_stats.uexk_threshold > 255) {
-			tdev->rx_regs->rx_bad_parrity |= lane_id;
-			tdev->rx_regs->rx_bad_parrity |= 0x20;
-			tdev->lane_devs[lane_id]->l_stats.uexk_threshold = 0;
-		}
-		break;
-	default:
-		break;
-	}
-}
-
-u32 do_rx_cgs(struct jesd_transport_dev *tdev)
-{
-	u32 cgs = CGS_NOT_CONFIGED;
-	/*do we need to handle cgs*/
-	if (jtest_bit(0, &tdev->rx_regs->rx_irq_ve_msk)) {
-		if (jtest_bit(0, &tdev->rx_regs->rx_cgs)) {
-			cgs = CGS_SUCCESS;
-		} else{
-			cgs = CGS_FAIL;
-			lane_stats_update(tdev, CGS_FAIL, 0);
-		}
-
-		if (tdev->id == TRANPORT_0 &&
-			 tdev->active_lanes == 2) {
-
-			if (jtest_bit(1, &tdev->rx_regs->rx_cgs))
-				cgs = CGS_SUCCESS;
-			else {
-				cgs = CGS_FAIL;
-				lane_stats_update(tdev, CGS_FAIL, 1);
-			}
-		}
-
-		if (cgs == CGS_FAIL)
-			raise_exception(tdev, cgs);
-	}
-	return cgs;
-}
-
-u32 do_rx_fsf(struct jesd_transport_dev *tdev)
-{
-	u32 fsf = FSF_NOT_CONFIGED;
-	/*do we need to handle fsf*/
-	if (jtest_bit(1, &tdev->rx_regs->rx_irq_ve_msk)) {
-		if (jtest_bit(0, &tdev->rx_regs->rx_fsf))
-			fsf = FSF_SUCCESS;
-		else{
-			fsf = FSF_FAIL;
-			lane_stats_update(tdev, FSF_FAIL, 0);
-		}
-
-		if (tdev->id == TRANPORT_0 &&
-			tdev->active_lanes == 2) {
-
-			if (jtest_bit(1, &tdev->rx_regs->rx_fsf))
-				fsf = FSF_SUCCESS;
-			else{
-				fsf = FSF_FAIL;
-				lane_stats_update(tdev, FSF_FAIL, 1);
-			}
-		}
-
-		if (fsf == FSF_FAIL)
-			raise_exception(tdev, fsf);
-
-	}
-	return fsf;
-}
-
-
-void do_rx_csum(struct jesd_transport_dev *tdev)
-{
-	u32 csum = CSUM_NOT_CONFIGED;
-	/*do we need to handle cgs*/
-	if (jtest_bit(1, &tdev->rx_regs->rx_irq_ve_msk)) {
-		if (jtest_bit(0, &tdev->rx_regs->rx_g_csum))
-				csum = CSUM_SUCCESS;
-		else{
-				csum = CSUM_FAIL;
-				lane_stats_update(tdev, CSUM_FAIL, 0);
-		}
-
-		if (tdev->id == TRANPORT_0 &&
-					tdev->active_lanes == 2) {
-			if (jtest_bit(1, &tdev->rx_regs->rx_g_csum))
-				csum = CSUM_SUCCESS;
-			else {
-				csum = CSUM_FAIL;
-				lane_stats_update(tdev, CSUM_FAIL, 1);
-			}
-		}
-
-		if (csum == CSUM_FAIL)
-			raise_exception(tdev, csum);
-
-	}
-}
-
-
-void do_rx_ils(struct jesd_transport_dev *tdev, u32 cgs, u32 fsf)
-{
-	u32 ils;
-	/*do we need to handle cgs*/
-	if (jtest_bit(3, &tdev->rx_regs->rx_irq_ve_msk)) {
-		if (jtest_bit(0, &tdev->rx_regs->rx_ilsf))
-			ils = ILS_SUCCESS;
-		else{
-			ils = ILS_FAIL;
-			lane_stats_update(tdev, ILS_FAIL, 0);
-		}
-
-		if (tdev->id == TRANPORT_0 &&
-				tdev->active_lanes == 2) {
-
-			if (jtest_bit(1, &tdev->rx_regs->rx_ilsf))
-				ils = ILS_SUCCESS;
-			else {
-				ils = ILS_FAIL;
-				lane_stats_update(tdev, ILS_FAIL, 1);
-			}
-		}
-
-		if (ils == ILS_FAIL)
-			raise_exception(tdev, ils);
-
-		if (ils == ILS_SUCCESS &&
-			fsf == FSF_SUCCESS &&
-				cgs == CGS_SUCCESS) {
-			}
-	}
-}
-
-
-void reset_sync_interrupts(struct jesd_transport_dev *tdev)
-{
-	tdev->rx_regs->rx_ilsf |= RESET_IRQ_VECTOR; /*reset ilsf interrupt.*/
-	tdev->rx_regs->rx_cgs |= RESET_IRQ_VECTOR;/*reset cgs interrupt.*/
-	tdev->rx_regs->rx_fsf |= RESET_IRQ_VECTOR;/*reset fsf interrupt.*/
-	tdev->rx_regs->rx_g_csum |= RESET_IRQ_VECTOR; /*reset csum isr*/
-}
-
-void handle_sync_isr(struct jesd_transport_dev *tdev)
-{
-	u32 cgs = do_rx_cgs(tdev);
-	u32 fsf = do_rx_fsf(tdev);
-
-	do_rx_ils(tdev, cgs, fsf);
-}
-
-void handle_maskvector(struct jesd_transport_dev *tdev)
-{
-	/* this is for the sync user event*/
-	handle_sync_isr(tdev);
-	/*chk csum if we anre masked to support*/
-	do_rx_csum(tdev);
-
-	/*chk rx_skew_err test ild if we are masked to support*/
-	if (jtest_bit(SKEW_ERR_BIT4, &tdev->rx_regs->rx_irq_ve_msk)) {
-			/* yet to be supported*/
-		handel_skew_err();
-	}
-
-
-	/*chk unex_k if we anre masked to support*/
-	if (jtest_bit(UEX_K_BIT5, &tdev->rx_regs->rx_irq_ve_msk)) {
-		if (tdev->rx_regs->rx_ux_char & 1)
-				lane_stats_update(tdev, UEX_K_FAIL, 0);
-
-		if (tdev->id == TRANPORT_0 &&
-					tdev->active_lanes == 2) {
-			if (tdev->rx_regs->rx_ux_char & 2)
-				lane_stats_update(tdev, UEX_K_FAIL, 1);
-		}
-	}
-
-	/*chk nit if we are masked to support*/
-	if (jtest_bit(NIT_BIT6, &tdev->rx_regs->rx_irq_ve_msk)) {
-		if (tdev->rx_regs->rx_nit & 1)
-			lane_stats_update(tdev, NIT_FAIL, 0);
-
-		if (tdev->id == TRANPORT_0 &&
-				tdev->active_lanes == 2) {
-			if (tdev->rx_regs->rx_nit & 2)
-				lane_stats_update(tdev, NIT_FAIL, 1);
-		}
-	}
-
-	if (jtest_bit(PARITY_ERR_BIT7, &tdev->rx_regs->rx_irq_ve_msk)) {
-		if (tdev->rx_regs->rx_bad_parrity & 1)
-				lane_stats_update(tdev, BAD_DIS_FAIL, 0);
-
-		if (tdev->id == TRANPORT_0 &&
-				tdev->active_lanes == 2) {
-
-			if (tdev->rx_regs->rx_bad_parrity & 2)
-				lane_stats_update(tdev, BAD_DIS_FAIL, 1);
-		}
-	}
+	/*XXX: To be implemented */
 }
 
 static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
@@ -515,80 +235,70 @@ int jesd_reg_dump_to_user(u32 *reg, unsigned int offset, unsigned int length,
 }
 EXPORT_SYMBOL(jesd_reg_dump_to_user);
 
-static int jesd_conf_tests(struct jesd_transport_dev *tdev)
+static int jesd_conf_tx_tests(struct jesd_transport_dev *tdev,
+	struct conf_tx_tests *tx_tests)
 {
 	int rc = 0;
+	u32 *reg, val = 0;
 
-	if (tdev->type == JESD_DEV_TX) {
-		if (tdev->tx_tests.frmr_tst.bipass_8b10 == 1)
-			jesd_set_bit(BP_8b10_BIT0,
-					&tdev->tx_regs->tx_frm_tst);
-		else
-			jesd_clear_bit(BP_8b10_BIT0,
-					&tdev->tx_regs->tx_frm_tst);
-
-		if (tdev->tx_tests.frmr_tst.reverse_8b10 == 1)
-			jesd_set_bit(REVERSE_8b10_BIT1,
-					&tdev->tx_regs->tx_frm_tst);
-		else
-			jesd_clear_bit(REVERSE_8b10_BIT1,
-					&tdev->tx_regs->tx_frm_tst);
-
-		if (tdev->tx_tests.frmr_tst.tpl == 1)
-			jesd_set_bit(FRMR_TPL_BIT0,
-					&tdev->tx_regs->tx_jedec_tst);
-		else
-			jesd_clear_bit(FRMR_TPL_BIT0,
-					&tdev->tx_regs->tx_jedec_tst);
-
-		if (tdev->tx_tests.frmr_tst.dll == 1)
-			jesd_set_bit(FRMR_DLL_BIT1,
-					&tdev->tx_regs->tx_jedec_tst);
-		else
-			jesd_clear_bit(FRMR_DLL_BIT1,
-					&tdev->tx_regs->tx_jedec_tst);
-
-		if (tdev->tx_tests.frmr_tst.s_rst == 1)
-			jesd_set_bit(1, &tdev->tx_regs->tx_jedec_tst);
-
-
-		if (tdev->tx_tests.frmr_tst.lane_ctrl == 1) {
-			if (tdev->active_lanes == 1) {
-				tdev->tx_regs->tx_ln_ctrl =
-					(tdev->tx_regs->tx_ln_ctrl & 0x1);
-			} else if (tdev->active_lanes == 2) {
-				tdev->tx_regs->tx_ln_ctrl =
-					(tdev->tx_regs->tx_ln_ctrl & 0x3);
-			} else{
-				rc = -EFAULT;
-				goto fail;
-			}
-		}
-	} else {
-
-		if (tdev->rx_tests.drfmr_tst.rep_data_tst == 1) {
-			jesd_set_bit(REP_DAT_BIT5, &tdev->rx_regs->rx_ctrl_2);
-
-			if (tdev->rx_tests.drfmr_tst.que_tst_err == 1)
-				jesd_set_bit(QUEUE_TST_BIT4,
-					&tdev->rx_regs->rx_ctrl_2);
-			else
-				jesd_clear_bit(QUEUE_TST_BIT4,
-					&tdev->rx_regs->rx_ctrl_2);
-		} else
-			jesd_clear_bit(REP_DAT_BIT5,
-					&tdev->rx_regs->rx_ctrl_2);
-
-		if (tdev->rx_tests.drfmr_tst.ils_mode == 1)
-			jesd_set_bit(ILS_MODE_BIT7,
-					&tdev->rx_regs->rx_ctrl_2);
-		else
-			jesd_clear_bit(ILS_MODE_BIT7,
-					&tdev->rx_regs->rx_ctrl_2);
-
+	if (tdev->type != JESD_DEV_TX) {
+		rc = -EINVAL;
+		goto out;
 	}
 
-fail:
+	/* Framer tests */
+	reg = &tdev->tx_regs->tx_frm_tst;
+	val = 0;
+	if (tx_tests->frmr_tst.bipass_8b10)
+		val |= BYP_8B10B;
+
+	if (tx_tests->frmr_tst.reverse_8b10)
+		val |= REV_FRM_DOUT;
+
+	iowrite32(val, reg);
+
+	/* JDEC tests */
+	reg = &tdev->tx_regs->tx_jedec_tst;
+	val = 0;
+
+	if (tx_tests->frmr_tst.tpl)
+		val |= TRANSPORT_TEST_SEQ_EN;
+
+	if (tx_tests->frmr_tst.dll)
+		val |= DATA_LINK_TEST_PATTRN_EN;
+
+	iowrite32(val, reg);
+	memcpy(&tdev->tx_tests, tx_tests, sizeof(struct conf_rx_tests));
+out:
+	return rc;
+}
+
+static int jesd_conf_rx_tests(struct jesd_transport_dev *tdev,
+	struct conf_rx_tests *rx_tests)
+{
+	int rc = 0;
+	u32 *reg, val;
+
+	if ((tdev->type != JESD_DEV_RX) || (tdev->type != JESD_DEV_SRX)) {
+		rc = -EINVAL;
+		goto out;
+	}
+
+	reg = &tdev->rx_regs->rx_ctrl_2;
+	val = 0;
+
+	if (rx_tests->drfmr_tst.rep_data_tst) {
+		val |= REP_DATA_TEST;
+		if (rx_tests->drfmr_tst.que_tst_err)
+			val |= QUEUE_TEST_ERR;
+	}
+
+	if (rx_tests->drfmr_tst.ils_mode)
+		val |= ILS_TEST_MODE;
+
+	iowrite32(val, reg);
+	memcpy(&tdev->rx_tests, rx_tests, sizeof(struct conf_rx_tests));
+out:
 	return rc;
 }
 
@@ -842,101 +552,66 @@ out:
 
 static int init_tx_transport(struct jesd_transport_dev *tdev)
 {
-
 	int rc = 0;
+	u32 config_flags, *reg, val = 0, mask;
+	struct config_registers_tx *tx_regs = tdev->tx_regs;
 
-	/* test, set/clear the scr ctrl reg*/
-	/* conf ->SCR_CTRL_L0 */
-	if (jtest_bit(SCR_CTRL_L0_VALID,
-				&tdev->config_flags))
-		jesd_set_bit(SCR_CTRL_L0_BIT0,
-				&tdev->tx_regs->tx_scr_ctrl);
-	else
-		jesd_clear_bit(SCR_CTRL_L0_BIT0,
-				&tdev->tx_regs->tx_scr_ctrl);
+	config_flags = tdev->config_flags;
 
-	/* conf ->SCR_CTRL_L1 */
-	if (jtest_bit(SCR_CTRL_L1_VALID,
-			&tdev->config_flags))
-		jesd_set_bit(SCR_CTRL_L1_BIT1,
-			&tdev->tx_regs->tx_scr_ctrl);
-	else
-		jesd_clear_bit(SCR_CTRL_L1_BIT1,
-			&tdev->tx_regs->tx_scr_ctrl);
+	/* scrambling */
+	reg = &tx_regs->tx_scr_ctrl;
+	val = L0_SCR_EN;
+	if (tdev->active_lanes == 2)
+		val |= L1_SCR_EN;
+	mask = val;
 
-	/* test, set/clear framer ctrl reg
-	* receive and transmit support lane
-	* synchronization
-	*/
-	if (jtest_bit(L2SIDES_VALID,
-			&tdev->config_flags))
-		jesd_set_bit(L2SIDES_BIT0,
-			&tdev->tx_regs->tx_frm_ctrl);
-	else
-		jesd_clear_bit(L2SIDES_BIT0,
-			&tdev->tx_regs->tx_frm_ctrl);
+	if (!(config_flags & CONF_SCRAMBLING_EN))
+		val = ~val;
+	jesd_update_reg(reg, val, mask);
 
-	/*Bypass Initial Lane Alignment*/
-	if (jtest_bit(BYP_ILAS_VALID, &tdev->config_flags))
-		jesd_set_bit(BYP_ILAS_BIT2,
-			&tdev->tx_regs->tx_frm_ctrl);
-	else
-		jesd_clear_bit(BYP_ILAS_BIT2,
-			&tdev->tx_regs->tx_frm_ctrl);
+	/* Frame control */
+	reg = &tx_regs->tx_frm_ctrl;
+	val = 0;
 
-	/*Bypass Alignment Character Generation*/
-	if (jtest_bit(BYP_ACG_VALID,
-			&tdev->config_flags))
-		jesd_set_bit(BYP_ACG_BIT3,
-				&tdev->tx_regs->tx_frm_ctrl);
+	if (config_flags & CONF_LANE_SYNC_BOTH_SIDES_EN)
+		val |= L2SIDES_EN;
 	else
-		jesd_clear_bit(BYP_ACG_BIT3,
-				&tdev->tx_regs->tx_frm_ctrl);
+		val &= ~L2SIDES_EN;
 
-	/* test, set/clear transport control register
-	* idle select
-	*/
-	if (jtest_bit(IDLE_SELECT_VALID,
-			&tdev->config_flags))
-		jesd_set_bit(IDLE_SELECT_BIT1,
-			&tdev->tx_regs->tx_transcontrol);
+	if (config_flags & CONF_BYPASS_ILAS)
+		val |= BYP_ILAS;
 	else
-		jesd_clear_bit(IDLE_SELECT_BIT1,
-			&tdev->tx_regs->tx_transcontrol);
+		val  = ~BYP_ILAS;
 
-	/*Write Circular Buffer Overflow Protection*/
-	if (jtest_bit(WCBUF_PROTECT_VALID,
-				&tdev->config_flags))
-		jesd_set_bit(WC_RC_PROTECT_BIT18,
-			&tdev->tx_regs->tx_transcontrol);
+	if (config_flags & BYP_AGC)
+		val |= BYP_AGC;
 	else
-		jesd_clear_bit(WC_RC_PROTECT_BIT18,
-			&tdev->tx_regs->tx_transcontrol);
+		val &= ~BYP_AGC;
 
-	/*PHY Packer Most-Significant Octet First
-	--> 0 The first 8b10b symbol received from the
-	framer is put in the least-significant octet of
-	the transport\92s 20-bit output
-	--> 1 The first 8b10b symbol received from the
-	framer is put in the most-significant octet of
-	the transport\92s output
-	*/
-	if (jtest_bit(MS_OCT_FIRST_VALID,
-				&tdev->config_flags))
-		jesd_set_bit(OCT_FIRST_BIT9,
-			&tdev->tx_regs->tx_transcontrol);
-	else
-		jesd_clear_bit(OCT_FIRST_BIT9,
-			&tdev->tx_regs->tx_transcontrol);
+	mask = L2SIDES_EN | BYP_ILAS | BYP_AGC;
+	jesd_update_reg(reg, val, mask);
 
-	/*IQ swap*/
-	if (jtest_bit(IQ_SWAP_VALID,
-			&tdev->config_flags))
-		jesd_set_bit(IQ_SWAP_BIT7,
-			&tdev->tx_regs->tx_transcontrol);
+	/* Transport control */
+	reg = &tx_regs->tx_transcontrol;
+	val = 0;
+
+	if (config_flags & CONF_USE_OTHER_TRANSPORTS_IDLE)
+		val |= OTHR_TRANS_IDLE_SELECT;
 	else
-		jesd_clear_bit(IQ_SWAP_BIT7,
-			&tdev->tx_regs->tx_transcontrol);
+		val &= ~OTHR_TRANS_IDLE_SELECT;
+
+	if (config_flags & CONF_SWAP_IQ)
+		val |= SWAP_IQ;
+	else
+		val &= ~SWAP_IQ;
+
+	if (config_flags & CONF_PHY_MS_OCTET_FIRST_EN)
+		val |= PHYPACK_MS_OCTECT_FIRST;
+	else
+		val &= ~PHYPACK_MS_OCTECT_FIRST;
+
+	mask = OTHR_TRANS_IDLE_SELECT | SWAP_IQ | PHYPACK_MS_OCTECT_FIRST;
+	jesd_update_reg(reg, val, mask);
 
 	return rc;
 }
@@ -944,79 +619,37 @@ static int init_tx_transport(struct jesd_transport_dev *tdev)
 static int init_rx_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
+	u32 config_flags, *reg, val = 0, mask;
+	struct config_registers_rx *rx_regs = tdev->rx_regs;
 
-	/* enable clock in the control reg of transport before
-	* Configure the transport or use it*/
-	jesd_set_bit(ENABLE_CLK_BIT0,
-		&tdev->rx_regs->rx_transcontrol);
-	/*IQ swap*/
-	if (jtest_bit(IQ_SWAP_VALID, &tdev->config_flags))
-		jesd_set_bit(IQ_SWAP_BIT7,
-			&tdev->rx_regs->rx_transcontrol);
-	else
-		jesd_clear_bit(IQ_SWAP_BIT7,
-			&tdev->rx_regs->rx_transcontrol);
+	config_flags = tdev->config_flags;
 
-	/*PHY Order: Most-Significant Octet First
-	* --> 0 The first octet received is in the
-	*	least-significant octet of the 20-bit PHY input
-	* --> 1 The first octet received is In the
-	*	most-significant octet of the 20-bit PHY input
-	*/
-	if (jtest_bit(PHY_OCT_FIRST_VALID,
-				&tdev->config_flags))
-		jesd_set_bit(OCT_FIRST_BIT9,
-			&tdev->rx_regs->rx_transcontrol);
-	else
-		jesd_clear_bit(OCT_FIRST_BIT9,
-			&tdev->rx_regs->rx_transcontrol);
+	/* Transport control */
+	reg = &rx_regs->rx_transcontrol;
 
-	/*Read Circular Buffer Overflow Protection*/
-	if (jtest_bit(RCBUF_PROTECT_VALID,
-				&tdev->config_flags))
-		jesd_set_bit(WC_RC_PROTECT_BIT18,
-			&tdev->rx_regs->rx_transcontrol);
+	if (config_flags & CONF_SWAP_IQ)
+		val |= SWAP_IQ;
 	else
-		jesd_clear_bit(WC_RC_PROTECT_BIT18,
-			&tdev->rx_regs->rx_transcontrol);
+		val &= ~SWAP_IQ;
 
-	/*idle select*/
-	if (jtest_bit(IDLE_SELECT_VALID,
-			&tdev->config_flags))
-		jesd_set_bit(IDLE_SELECT_BIT1,
-			&tdev->rx_regs->rx_transcontrol);
+	if (config_flags & CONF_PHY_ORDER_MS_BIT_FIRST_EN)
+		val |= PHYORDER_MS_BIT_FIRST;
 	else
-		jesd_clear_bit(IDLE_SELECT_BIT1,
-			&tdev->rx_regs->rx_transcontrol);
+		val &= ~PHYORDER_MS_BIT_FIRST;
 
-	/*PHY Order: Most-Significant Bit First
-	*--> 0 The first bit received is in the
-	*least-significant bit of a given octet from the PHY
-	*--> 1 The first bit received is in the
-	*most-significant bit of a given octet from the PHY
-	*/
-	if (jtest_bit(PHY_BIT_FIRST_VALID,
-				&tdev->config_flags))
-		jesd_set_bit(PHY_FIRT_BIT8,
-			&tdev->rx_regs->rx_transcontrol);
+	if (config_flags & CONF_PHY_MS_OCTET_FIRST_EN)
+		val |= PHYPACK_MS_OCTECT_FIRST;
 	else
-		jesd_clear_bit(PHY_FIRT_BIT8,
-			&tdev->rx_regs->rx_transcontrol);
+		val &= ~PHYPACK_MS_OCTECT_FIRST;
 
-	/*Checksum Calculation Selection
-	*--> 0 Checksums are calculated by summing the
-	* individual fields in the link configuration table
-	* (JESD204 compliant)
-	*--> 1 Checksums are calculated by summing the registers
-	* containing the packed link configuration fields
-	*/
-	if (jtest_bit(TN_CHK_CSUM_VALID,
-			&tdev->config_flags))
-		jesd_set_bit(TN_CHK_CSUM_BIT12,
-			&tdev->rx_regs->rx_transcontrol);
+	if (config_flags & CONF_STRICT_CGS)
+		val |= CONF_STRICT_CGS;
 	else
-		jesd_clear_bit(TN_CHK_CSUM_BIT12,
-			&tdev->rx_regs->rx_transcontrol);
+		val &= ~CONF_STRICT_CGS;
+
+	mask = STRICT_CGS | PHYORDER_MS_BIT_FIRST |
+		PHYPACK_MS_OCTECT_FIRST | SWAP_IQ;
+	jesd_update_reg(reg, val, mask);
 
 	return rc;
 }
@@ -1265,17 +898,20 @@ static void set_lane_id(struct jesd_transport_dev *tdev)
 
 static void config_scr(struct jesd_transport_dev *tdev)
 {
-	u32 *reg;
+	u32 *reg, val, mask;
 
 	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_scr;
 	else
 		reg = &tdev->rx_regs->rx_scr;
 
-	if (!tdev->ils.scrambling_scr)
-		jesd_clear_bit(SCRAMBL_BIT7, reg);
+	if (tdev->ils.scrambling_scr)
+		val = SCR_EN;
 	else
-		jesd_set_bit(SCRAMBL_BIT7, reg);
+		val = ~SCR_EN;
+
+	mask = SCR_EN;
+	jesd_update_reg(reg, val, mask);
 }
 
 
@@ -1612,8 +1248,9 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 	struct jesd_transport_dev_info trans_dev_info;
 	struct jesd_reg_read_buf regcnf;
 	struct jesd_reg_write_buf reg_write_buf;
-	struct tarns_dev_stats gstats;
-	struct auto_sync_params *sync_params;
+	struct auto_sync_params sync_params;
+	struct conf_rx_tests rx_tests;
+	struct conf_tx_tests tx_tests;
 
 	tdev = pfile->private_data;
 
@@ -1665,45 +1302,29 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		rc = jesd_start_transport(tdev);
 		break;
 	case JESD_TX_TEST_MODE:
-		if (copy_from_user(&tdev->tx_tests,
+		if (copy_from_user(&tx_tests,
 				(struct conf_tx_tests *)arg,
 				sizeof(struct conf_tx_tests))) {
 			rc = -EFAULT;
 			goto fail;
 		}
-		rc = jesd_conf_tests(tdev);
+		rc = jesd_conf_tx_tests(tdev, &tx_tests);
 		break;
 	case JESD_RX_TEST_MODE:
-		if (copy_from_user(&tdev->rx_tests,
+		if (copy_from_user(&rx_tests,
 				(struct conf_rx_tests *)arg,
 				sizeof(struct conf_rx_tests))) {
 			rc = -EFAULT;
 			goto fail;
 		}
-		rc = jesd_conf_tests(tdev);
+		rc = jesd_conf_rx_tests(tdev, &rx_tests);
 		break;
 	case JESD_FORCE_SYNC:
 		rc = jesd_force_sync(tdev);
 		break;
 	case JESD_GET_STATS:
-		memcpy(&gstats.tstats, &tdev->t_stats,
-					sizeof(struct transport_stats));
-		memcpy(&gstats.l0stats, &tdev->lane_devs[0]->l_stats,
-					sizeof(struct lane_stats));
-		/* only for trans 0 we have two lanes, by default clean this*/
-		memset(&gstats.l1stats, 0, sizeof(struct lane_stats));
-
-		if (tdev->id == TRANPORT_0 &&
-			 tdev->active_lanes == 2) {
-			memcpy(&gstats.l1stats,
-				&tdev->lane_devs[1]->l_stats,
-				sizeof(struct lane_stats));
-		}
-
-		if (copy_to_user((struct tarns_dev_stats *)arg,
-					&gstats,
-					sizeof(struct tarns_dev_stats)))
-			rc = -EFAULT;
+		dev_err(tdev->dev, "%s: Not implemented\n", tdev->name);
+		rc = -ENOSYS;
 		break;
 	case JESD_CLEAR_STATS:
 		memset(&tdev->t_stats, 0, sizeof(struct lane_stats));
@@ -1779,79 +1400,16 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 				rc = -EFAULT;
 		break;
 	case JESD_GET_LANE_RX_RECEIVED_PARAMS:
-
-/*XXX: Fix register access, it is crap right now!!*/
-#if 0
-		if (((tdev->type == JESD_DEV_RX) ||
-				tdev->type == JESD_DEV_SRX)) {
-			ilsparams = kzalloc(sizeof(struct ils_params),
-							GFP_KERNEL);
-			ilsparams->device_id = tdev->rx_regs->rx_did;
-			ilsparams->bank_id = tdev->rx_regs->rx_rdid;
-			ilsparams->lane0_id = tdev->rx_regs->rx_rlid_0;
-			ilsparams->lane1_id = tdev->rx_regs->rx_rlid_1;
-			ilsparams->scrambling_scr = jtest_bit(7,
-						&tdev->rx_regs->rx_rscr);
-			ilsparams->lanes_per_converter_l =
-					(tdev->rx_regs->rx_rscr & 0x1f);
-			ilsparams->octect_per_frame_f =
-					tdev->rx_regs->rx_ropf;
-			ilsparams->frame_per_mf_k =
-					tdev->rx_regs->rx_rfpmf;
-			ilsparams->conv_per_device_m =
-					tdev->rx_regs->rx_rcpd;
-			ilsparams->ctrl_bits_per_sample =
-					(tdev->rx_regs->rx_rcbps >> 6);
-			ilsparams->n = (tdev->rx_regs->rx_rcbps & 0x1f);
-			ilsparams->np = (tdev->rx_regs->rx_rnbcw & 0x1f);
-			ilsparams->s = (tdev->rx_regs->rx_rspcp & 0x1f);
-			ilsparams->cf = (tdev->rx_regs->rx_rhdf & 0x1f);
-			ilsparams->hd = (tdev->rx_regs->rx_rhdf >> 7);
-			ilsparams->subclass_ver =
-					(tdev->rx_regs->rx_rnbcw >> 5);
-			ilsparams->jesd_ver =
-					(tdev->rx_regs->rx_rspcp >> 5);
-			ilsparams->csum_lane_0 = tdev->rx_regs->rx_rcsum_0;
-			ilsparams->csum_lane_1 = tdev->rx_regs->rx_rcsum_1;
-			if (copy_to_user((struct ils_params *)arg,
-						ilsparams,
-						sizeof(struct ils_params)))
-					rc = -EFAULT;
-			kfree(ilsparams);
-		}
-#endif
+		dev_info(tdev->dev, "%s: Not Implemented\n", tdev->name);
+		rc = -ENOSYS;
 		break;
 	case JESD_RX_AUTO_SYNC:
-		if (((tdev->type == JESD_DEV_RX) ||
-				tdev->type == JESD_DEV_SRX)) {
-			sync_params = kzalloc(sizeof(struct auto_sync_params),
-							GFP_KERNEL);
-			if (copy_from_user(sync_params,
-				(struct auto_sync_params *)arg,
+		if (copy_from_user(&sync_params, (struct auto_sync_params *)arg,
 				sizeof(struct auto_sync_params))) {
-				rc = -EFAULT;
-				break;
-			}
-			tdev->rx_regs->rx_threshold_err =
-					(sync_params->error_threshold & 0xff);
-
-			/*enable the vectors for enabling resync*/
-			if (jtest_bit(BAD_DIS_SYNC,
-						&sync_params->sync_err_bitmap))
-				jesd_set_bit(SYNC_ASSERT_BIT7,
-					&tdev->rx_regs->rx_sync_ass_msk);
-			else if (jtest_bit(NIT_SYNC,
-						&sync_params->sync_err_bitmap))
-				jesd_set_bit(SYNC_ASSERT_BIT6,
-					&tdev->rx_regs->rx_sync_ass_msk);
-			else if	 (jtest_bit(UX_CHAR_SYNC,
-						&sync_params->sync_err_bitmap))
-				jesd_set_bit(SYNC_ASSERT_BIT5,
-					&tdev->rx_regs->rx_sync_ass_msk);
-
-			kfree(sync_params);
-		} else
-			return -EINVAL;
+			rc = -EFAULT;
+			break;
+		}
+		rc = jesd_conf_auto_sync(tdev, &sync_params);
 		break;
 	case JESD_GET_DEVICE_STATE:
 		if (put_user(tdev->state, (u32 *) arg))
@@ -1867,6 +1425,42 @@ fail:
 	return rc;
 }
 
+static int jesd_conf_auto_sync(struct jesd_transport_dev *tdev,
+	struct auto_sync_params *sync_params)
+{
+	int rc = 0;
+	u32 threshold, *reg, val = 0, mask, assert_mask;
+
+	if (tdev->type == JESD_DEV_TX) {
+		rc = -EINVAL;
+		goto out;
+	}
+
+	assert_mask = sync_params->sync_assert_mask;
+	reg = &tdev->rx_regs->rx_sync_ass_msk;
+
+	if (assert_mask & SYNC_ASSERT_BAD_DIS)
+		val |= BAD_DIS_S;
+	else
+		val &= ~BAD_DIS_S;
+
+	if (assert_mask & SYNC_ASSERT_NIT)
+		val |= NIT_DIS_S;
+	else
+		val &= ~NIT_DIS_S;
+
+	if (assert_mask & SYNC_ASSERT_UNEXPECTED_K_CHARS)
+		val |= UNEX_K_S;
+	else
+		val &= ~UNEX_K_S;
+
+	mask = UNEX_K_S | NIT_DIS_S | BAD_DIS_S;
+	jesd_update_reg(reg, val, mask);
+	threshold = sync_params->error_threshold & ERR_THRESHOLD_MASK;
+	iowrite32(threshold, &tdev->rx_regs->rx_threshold_err);
+out:
+	return rc;
+}
 
 static int jesd204_open(struct inode *inode, struct file *pfile)
 {
@@ -2246,14 +1840,16 @@ static int get_device_name(struct jesd_transport_dev *tdev)
 static int enable_transport(struct jesd_transport_dev *tdev)
 {
 
-	u32 *trans_ctrl_reg = NULL;
+	u32 *trans_ctrl_reg = NULL, val, mask;
 
 	if (tdev->type == JESD_DEV_TX)
 		trans_ctrl_reg = &tdev->tx_regs->tx_transcontrol;
 	else
 		trans_ctrl_reg = &tdev->rx_regs->rx_transcontrol;
 
-	jesd_set_bit(ENABLE_CLK_BIT0, trans_ctrl_reg);
+	val = CLK_ENABLE;
+	mask = CLK_ENABLE;
+	jesd_update_reg(trans_ctrl_reg, val, mask);
 
 	return 0;
 }
@@ -2361,7 +1957,7 @@ static int __init jesd204_of_probe(struct platform_device *pdev)
 		tdev->state = JESD_STATE_STANDBY;
 		jdev->transports[i] = tdev;
 		dev_info(jdev->dev, "%s JESD device created\n", tdev->name);
-		jesd_major++;
+		jesd_minor++;
 		i++;
 	}
 
