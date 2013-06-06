@@ -57,7 +57,7 @@ clocks and IDs.
 	ecspi6_sel	42
 	ecspi6_clk	43
 	ecspi7_sel	44
-	ecspi_clk	45
+	ecspi7_clk	45
 	ecspi8_sel	46
 	ecspi8_clk	47
 	vspa_dp_sel	48

@@ -92,85 +92,8 @@ struct d4400_hw_clk_pll {
 #define GCR0_PLL_DDR_DEV_CLK_MASK       (1<<GCR0_PLL_DDR_DEV_CLK_OFFSET)
 #define GCR0_PLL_DDR_RGMII_CLK_OFFSET   22
 #define GCR0_PLL_DDR_RGMII_CLK_MASK     (1<<GCR0_PLL_DDR_RGMII_CLK_OFFSET)
-#define GCR0_PLL_SYS_REFCLK_OFFSET      24
-#define GCR0_PLL_SYS_REFCLK_MASK        (1<<GCR0_PLL_SYS_REFCLK_OFFSET)
-#define GCR0_PLL_DDR_REFCLK_OFFSET      25
-#define GCR0_PLL_DDR_REFCLK_MASK        (1<<GCR0_PLL_DDR_REFCLK_OFFSET)
-
-#define OSC_DEV_CLK	  0x122880000
-#define OSC_SGMII_REV_CLK 0x125000000
-
-#define PLL_MAX_RATE	0x40
 
 #define to_clk_pll(_hw) container_of(_hw, struct d4400_hw_clk_pll, hw)
-
-static int clk_pll_prepare(struct clk_hw *hw)
-{
-#if 0
-	struct d4400_hw_clk_pll *pll = to_clk_pll(hw);
-	unsigned long timeout = jiffies + msecs_to_jiffies(10);
-	u32 val;
-	unsigned long flags = 0;
-	
-	switch (pll->type) {
-	case D4400_PLL_SYS:
-		if (pll->lock)
-			spin_lock_irqsave(pll->lock, flags);
-
-		val = readl_relaxed(pll->ccm_base + CMCR2_REG_OFFSET);
-		val |= CMCR2_PLL_SYS_HRESET;
-		writel_relaxed(val, pll->ccm_base + CMCR2_REG_OFFSET);
-
-		if (pll->lock)
-			spin_unlock_irqrestore(pll->lock, flags);
-
-		/* Wait for PLL to reset */
-		while (readl_relaxed(pll->ccm_base + CMCR2_REG_OFFSET)
-			& CMCR2_PLL_SYS_HRESET_STAT)
-			if (time_after(jiffies, timeout))
-				return -ETIMEDOUT;
-		break;
-	case D4400_PLL_DDR:
-		if (pll->lock)
-			spin_lock_irqsave(pll->lock, flags);
-
-		val = readl_relaxed(pll->ccm_base + CMCR2_REG_OFFSET);
-		val |= CMCR2_PLL_DDR_HRESET;
-		writel_relaxed(val, pll->ccm_base + CMCR2_REG_OFFSET);
-
-		if (pll->lock)
-			spin_unlock_irqrestore(pll->lock, flags);
-
-		/* Wait for PLL to reset */
-		while (readl_relaxed(pll->ccm_base + CMCR2_REG_OFFSET)
-			& CMCR2_PLL_DDR_HRESET_STAT)
-			if (time_after(jiffies, timeout))
-				return -ETIMEDOUT;
-		break;
-	case D4400_PLL_TBGEN:
-		if (pll->lock)
-			spin_lock_irqsave(pll->lock, flags);
-
-		val = readl_relaxed(pll->ccm_base + CMCR2_REG_OFFSET);
-		val |= CMCR2_PLL_TBGEN_HRESET;
-		writel_relaxed(val, pll->ccm_base + CMCR2_REG_OFFSET);
-
-		if (pll->lock)
-			spin_unlock_irqrestore(pll->lock, flags);
-		/* Wait for PLL to reset */
-		while (readl_relaxed(pll->ccm_base + CMCR2_REG_OFFSET)
-			& CMCR2_PLL_SYS_HRESET_STAT)
-			if (time_after(jiffies, timeout))
-				return -ETIMEDOUT;
-		break;
-	default:
-		return -EBADRQC;
-	}
-#endif
-	return 0;
-}
-
-static void clk_pll_unprepare(struct clk_hw *hw) { }
 
 static int clk_pll_enable(struct clk_hw *hw)
 {
@@ -250,55 +173,6 @@ static void clk_pll_disable(struct clk_hw *hw)
 	}
 }
 
-static int clk_pll_set_rate(struct clk_hw *hw, unsigned long rate,
-		unsigned long parent_rate)
-{
-#if 0
-	struct d4400_hw_clk_pll *pll = to_clk_pll(hw);
-	u32 val;
-	unsigned long flags = 0;
-
-	if (rate > PLL_MAX_RATE)
-		return -EOVERFLOW;
-
-	switch (pll->type) {
-	case D4400_PLL_SYS:
-		if (pll->lock)
-			spin_lock_irqsave(pll->lock, flags);
-		val = readl_relaxed(pll->ccm_base + SPLLGSR_REG_OFFSET);
-		val &= ~SPLLGSR_CFG_MASK;
-		val |= rate<<SPLLGSR_CFG_OFFSET;
-		writel_relaxed(val, pll->ccm_base + SPLLGSR_REG_OFFSET);
-		if (pll->lock)
-			spin_unlock_irqrestore(pll->lock, flags);
-		break;
-	case D4400_PLL_DDR:
-		if (pll->lock)
-			spin_lock_irqsave(pll->lock, flags);
-		val = readl_relaxed(pll->ccm_base + DPLLGSR_REG_OFFSET);
-		val &= ~DPLLGSR_CFG_MASK;
-		val |= rate<<DPLLGSR_CFG_OFFSET;
-		writel_relaxed(val, pll->ccm_base + DPLLGSR_REG_OFFSET);
-		if (pll->lock)
-			spin_unlock_irqrestore(pll->lock, flags);
-		break;
-	case D4400_PLL_TBGEN:
-		if (pll->lock)
-			spin_lock_irqsave(pll->lock, flags);
-		val = readl_relaxed(pll->ccm_base + TPLLGSR_REG_OFFSET);
-		val &= ~TPLLGSR_CFG_MASK;
-		val |= rate<<TPLLGSR_CFG_OFFSET;
-		writel_relaxed(val, pll->ccm_base + TPLLGSR_REG_OFFSET);
-		if (pll->lock)
-			spin_unlock_irqrestore(pll->lock, flags);
-		break;
-	default:
-		return -EBADRQC;
-	}
-#endif
-	return 0;
-}
-
 unsigned long clk_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 {
 	struct d4400_hw_clk_pll *pll = to_clk_pll(hw);
@@ -307,17 +181,17 @@ unsigned long clk_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 	switch (pll->type) {
 	case D4400_PLL_SYS:
 		val = readl_relaxed(pll->ccm_base + SPLLGSR_REG_OFFSET);
-		val &= ~SPLLGSR_CFG_MASK;
+		val &= SPLLGSR_CFG_MASK;
 		val >>= SPLLGSR_CFG_OFFSET;
 		break;
 	case D4400_PLL_DDR:
 		val = readl_relaxed(pll->ccm_base + DPLLGSR_REG_OFFSET);
-		val &= ~DPLLGSR_CFG_MASK;
+		val &= DPLLGSR_CFG_MASK;
 		val >>= SPLLGSR_CFG_OFFSET;
 		break;
 	case D4400_PLL_TBGEN:
 		val = readl_relaxed(pll->ccm_base + TPLLGSR_REG_OFFSET);
-		val &= ~TPLLGSR_CFG_MASK;
+		val &= TPLLGSR_CFG_MASK;
 		val >>= SPLLGSR_CFG_OFFSET;
 		break;
 	default:
@@ -340,14 +214,15 @@ static int clk_pll_set_parent(struct clk_hw *hw, u8 index)
 		val = readl_relaxed(pll->scm_base + GCR0_REG_OFFSET);
 		if (index) {
 			val |= GCR0_PLL_SYS_DEV_CLK_MASK;
+			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
 			val |= GCR0_PLL_SYS_RGMII_CLK_MASK;
-			val |= GCR0_PLL_SYS_REFCLK_MASK;
+			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
 		} else {
-			val &= ~GCR0_PLL_SYS_DEV_CLK_MASK;
 			val &= ~GCR0_PLL_SYS_RGMII_CLK_MASK;
-			val &= ~GCR0_PLL_SYS_REFCLK_MASK;
+			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
+			val &= ~GCR0_PLL_SYS_DEV_CLK_MASK;
+			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
 		}
-		writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
 
 		if (pll->lock)
 			spin_unlock_irqrestore(pll->lock, flags);
@@ -359,14 +234,15 @@ static int clk_pll_set_parent(struct clk_hw *hw, u8 index)
 		val = readl_relaxed(pll->scm_base + GCR0_REG_OFFSET);
 		if (index) {
 			val |= GCR0_PLL_DDR_DEV_CLK_MASK;
+			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
 			val |= GCR0_PLL_DDR_RGMII_CLK_MASK;
-			val |= GCR0_PLL_DDR_REFCLK_MASK;
+			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
 		} else {
-			val &= ~GCR0_PLL_DDR_DEV_CLK_MASK;
 			val &= ~GCR0_PLL_DDR_RGMII_CLK_MASK;
-			val &= ~GCR0_PLL_DDR_REFCLK_MASK;
+			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
+			val &= ~GCR0_PLL_DDR_DEV_CLK_MASK;
+			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
 		}
-		writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
 
 		if (pll->lock)
 			spin_unlock_irqrestore(pll->lock, flags);
@@ -388,14 +264,16 @@ static u8 clk_pll_get_parent(struct clk_hw *hw)
 	switch (pll->type) {
 	case D4400_PLL_SYS:
 		val = readl_relaxed(pll->scm_base + GCR0_REG_OFFSET);
-		val &= (GCR0_PLL_SYS_DEV_CLK_MASK | GCR0_PLL_SYS_RGMII_CLK_MASK | GCR0_PLL_SYS_REFCLK_MASK);
+		val &= (GCR0_PLL_SYS_DEV_CLK_MASK |
+				GCR0_PLL_SYS_RGMII_CLK_MASK);
 		if (val)
 			return 1;
 		else
 			return 0;
 	case D4400_PLL_DDR:
 		val = readl_relaxed(pll->scm_base + GCR0_REG_OFFSET);
-		val &= (GCR0_PLL_DDR_DEV_CLK_MASK | GCR0_PLL_DDR_RGMII_CLK_MASK | GCR0_PLL_DDR_REFCLK_MASK);
+		val &= (GCR0_PLL_DDR_DEV_CLK_MASK |
+				GCR0_PLL_DDR_RGMII_CLK_MASK);
 		if (val)
 			return 1;
 		else
@@ -431,11 +309,8 @@ static long clk_pll_round_rate(struct clk_hw *hw, unsigned long rate,
 }
 
 static const struct clk_ops clk_pll_ops = {
-	.prepare	= clk_pll_prepare,
-	.unprepare	= clk_pll_unprepare,
 	.enable		= clk_pll_enable,
 	.disable	= clk_pll_disable,
-	.set_rate	= clk_pll_set_rate,
 	.recalc_rate	= clk_pll_recalc_rate,
 	.round_rate	= clk_pll_round_rate,
 	.set_parent	= clk_pll_set_parent,
@@ -443,11 +318,8 @@ static const struct clk_ops clk_pll_ops = {
 };
 
 static const struct clk_ops clk_pll_tbgen_ops = {
-	.prepare	= clk_pll_prepare,
-	.unprepare	= clk_pll_unprepare,
 	.enable		= clk_pll_enable,
 	.disable	= clk_pll_disable,
-	.set_rate	= clk_pll_set_rate,
 	.recalc_rate	= clk_pll_recalc_rate,
 	.round_rate	= clk_pll_round_rate,
 };
