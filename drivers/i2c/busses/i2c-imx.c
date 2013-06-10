@@ -146,6 +146,7 @@ MODULE_DEVICE_TABLE(platform, imx_i2c_devtype);
 static const struct of_device_id i2c_imx_dt_ids[] = {
 	{ .compatible = "fsl,imx1-i2c", .data = &imx_i2c_devtype[IMX1_I2C], },
 	{ .compatible = "fsl,imx21-i2c", .data = &imx_i2c_devtype[IMX21_I2C], },
+	{ .compatible = "fsl,d4400-i2c", .data = &imx_i2c_devtype[IMX21_I2C], },
 	{ /* sentinel */ }
 };
 

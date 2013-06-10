@@ -108,6 +108,46 @@
 				clocks = <&clks 0>;
 			};
 
+			i2c1: i2c@C4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000C4000 0x4000>;
+				interrupts = <0 48 0x04>;
+				clocks = <&clks 65>;
+				status = "disabled";
+			};
+
+			i2c2: i2c@C8000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000C8000 0x4000>;
+				interrupts = <0 49 0x04>;
+				clocks = <&clks 66>;
+				status = "disabled";
+			};
+
+			i2c3: i2c@CC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000CC000 0x4000>;
+				interrupts = <0 50 0x04>;
+				clocks = <&clks 67>;
+				status = "disabled";
+			};
+
+			i2c4: i2c@D0000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000D0000 0x4000>;
+				interrupts = <0 51 0x04>;
+				clocks = <&clks 68>;
+				status = "disabled";
+			};
+
                         gpioA: gpio@d4000 {
                                 compatible = "fsl,d4400-gpio";
                                 reg = <0x000d4000 0x4000>;
@@ -215,6 +255,77 @@
                                  compatible = "fsl,d4400-scm";
                                  reg = <0x000C0000 0x4000>;
 			};
+
+			i2c5: i2c@DC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000DC000 0x4000>;
+				interrupts = <0 52 0x04>;
+				clocks = <&clks 69>;
+				status = "disabled";
+			};
+
+			i2c6: i2c@E0000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000E0000 0x4000>;
+				interrupts = <0 53 0x04>;
+				clocks = <&clks 70>;
+				status = "disabled";
+			};
+
+			i2c7: i2c@E4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000E4000 0x4000>;
+				interrupts = <0 54 0x04>;
+				clocks = <&clks 71>;
+				status = "disabled";
+			};
+
+			i2c8: i2c@E8000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000E8000 0x4000>;
+				interrupts = <0 55 0x04>;
+				clocks = <&clks 72>;
+				status = "disabled";
+			};
+
+			i2c9: i2c@EC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000EC000 0x4000>;
+				interrupts = <0 56 0x04>;
+				clocks = <&clks 73>;
+				status = "disabled";
+			};
+
+			i2c10: i2c@F0000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000F0000 0x4000>;
+				interrupts = <0 57 0x04>;
+				clocks = <&clks 74>;
+				status = "disabled";
+			};
+
+			i2c11: i2c@F4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,d4400-i2c";
+				reg = <0x000F4000 0x4000>;
+				interrupts = <0 58 0x04>;
+				clocks = <&clks 75>;
+				status = "disabled";
+			};
+
                 };
 
                 aips-bus@4000000 { /* AIPS3 */
@@ -237,6 +348,106 @@
                                                 >;
                                         };
                                 };
+
+				i2c1 {
+					pinctrl_i2c1_1: i2c1grp-1 {
+						fsl,pins = <
+							362 0x80000000	/* D4400_PAD_I2C1_SDA_I2C_1_SDA */
+							367 0x80000000	/* D4400_PAD_I2C1_SCL_I2C_1_SCL */
+						>;
+					};
+				};
+
+				i2c2 {
+					pinctrl_i2c2_1: i2c2grp-1 {
+						fsl,pins = <
+							372 0x80000000	/* D4400_PAD_I2C2_SDA_I2C_2_SDA */
+							377 0x80000000	/* D4400_PAD_I2C2_SCL_I2C_2_SCL */
+						>;
+					};
+				};
+
+				i2c3 {
+					pinctrl_i2c3_1: i2c3grp-1 {
+						fsl,pins = <
+							382 0x80000000	/* D4400_PAD_I2C3_SDA_I2C_3_SDA */
+							387 0x80000000	/* D4400_PAD_I2C3_SCL_I2C_3_SCL */
+						>;
+					};
+				};
+
+				i2c4 {
+					pinctrl_i2c4_1: i2c4grp-1 {
+						fsl,pins = <
+							352 0x80000000	/* D4400_PAD_UART4_TXD_I2C_4_SDA */
+							358 0x80000000	/* D4400_PAD_UART4_RXD_I2C_4_SCL */
+						>;
+					};
+				};
+
+				i2c5 {
+					pinctrl_i2c5_1: i2c5grp-1 {
+						fsl,pins = <
+							392 0x80000000	/* D4400_PAD_I2C5_SDA_I2C_5_SDA */
+							397 0x80000000	/* D4400_PAD_I2C5_SCL_I2C_5_SCL */
+						>;
+					};
+				};
+
+				i2c6 {
+					pinctrl_i2c6_1: i2c6grp-1 {
+						fsl,pins = <
+							402 0x80000000	/* D4400_PAD_I2C6_SDA_I2C_6_SDA */
+							407 0x80000000	/* D4400_PAD_I2C6_SCL_I2C_6_SCL */
+						>;
+					};
+				};
+
+				i2c7 {
+					pinctrl_i2c7_1: i2c7grp-1 {
+						fsl,pins = <
+							412 0x80000000	/* D4400_PAD_I2C7_SDA_I2C_7_SDA */
+							417 0x80000000	/* D4400_PAD_I2C7_SCL_I2C_7_SCL */
+						>;
+					};
+				};
+
+				i2c8 {
+					pinctrl_i2c8_1: i2c8grp-1 {
+						fsl,pins = <
+							422 0x80000000	/* D4400_PAD_I2C8_SDA_I2C_8_SDA */
+							430 0x80000000	/* D4400_PAD_I2C8_SCL_I2C_8_SCL */
+						>;
+					};
+				};
+
+				i2c9 {
+					pinctrl_i2c9_1: i2c9grp-1 {
+						fsl,pins = <
+							438 0x80000000	/* D4400_PAD_I2C9_SDA_I2C_9_SDA */
+							446 0x80000000	/* D4400_PAD_I2C9_SCL_I2C_9_SCL */
+						>;
+					};
+				};
+
+				i2c10 {
+					pinctrl_i2c10_1: i2c10grp-1 {
+						fsl,pins = <
+							454 0x80000000	/* D4400_PAD_I2C10_SDA_I2C_10_SDA */
+							462 0x80000000	/* D4400_PAD_I2C10_SCL_I2C_10_SCL */
+						>;
+					};
+				};
+
+				i2c11 {
+					pinctrl_i2c11_1: i2c11grp-1 {
+						fsl,pins = <
+							470 0x80000000	/* D4400_PAD_I2C11_SDA_I2C_11_SDA */
+							478 0x80000000	/* D4400_PAD_I2C11_SCL_I2C_11_SCL */
+						>;
+					};
+				};
+
                         };
 
 			enet0: ethernet@0x80000 {
