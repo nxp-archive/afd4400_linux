@@ -238,6 +238,94 @@
                                         };
                                 };
                         };
+
+			enet0: ethernet@0x80000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				device_type = "network";
+				model = "eTSEC";
+				compatible = "fsl,etsec2";
+				fsl,num_rx_queues = <0x01>;
+				fsl,num_tx_queues = <0x01>;
+				fsl,errata = <0x00000004>;
+				local-mac-address = [ 00 00 ab cd 22 ef ];
+				phy-handle = <&phy0>;
+				tbi-handle = <&tbi0>;
+				phy-connection-type = "sgmii";
+				reg = <0x80000 0x1000>;
+				ranges;
+				status = "okay";
+
+				queue-group@0 {
+					#address-cells = <1>;
+					#size-cells = <1>;
+					reg-names = "queue-group0";
+					reg = <0x80000 0x1000>;
+					rx-bit-map = <0xFF>;
+					tx-bit-map = <0xFF>;
+					interrupts = <0 184 0x04>,
+						     <0 183 0x04>,
+						     <0 185 0x04>;
+				};
+			};
+
+			enet1: ethernet@0xa1000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				device_type = "network";
+				model = "eTSEC";
+				compatible = "fsl,etsec2";
+				fsl,num_rx_queues = <0x01>;
+				fsl,num_tx_queues = <0x01>;
+				fsl,errata = <0x00000004>;
+				local-mac-address = [ 00 00 ab cd 23 ef ];
+				phy-handle = <&phy2>;
+				tbi-handle = <&tbi1>;
+				phy-connection-type = "sgmii";
+				reg = <0xa1000 0x1000>;
+				ranges;
+				status = "okay";
+
+				queue-group@0 {
+					#address-cells = <1>;
+					#size-cells = <1>;
+					reg-names = "queue-group0";
+					reg = <0xa1000 0x1000>;
+					rx-bit-map = <0xFF>;
+					tx-bit-map = <0xFF>;
+					interrupts = <0 190 0x04>,
+						     <0 189 0x04>,
+						     <0 191 0x04>;
+				};
+			};
+
+			mdio@084000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,etsec2-mdio";
+				reg = <0x84000 0x4000>;
+				status = "okay";
+
+				phy0: vitesse-phy@0 {
+					reg = <0>;
+					device_type = "ethernet-phy";
+				};
+
+				phy2: vitesse-phy@2 {
+					reg = <2>;
+					device_type = "ethernet-phy";
+				};
+
+				tbi0: tbi-phy@10 {
+					device_type = "tbi-phy";
+					reg = <0x10>;
+				};
+
+				tbi1: tbi-phy@11 {
+					device_type = "tbi-phy";
+					reg = <0x11>;
+				};
+			};
                 };
 
                 weim-bus@30000000 {

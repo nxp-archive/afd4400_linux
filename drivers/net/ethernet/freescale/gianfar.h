@@ -90,7 +90,6 @@ extern const char gfar_driver_version[];
 #define MAXGROUPS 0x2
 
 /* These need to be powers of 2 for this driver */
-#define MEDUSA_OCRAM_MEM
 #ifdef MEDUSA_OCRAM_MEM
 #define DEFAULT_TX_RING_SIZE	16
 #define DEFAULT_RX_RING_SIZE	16
