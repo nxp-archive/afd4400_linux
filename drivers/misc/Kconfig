@@ -537,7 +537,7 @@ config USB_SWITCH_FSA9480
 	  a common connector port.
 config LANDSHARK
 	tristate "Landshark Memory Driver"
-	depends on ARM && SOC_IMX6Q
+	depends on ARM && (SOC_IMX6Q || SOC_D4400)
 	help
 	 The Landshark is the kernel driver part of the user space memory
 	 management library.

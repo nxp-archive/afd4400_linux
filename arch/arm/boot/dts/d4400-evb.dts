@@ -78,5 +78,12 @@
 			};
                 };
         };
+
+	landshark@0xc000000 { /* LandShark */
+		compatible = "fsl,landshark";
+		address = <0xc0000000>;
+		length = <0x10000000>;
+		status = "okay";
+	};
 };
 
