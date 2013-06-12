@@ -88,7 +88,9 @@ clocks and IDs.
 	i2c9_per	73
 	i2c10_per	74
 	i2c11_per	75
-	clk_max		76
+	sync_ref_src_1	76
+	sync_ref_src_2	77
+	clk_max		78
 
 Examples:
 clks: ccm@014000 {

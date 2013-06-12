@@ -42,7 +42,8 @@ enum d4400_clks {
 	epit_ipg, epit_per, uart1_ipg, uart1_pen,  uart2_ipg, uart2_pen,
         uart3_ipg, uart3_pen, uart4_ipg, uart4_pen, i2c1_per,
 	i2c2_per, i2c3_per, i2c4_per, i2c5_per, i2c6_per,
-	i2c7_per, i2c8_per, i2c9_per, i2c10_per, i2c11_per, clk_max
+	i2c7_per, i2c8_per, i2c9_per, i2c10_per, i2c11_per, sync_ref_src_1,
+	sync_ref_src_2, clk_max
 };
 
 static const char *pll_sys_sels[]  = { "osc1_dev", "osc2_sgmii" };
@@ -68,6 +69,7 @@ static const char *trace_sels[] = {"mmdc_clk", "sys_pll", "tbgen_pll"};
 static const char *mmdc_sels[] = {"ref", "sys_pll", "ddr_pll", "ddr_pll_by"};
 static const char *vspa_dp_sels[] = {"sys_bus", "sys_pll", "ddr_pll",
 					"ddr_pll_by"};
+static const char *sync_ref_sels[] = {"sync_ref_src_1", "sync_ref_src_2"};
 
 static struct clk *clk[clk_max];
 static struct clk_onecell_data clk_data;
@@ -210,8 +212,13 @@ int __init d4400_clocks_init(void)
 	clk[etsec_rtc] = clk_register_mux(NULL, "etsec_rtc", etsec_rtc_sels,
 				ARRAY_SIZE(etsec_rtc_sels), 0, ccm_base + 0x0,
 				27, 1, 0, &d4400_ccm_lock);
-	clk[sync_ref] = clk_register_fixed_factor(NULL, "sync_ref", "ref",
+	clk[sync_ref_src_1] = clk_register_fixed_factor(NULL, "sync_ref_src_1", "ref",
 				CLK_SET_RATE_PARENT, 1, 6);
+	clk[sync_ref_src_2] = clk_register_fixed_factor(NULL, "sync_ref_src_2", "ref",
+				CLK_SET_RATE_PARENT, 1, 3);
+	clk[sync_ref] = clk_register_mux(NULL, "sync_ref", sync_ref_sels,
+				ARRAY_SIZE(sync_ref_sels), 0, ccm_base + 0x4,
+				0, 1, 0, &d4400_ccm_lock);
 	clk[async_ckil] = clk_register_fixed_factor(NULL, "async_ckil",
 				"osc1_dev", CLK_SET_RATE_PARENT, 1, 4096);
 	clk[sync_ckil] = clk_register_fixed_factor(NULL, "sync_ckil",
