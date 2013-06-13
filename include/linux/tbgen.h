@@ -25,7 +25,7 @@
 #define MAX_TIMED_INTERRUPT_TIMER_CTRLS 12
 #define MAX_GP_EVENT_TIMERS 8
 #define MAX_TDD_TIMERS 8
-
+#define TBG_RESET_TIMEOUT_MS	20
 #define JESD204_VERSION_A			1
 #define JESD204_VERSION_B			2
 
@@ -85,6 +85,8 @@ struct tbgen_dev {
 
 /* tbgen_dev->flags */
 #define FLG_NO_INTERRUPTS	(1 << 0)
+#define FLG_SYNC_CPRI_10ms	(1 << 1)
+#define FLG_SYNC_INTERNAL_10ms	(1 << 2)
 
 /* tbgen_dev->config_bitmap */
 #define TBG_PLL_CONFIGURED	(1 << 0)
@@ -184,6 +186,7 @@ struct tbg_regs {
 	struct gen_timer_regs  spi_tmr[MAX_SPI_ALIGNMENT_TIMERS];
 	struct gen_timer_regs  agc_tmr[MAX_AGC_ALIGNMENT_TIMERS];
 	struct gen_timer_regs  titc_tmr[MAX_TIMED_INTERRUPT_TIMER_CTRLS];
+	u32 reserved1[4];
 	struct gen_timer_regs gp_tmr[MAX_GP_EVENT_TIMERS];
 	u32 reserved[(0x450 - 0x440) / sizeof(u32)];
 	struct tdd_regs	tdd_tmr[MAX_TDD_TIMERS];
@@ -219,7 +222,16 @@ struct tbg_regs {
 #define SYNC_ADV_SHIFT			19
 #define SYNC_ADV_MASK			0x1f
 
+#define START_INTERNAL_RF_SYNC		(1 << 17)
 #define RFGEN				(1 << 0)
+
+/* ctrl_0 */
+#define SWRESET				(1 << 0)
+#define FRAME_SYNC_SEL_SHIFT		12
+#define FRAME_SYNC_SEL_SYSREF		0x00
+#define FRAME_SYNC_SEL_CPRI_RX_RFP	0x01
+#define FRAME_SYNC_SEL_RFG_OUTPUT	0x02
+#define FRAME_SYNC_SEL_MASK		0x03
 
 /* ctrl_1 & INTSTAT */
 #define IRQ_RFGER			(1 << 4)

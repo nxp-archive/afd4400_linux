@@ -74,7 +74,6 @@ struct alignment_timer_params {
 struct tbg_pll {
 	__u32 refclk_khz;
 	__u8 clk_src;
-	__u8 tbgen_in_standby; /*0 = disable pll 1=ebable pll in standy*/
 };
 
 /* Refclk values in KHZ */
@@ -89,9 +88,15 @@ struct tbg_pll {
  * params for rfg init
  */
 struct tbg_rfg {
+	__u32 ctrl_flags;
 	__u32 drift_threshold;
 	__u8 sync_adv;
 };
+
+/*ctrl_flags*/
+#define CTRL_FLG_SYNC_CPRI_10ms		(1 << 0)
+#define CTRL_FLG_SYNC_INTERNAL_10ms	(1 << 1)
+
 /** \struct register configuration
 */
 struct tbgen_reg_read_buf {

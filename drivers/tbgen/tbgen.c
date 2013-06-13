@@ -31,6 +31,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
+#include <linux/delay.h>
 
 #include <linux/tbgen.h>
 #include <linux/jesd204.h>
@@ -47,6 +48,9 @@ static int tbgen_change_state(struct tbgen_dev *tbg,
 static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 	int timer_id, int enable);
 static u64 tbgen_get_l10_mcntr(struct tbgen_dev *tbg);
+static irqreturn_t tbgen_isr(int irq, void *dev);
+static int tbgen_reset(struct tbgen_dev *tbg);
+static void tbgen_tasklet(unsigned long data);
 
 static void tbgen_write_reg(u32 *reg, u32 val)
 {
@@ -187,6 +191,100 @@ int validate_refclk(struct tbgen_dev *tbg, u32 ref_clk)
 	return retcode;
 }
 
+/* XXX: TPLL init to be moved to ccm */
+#define PLL_TIMEOUT_MS	100
+#define CCM_BASE	0x01094000
+#define CCM_SIZE	0x4000
+#define TPLLGSR		0x1A0
+#define TPLLLKSR	0x1B0
+#define TPLLGDCR	0x2A0
+#define TPLLLKDCR	0x2B0
+#define CCMCR2		0x098
+
+#define OVERRIDE_EN		(1 << 0)
+#define PLL_MULTIPLIER_SHIFT	1
+#define PLL_MULTIPLIER_MASK	0xff
+#define TPLL_HRESET		(1 << 26)
+#define TPLL_HRESET_STAT	(1 << 22)
+#define TPLL_LOCKED		(1 << 22)
+int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
+{
+	u32 *reg, reg_base, val, multiplier, mask;
+	unsigned long timeout;
+	int rc = 0;
+
+	reg_base = (u32) ioremap_nocache(CCM_BASE, CCM_SIZE);
+	if (!reg_base) {
+		dev_err(tbg->dev, "%s: ioremap failed\n", __func__);
+		goto out;
+	}
+
+	switch (pll_params->refclk_khz) {
+	case REF_CLK_614MHZ:
+		multiplier = 5;
+		break;
+	case REF_CLK_983MHZ:
+		multiplier = 8;
+		break;
+	default:
+		dev_err(tbg->dev, "%s: unsupported ref clk %d Khz\n",
+			__func__, pll_params->refclk_khz);
+		goto out;
+	}
+	/*Reset PLL */
+	dev_info(tbg->dev, "Resetting TPLL\n");
+	timeout = jiffies + msecs_to_jiffies(PLL_TIMEOUT_MS);
+	reg = (u32 *) (reg_base + CCMCR2);
+	val = TPLL_HRESET;
+	mask = TPLL_HRESET;
+	tbgen_update_reg(reg, val, mask);
+	val = ioread32(reg);
+	while (!(val & TPLL_HRESET_STAT)) {
+		val = ioread32(reg);
+		if (jiffies > timeout) {
+			dev_err(tbg->dev, "Failed to reset pll, ccmcr2 0x%x",
+				val);
+			rc  = -EBUSY;
+			goto out;
+		}
+	}
+	/* Reconfig */
+	dev_info(tbg->dev, "PLL killed, reconfiguring\n");
+	reg = (u32 *) (reg_base + TPLLGDCR);
+	val = (multiplier & PLL_MULTIPLIER_MASK) << PLL_MULTIPLIER_SHIFT;
+	val |= OVERRIDE_EN;
+	iowrite32(val, reg);
+
+	dev_info(tbg->dev, "TPLLGDCR 0x%x\n", ioread32(reg));
+
+	/* Pll reset down, start PLL state m/c */
+	reg = (u32 *) (reg_base + CCMCR2);
+	val = ~TPLL_HRESET;
+	mask = TPLL_HRESET;
+	tbgen_update_reg(reg, val, mask);
+
+	reg = (u32 *) (reg_base + TPLLGSR);
+	dev_info(tbg->dev, "TPLLGSR 0x%x\n", ioread32(reg));
+
+	reg = (u32 *) (reg_base + TPLLLKSR);
+	timeout = jiffies + msecs_to_jiffies(PLL_TIMEOUT_MS);
+	val = ioread32(reg);
+	while (!(val & TPLL_LOCKED)) {
+		val = ioread32(reg);
+		if (jiffies > timeout) {
+			dev_err(tbg->dev, "Tpll failed to lock, LKSR 0x%x",
+				val);
+			rc  = -EBUSY;
+			goto out;
+		}
+	}
+
+	dev_info(tbg->dev, "Tpll locked (%d khz), LKSR 0x%x",
+		pll_params->refclk_khz, val);
+out:
+	return rc;
+}
+
 int tbgen_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 {
 	int retcode = 0;
@@ -207,6 +305,9 @@ int tbgen_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 	/* XXX: TBD - Enable/programe TBGEN PLL using, using clk_get/enable.
 	 * For medusa programming TBGEN PLL is not required
 	 */
+	 retcode = hack_tbg_pll_init(tbg, pll_params);
+	 if (retcode)
+		dev_err(tbg->dev, "TPLL init failed, rc %d\n", retcode);
 out:
 	return retcode;
 }
@@ -243,7 +344,7 @@ int rfg_enable(struct tbgen_dev *tbg, u8 enable)
 {
 	int retcode = 0;
 	struct tbg_regs *tbgregs = tbg->tbgregs;
-	u32 val, *reg, mask;
+	u32 val = 0, *reg, mask;
 	unsigned long flags;
 
 	if (enable && (tbg->state != TBG_STATE_CONFIGURED)) {
@@ -259,13 +360,20 @@ int rfg_enable(struct tbgen_dev *tbg, u8 enable)
 		/* Enable Frame sync IRQ */
 		reg = &tbgregs->cntrl_1;
 		val = IRQ_FS;
-		mask = IRQ_FS;
+		mask = val;
 		tbgen_update_reg(reg, val, mask);
 
 		reg = &tbgregs->rfg_cr;
 		val = RFGEN;
-		mask = RFGEN;
+		if (tbg->dev_flags & FLG_SYNC_INTERNAL_10ms)
+			val |= START_INTERNAL_RF_SYNC;
+
+		mask = RFGEN | START_INTERNAL_RF_SYNC;
 		tbgen_update_reg(reg, val, mask);
+		mdelay(30);
+		tbgen_tasklet((unsigned long) tbg);
+		mdelay(30);
+		tbgen_tasklet((unsigned long) tbg);
 	} else {
 		/* FSIE should be disabled after first frame sync interrupt
 		 * but disabling it just in case it was enabled for some
@@ -289,25 +397,75 @@ out:
 	return retcode;
 }
 
+static int tbgen_reset(struct tbgen_dev *tbg)
+{
+	int retcode = 0;
+	u32 *reg, val;
+	struct tbg_regs *tbgregs = tbg->tbgregs;
+	unsigned long reset_timeout;
+
+	/* reset TBGEN */
+	reg = &tbgregs->cntrl_0;
+	val = SWRESET;
+	iowrite32(val, reg);
+	reset_timeout = jiffies + msecs_to_jiffies(TBG_RESET_TIMEOUT_MS);
+	val = ioread32(reg);
+
+	while (val & SWRESET) {
+		val = ioread32(reg);
+		if (jiffies > reset_timeout) {
+			dev_err(tbg->dev, "Failed to reset TBGEN, ctrl_0 %x\n",
+				val);
+			retcode = -EBUSY;
+			goto out;
+		}
+	}
+
+	dev_info(tbg->dev, "TBGEN out of reset, ctrl_0 %x\n", val);
+out:
+	return retcode;
+}
+
 int tbgen_rfg_init(struct tbgen_dev *tbg, struct tbg_rfg *rfg_params)
 {
 	int retcode = 0;
-	u32 *reg, val, mask;
+	u32 *reg, val, mask, sync_sel, sync_out, frame_sync_sel;
 	struct tbg_regs *tbgregs = tbg->tbgregs;
+
+	retcode = tbgen_reset(tbg);
+	if (retcode)
+		goto out;
 
 	reg = &tbgregs->rfg_cr;
 	val = rfg_params->drift_threshold << RFG_ERR_THRESHOLD_SHIFT;
 	mask = RFG_ERR_THRESHOLD_MASK << RFG_ERR_THRESHOLD_SHIFT;
 	tbgen_update_reg(reg, val, mask);
 
+	if (rfg_params->ctrl_flags & CTRL_FLG_SYNC_INTERNAL_10ms) {
+		sync_sel = SYNC_SEL_SYSREF;
+		sync_out = SYNC_OUT_INTERNAL_10MS;
+		frame_sync_sel = FRAME_SYNC_SEL_RFG_OUTPUT;
+		tbg->dev_flags |= FLG_SYNC_INTERNAL_10ms;
+	} else {
+		sync_sel = SYNC_SEL_CPRI_RX_RFP;
+		sync_out = SYNC_OUT_CPRI_RX_RFP;
+		frame_sync_sel = FRAME_SYNC_SEL_CPRI_RX_RFP;
+		tbg->dev_flags |= FLG_SYNC_CPRI_10ms;
+	}
+
+	reg = &tbgregs->cntrl_0;
+	val = (frame_sync_sel & FRAME_SYNC_SEL_MASK) << FRAME_SYNC_SEL_SHIFT;
+	mask = FRAME_SYNC_SEL_MASK << FRAME_SYNC_SEL_SHIFT;
+	tbgen_update_reg(reg, val, mask);
+
 	reg = &tbgregs->rfg_cr;
 	mask = 1 << SYNC_SEL_SHIFT;
-	val =  SYNC_SEL_SYSREF;
+	val = sync_sel;
 	tbgen_update_reg(reg, val, mask);
 
 	reg = &tbgregs->rfg_cr;
 	mask = 1 << SYNC_OUT_SHIFT;
-	val = SYNC_OUT_INTERNAL_10MS;
+	val = sync_out;
 	tbgen_update_reg(reg, val, mask);
 
 	reg = &tbgregs->rfg_cr;
@@ -315,6 +473,7 @@ int tbgen_rfg_init(struct tbgen_dev *tbg, struct tbg_rfg *rfg_params)
 	mask = SYNC_ADV_MASK << SYNC_ADV_SHIFT;
 	tbgen_update_reg(reg, val, mask);
 
+out:
 	return retcode;
 }
 /**
@@ -338,9 +497,11 @@ static u64 tbgen_get_master_counter(struct tbgen_dev *tbg)
 {
 	u64 master_counter = 0, tmp;
 
-	master_counter = tbgen_read_reg(&tbg->tbgregs->mstr_cnt_lo);
 	tmp = tbgen_read_reg(&tbg->tbgregs->mstr_cnt_hi);
 	master_counter |= tmp << 32;
+
+	tmp = tbgen_read_reg(&tbg->tbgregs->mstr_cnt_lo);
+	master_counter |= (tmp & 0xffffffff);
 
 	return master_counter;
 }
@@ -350,9 +511,11 @@ static u64 tbgen_get_l10_mcntr(struct tbgen_dev *tbg)
 {
 	u64 ts_10ms_cnt = 0, tmp;
 
-	ts_10ms_cnt = tbgen_read_reg(&tbg->tbgregs->ts_10_ms_lo);
 	tmp = tbgen_read_reg(&tbg->tbgregs->ts_10_ms_hi);
 	ts_10ms_cnt |= tmp << 32;
+
+	tmp = tbgen_read_reg(&tbg->tbgregs->ts_10_ms_lo);
+	ts_10ms_cnt |= (tmp & 0xffffffff);
 
 	return ts_10ms_cnt;
 }
@@ -361,12 +524,11 @@ static void tbgen_tasklet(unsigned long data)
 {
 	struct tbgen_dev *tbg = (struct tbgen_dev *)data;
 	struct tbg_regs *tbgregs = tbg->tbgregs;
-	u32 int_stat = 0, val;
+	u32 int_stat = 0;
 
 	int_stat = tbgen_read_reg(&tbgregs->int_stat);
 	/* Clear the IRQs which we serviced*/
 	tbgen_write_reg(&tbgregs->int_stat, int_stat);
-
 	if (int_stat & IRQ_FS) {
 		if (tbgen_handle_rfg_irq(tbg)) {
 			/* Disable FS IRQ */
@@ -375,9 +537,7 @@ static void tbgen_tasklet(unsigned long data)
 	}
 
 	/* Enable IRQs which we serviced */
-	val = tbgen_read_reg(&tbgregs->cntrl_1);
-	val |= int_stat;
-	tbgen_write_reg(&tbgregs->cntrl_1, val);
+	tbgen_write_reg(&tbgregs->cntrl_1, int_stat);
 }
 
 static irqreturn_t tbgen_isr(int irq, void *dev)
@@ -446,8 +606,7 @@ static int tbgen_config_tx_timer_regs(struct tbgen_timer *timer,
 
 	spin_lock(&timer->lock);
 	reg = &tx_timer_regs->ctrl;
-	/*Disable and clean timer*/
-	tbgen_write_reg(reg, 0);
+
 	/*Init timer parameters, but not do not enable it here*/
 	tbgen_write_reg(reg, val);
 
@@ -802,8 +961,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		goto out;
 	}
 
-	dev_dbg(tbg->dev, "%s: Timer id %d Enable %d, offset %llx\n",
-		__func__, timer_id, enable, timer->timer_param.offset);
+	dev_dbg(tbg->dev, "%s: Timer id %d type %d Enable %d, offset %llx\n",
+		__func__, timer_id, type, enable, timer->timer_param.offset);
 
 	spin_lock(&timer->lock);
 	if (enable) {
@@ -818,6 +977,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		start_time = tbg->last_10ms_counter;
 		start_time += timer->timer_param.offset;
 		current_time = tbgen_get_l10_mcntr(tbg);
+		/*XXX: fire in current 10ms window */
+		start_time = current_time + timer->timer_param.offset;
 		if (current_time > start_time) {
 			dev_info(tbg->dev, "%s: Timer id %d, type %d missed\n",
 				__func__, timer_id, type);
@@ -1016,7 +1177,7 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 
 	case TBGEN_TIMER_CTRL:
 		if (copy_from_user(&tmr_ctrl,
-			(struct irq_conf *)arg,
+			(struct timer_ctrl *)arg,
 			sizeof(struct timer_ctrl))) {
 			retcode = -EFAULT;
 			break;
@@ -1164,6 +1325,7 @@ static struct miscdevice tbg_miscdev = {
 static int __init tbgen_of_probe(struct platform_device *pdev)
 {
 	int retcode = 0, id;
+	struct tbgen_timer *timer;
 
 	tbg = kzalloc(sizeof(struct tbgen_dev), GFP_KERNEL);
 
@@ -1200,23 +1362,35 @@ static int __init tbgen_of_probe(struct platform_device *pdev)
 	spin_lock_init(&tbg->lock);
 
 	for (id = 0; id < MAX_TX_ALIGNMENT_TIMERS; id++) {
-		spin_lock_init(&tbg->tbg_txtmr[id].lock);
-		tbg->tbg_txtmr[id].tbg = tbg;
+		timer = &tbg->tbg_txtmr[id];
+		spin_lock_init(&timer->lock);
+		timer->tbg = tbg;
+		timer->id = id;
+		timer->type = JESD_TX_ALIGNMENT;
 	}
 
 	for (id = 0; id < MAX_AXRF_ALIGNMENT_TIMERS; id++) {
-		spin_lock_init(&tbg->tbg_tx_axrf[id].lock);
-		tbg->tbg_tx_axrf[id].tbg = tbg;
+		timer = &tbg->tbg_tx_axrf[id];
+		spin_lock_init(&timer->lock);
+		timer->tbg = tbg;
+		timer->id = id;
+		timer->type = JESD_TX_AXRF;
 	}
 
 	for (id = 0; id < MAX_RX_ALIGNMENT_TIMERS; id++) {
-		spin_lock_init(&tbg->tbg_rxtmr[id].lock);
-		tbg->tbg_rxtmr[id].tbg = tbg;
+		timer = &tbg->tbg_rxtmr[id];
+		spin_lock_init(&timer->lock);
+		timer->tbg = tbg;
+		timer->id = id;
+		timer->type = JESD_RX_ALIGNMENT;
 	}
 
 	for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++) {
-		spin_lock_init(&tbg->tbg_srxtmr[id].lock);
-		tbg->tbg_srxtmr[id].tbg = tbg;
+		timer = &tbg->tbg_srxtmr[id];
+		spin_lock_init(&timer->lock);
+		timer->tbg = tbg;
+		timer->id = id;
+		timer->type = JESD_SRX_ALIGNMENT;
 	}
 
 	dev_set_drvdata(tbg->dev, tbg);
