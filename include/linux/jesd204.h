@@ -23,6 +23,30 @@
 #define DEVICE_TX	0
 #define DEVICE_RX	1
 
+#define LINK_STATUS_CODE_GRP_SYNC_DONE	(1 << 0)
+#define LINK_STATUS_FRM_SYNC_DONE	(1 << 1)
+#define LINK_STATUS_CSUM_DONE		(1 << 2)
+#define LINK_STATUS_ILAS_DONE		(1 << 3)
+#define LINK_STATUS_CODE_FRP_SYNC_MASK	(LINK_STATUS_CODE_GRP_SYNC_DONE | \
+					LINK_STATUS_FRM_SYNC_DONE)
+#define LINK_STATUS_USER_DATA_MASK	(LINK_STATUS_CODE_FRP_SYNC_MASK | \
+						LINK_STATUS_CSUM_DONE |	  \
+						LINK_STATUS_ILAS_DONE)
+struct ils_regs {
+	u32 did;
+	u32 bid;
+	u32 lid;
+	u32 scr_l;
+	u32 octets_per_frame_f;
+	u32 frames_per_mf_k;
+	u32 conv_per_dev_m;
+	u32 control_bits_per_sample;
+	u32 bits_per_coverter_wrd_np;
+	u32 samples_per_coverter_per_fs_s;
+	u32 high_density;
+	u32 reserved1;
+	u32 reserved2;
+};
 
 /** @brief shall have all the instance for all registers include reserved sets
  *too, supported by the ip
@@ -67,6 +91,7 @@ struct config_registers_tx {
 	u32 tx_sdiv;
 	u32 tx_reserved5[(0x400 - 0x3d4) / sizeof(u32)];
 	u32 tx_transcontrol;
+	u32 tx_reserved;
 	u32 tx_irq_status;
 	u32 tx_irq_enable;
 	u32 tx_sync_fil_char;
@@ -156,24 +181,30 @@ struct config_registers_rx {
 
 /* Tn_DID */
 #define BID_MASK		0x0f
+#define ADJCNT_MASK		0x0f
+#define ADJCNT_SHIFT		4
+
+/* Tn_LID */
 #define LID_MASK		0x1f
 #define LANES_PER_CONV_MASK	0x1f
+#define ADJDIR			(1 << 6)
+#define PHYADJ			(1 << 5)
 
+/* Tn_CS_N_REG */
 #define CS_MASK			0x03
 #define CS_SHIFT		6
-
 #define N_MASK			0x1f
 #define N_SHIFT			0x0
 
+/* Tn_NP_REG */
+#define NP_MASK			0x1f
+#define NP_SHIFT		0
 #define SUBCLASS_MASK		0x07
 #define SUBCLASS_SHIFT		5
 
+/* Tn_S_REG */
 #define VERSION_MASK		0x07
 #define VERSION_SHIFT		5
-
-#define NP_MASK			0x1f
-#define NP_SHIFT		0
-
 #define S_MASK			0x1f
 #define S_SHIFT			0
 
@@ -207,6 +238,27 @@ struct config_registers_rx {
 /* Tn_IRQ_STATUS & IRQ_ENABLE*/
 #define IRQ_SYSREF_ROSE		(1 << 8)
 #define IRQ_SYNC_RECIEVED	(1 << 9)
+#define IRQ_DEFRAMER_IRQ	(1 << 0)
+#define TX_IRQS_EN_MASK		(IRQ_SYSREF_ROSE)
+#define RX_IRQS_EN_MASK		(IRQ_SYSREF_ROSE)
+
+/* TN_IRQ_VECTOR_MASK */
+#define DFRMR_IRQ_CGS		(1 << 0)
+#define DFRMR_IRQ_FS		(1 << 1)
+#define DFRMR_IRQ_GCS		(1 << 2)
+#define DFRMR_IRQ_ILS		(1 << 3)
+#define DFRMR_IRQ_ILD		(1 << 4)
+#define DFRMR_IRQ_UNEX_K	(1 << 5)
+#define DFRMR_IRQ_NIT_DIS	(1 << 6)
+#define DFRMR_IRQ_BAD_DIS	(1 << 7)
+
+/* STATUS flag registers (T0_CODE_GRP_SYNC,
+ * T0_FRAME_SYNC_FLG, T0_GOOD_CHK_SUM_FLG
+ * T0_INIT_LANE_SYNC_FLA
+ */
+#define DFRMR_IRQ_RESET		(1 << 7)
+#define DFRMR_STATUS_FLG_SET	(1 << 0)
+#define DFRMR_STATUS_MASK	0x3
 
 /* Tn_frm_ctl*/
 #define L2SIDES_EN		(1 << 0)
@@ -222,13 +274,16 @@ struct config_registers_rx {
 #define FRAMER_STATE_CODE_GRP_SYNC	0x0
 #define FRAMER_STATE_ILAS		0x1
 #define FRAMER_STATE_USER_DATA		0x2
+#define FRAME_STATE_MASK		0x3
+#define FRAME_STATE_RESERVED		0x3
 
 /* Tn_SCR_IN_CTRL */
 #define L0_SCR_EN	(1 << 0)
 #define L1_SCR_EN	(1 << 1)
 
 /* Tn_L_SCR */
-#define SCR_EN		(1 << 7)
+#define SCR_EN			(1 << 7)
+#define LANE_COUNT_MASK		0x1f
 
 /* Tn_SYNC_ASSERT_MASK_CTL */
 #define UNEX_K_S	(1 << 5)
@@ -249,6 +304,11 @@ struct config_registers_rx {
 #define QUEUE_TEST_ERR		(1 << 4)
 #define REP_DATA_TEST		(1 << 5)
 #define ILS_TEST_MODE		(1 << 7)
+
+/* checksum */
+#define CSUM_MASK		0xff
+
+/**/
 struct lane_device {
 	struct jesd_transport_dev *tdev;
 	struct lane_stats l_stats;

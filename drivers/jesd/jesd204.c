@@ -84,9 +84,6 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 	struct lane_device *lane;
 	enum phygasket_data_src phy_data_src;
 
-	dev_info(tdev->dev, "%s: type %d, dev_flags %x\n", tdev->name,
-		tdev->type, tdev->dev_flags);
-
 	switch (tdev->type) {
 	case JESD_DEV_TX:
 		if (tdev->dev_flags & DEV_FLG_TEST_PATTERNS_EN)
@@ -106,7 +103,7 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 		goto out;
 	}
 
-	dev_info(tdev->dev, "%s: data src %d\n", tdev->name, phy_data_src);
+	dev_dbg(tdev->dev, "%s: data src %d\n", tdev->name, phy_data_src);
 
 	for (i = 0; i < tdev->active_lanes; i++) {
 		lane = tdev->lane_devs[i];
@@ -138,7 +135,7 @@ static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 {
 	int line_rate, m, s, np, l;
 	int fs, fc, clkdiv, ref, rc = 0;
-	u32 *reg = NULL, mask;
+	u32 *reg = NULL, mask, val;
 
 	/*XXX: TBD set clk div based on tdev->data_rate and tdev->ref_clk*/
 	ref = get_ref_clock(tdev->tbgen_dev_handle);
@@ -150,7 +147,7 @@ static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 	fs = tdev->ils.octect_per_frame_f;
 
 	line_rate = (((m*s*np*fs)*(10/8))/l);
-	fc = line_rate/10;
+	fc = line_rate/20;
 
 	if (tdev->type == JESD_DEV_TX)
 		clkdiv = (ref/fc);
@@ -160,15 +157,15 @@ static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 	/*XXX: For medusa setting it to 0 hardcoded for bringup.
 	 *This needs cleanup
 	 */
-	clkdiv = 0;
-	clkdiv &= ~CLKDIV_MASK; /*mask for three bits*/
-	mask = CLKDIV_MASK;
+	clkdiv = 7;
+	val = (clkdiv & CLKDIV_MASK) << CLKDIV_SHIFT; /*mask for three bits*/
+	mask = CLKDIV_MASK << CLKDIV_SHIFT;
 	if (tdev->type == JESD_DEV_TX)
 		reg = &tdev->tx_regs->tx_transcontrol;
 	else
 		reg = &tdev->rx_regs->rx_transcontrol;
 
-	jesd_update_reg(reg, clkdiv, mask);
+	jesd_update_reg(reg, val, mask);
 
 	return rc;
 }
@@ -367,11 +364,77 @@ void jesd_enable_sysref_capture(struct jesd_transport_dev *tdev)
 
 	/*enable sysref rose IRQ*/
 	val = IRQ_SYSREF_ROSE;
-	mask = val;
+	mask = IRQ_SYSREF_ROSE;
 	jesd_update_reg(irq_enable_reg, val, mask);
 
 }
 
+static int jesd_update_ils_csum(struct jesd_transport_dev *tdev)
+{
+	int rc = 0;
+	struct ils_regs *ils_regs;
+	u32 val, sum = 0, csum, *lane0_csum_reg;
+
+	if (tdev->type == JESD_DEV_TX) {
+		ils_regs = (struct ils_regs *) &tdev->tx_regs->tx_did;
+		lane0_csum_reg = &tdev->tx_regs->tx_csum_0;
+	} else {
+		ils_regs = (struct ils_regs *) &tdev->rx_regs->rx_did;
+		lane0_csum_reg = &tdev->rx_regs->rx_csum_0;
+	}
+
+	val = ioread32(&ils_regs->did);
+	sum += val;
+
+	val = ioread32(&ils_regs->bid);
+	sum += (val & BID_MASK);
+	sum += ((val >> BID_MASK) & ADJCNT_MASK);
+
+	/* Not adding lane id here. It will be added in end because
+	 * we have two lanes, and ids have to be added separately
+	 * to generate two csums
+	 */
+	val = ioread32(&ils_regs->lid);
+	sum += !!(val & ADJDIR);
+	sum += !!(val & PHYADJ);
+
+	val = ioread32(&ils_regs->scr_l);
+	sum += !!(val & SCR_EN);
+	sum += (val & LANE_COUNT_MASK);
+
+	sum += ioread32(&ils_regs->octets_per_frame_f);
+	sum += ioread32(&ils_regs->frames_per_mf_k);
+	sum += ioread32(&ils_regs->conv_per_dev_m);
+
+	val = ioread32(&ils_regs->control_bits_per_sample);
+	sum += (val >> CS_SHIFT) & CS_MASK;
+	sum += (val >> N_SHIFT) & N_MASK;
+
+	val = ioread32(&ils_regs->bits_per_coverter_wrd_np);
+	sum += (val >> NP_SHIFT) & NP_MASK;
+	sum += (val >> SUBCLASS_SHIFT) & SUBCLASS_MASK;
+
+	val = ioread32(&ils_regs->samples_per_coverter_per_fs_s);
+	sum += (val >> VERSION_SHIFT) & VERSION_MASK;
+	sum += (val >> S_SHIFT) & S_MASK;
+
+	/*update lid and csum for lane 0*/
+	val = ioread32(&ils_regs->lid);
+	val &= LID_MASK;
+	csum = (sum + val) & CSUM_MASK;
+
+	dev_dbg(tdev->dev, "%s: Lane0 csum 0x%x\n", tdev->name, csum);
+	iowrite32(csum, lane0_csum_reg);
+
+	if (tdev->type == JESD_DEV_TX && tdev->active_lanes == 2) {
+		val = ioread32(&tdev->tx_regs->tx_lid_1);
+		csum = (sum + val) & CSUM_MASK;
+		dev_dbg(tdev->dev, "%s: Lane0 csum 0x%x\n", tdev->name, csum);
+		iowrite32(csum, &tdev->tx_regs->tx_csum_1);
+	}
+
+	return rc;
+}
 static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0, i;
@@ -391,13 +454,18 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 	mask = M_EN_MASK;
 	jesd_update_reg(reg, enable_mask, mask);
 
+	jesd_update_ils_csum(tdev);
+
 	/* XXX: setting up sync pipiline to 6 according to validation script
 	 * need to come up with right way to do it
 	 */
+
 	reg = &tdev->tx_regs->tx_transcontrol;
 	val = 6 << SYNC_PIPELINE_SHIFT;
 	mask = SYNC_PIPELINE_MASK << SYNC_PIPELINE_SHIFT;
 	jesd_update_reg(reg, val, mask);
+
+	iowrite32(0x1f, &tdev->tx_regs->tx_sync_fil_char);
 
 	if (tdev->dev_flags & DEV_FLG_PHYGASKET_LOOPBACK_EN) {
 		reg = &tdev->tx_regs->tx_transcontrol;
@@ -413,19 +481,13 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 		tbgen_set_sync_loopback(tdev->timer_handle, 0);
 	}
 
-	/*enable SYNC recievied IRQ*/
-	reg = &tdev->tx_regs->tx_irq_enable;
-	val = IRQ_SYNC_RECIEVED;
-	mask = val;
-	jesd_update_reg(reg, val, mask);
-
 	return rc;
 }
 
 int jesd_setup_rx_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0, i;
-	u32 *reg, val, mask, enable_mask = 0;
+	u32 *reg, mask, enable_mask = 0, val;
 
 	for (i = 0; i < tdev->active_lanes; i++)
 		enable_mask |= 1 << i;
@@ -434,12 +496,25 @@ int jesd_setup_rx_transport(struct jesd_transport_dev *tdev)
 	mask = LANE_EN_MASK;
 	jesd_update_reg(reg, enable_mask, mask);
 
+	jesd_update_ils_csum(tdev);
 	/* XXX: setting up sync pipiline to 3 according to validation script
 	 * need to come up with right way to do it
 	 */
 	reg = &tdev->rx_regs->rx_transcontrol;
 	val = 3 << SYNC_PIPELINE_SHIFT;
 	mask = SYNC_PIPELINE_MASK << SYNC_PIPELINE_SHIFT;
+	jesd_update_reg(reg, val, mask);
+
+	if (tdev->active_lanes == 2)
+		iowrite32(2, &tdev->rx_regs->rx_ctrl_1);
+	else
+		iowrite32(4, &tdev->rx_regs->rx_ctrl_1);
+
+	iowrite32(0, &tdev->rx_regs->rx_lane_dskew);
+
+	reg = &tdev->rx_regs->rx_transcontrol;
+	val = ~SW_DMA_ENABLE;
+	mask = SW_DMA_ENABLE;
 	jesd_update_reg(reg, val, mask);
 
 	return rc;
@@ -457,6 +532,276 @@ static int jesd_setup_transport(struct jesd_transport_dev *tdev)
 	return rc;
 }
 
+/* XXX: initializing SERDES here only for bringup, need to move it to
+ * serdes driver
+ */
+#define SERDES1_BASE	0x01084000
+#define SERDES_SIZE	0x4000
+
+#ifdef USE_PLL2
+#define PLL_RSTCTL	0x020
+#define PLL_CR0		0x024
+#define PLL_CR1		0x028
+#define PLL_CR4		0x034
+#else
+#define PLL_RSTCTL	0x000
+#define PLL_CR0		0x004
+#define PLL_CR1		0x008
+#define PLL_CR4		0x014
+#endif
+
+#define PCCR5		0x0f4
+#define LN_CGCR0	0x800
+#define LN_CGCR1	0x804
+#define LN_RECR0	0x810
+#define LN_RECR1	0x814
+#define LN_TECR0	0x818
+#define LN_TTLCR0	0x820
+#define LN_TTLCR1	0x824
+#define LN_TCSR3	0x83c
+
+/* RSTCTL */
+#define SDEN		(1 << 5)
+#define SDRST_B		(1 << 6)
+#define PLLRST_B	(1 << 7)
+#define RSTDONE		(1 << 30)
+#define RSTREQ		(1 << 31)
+
+/* CR0 */
+#define REFCLK_SEL_MASK		0x7
+#define REFCLK_SEL_SHIFT	28
+#define REFCLK_100		0x0
+#define REFCLK_122_88		0x1
+#define REFCLK_153_6		0x2
+#define FRATE_MASK		0xf
+#define FRATE_SHIFT		16
+#define FRATE_5_0_GHZ		0x0
+#define FRATE_4_9152_GHZ	0x3
+#define FRAME_3_072_GHZ		0xc
+
+#define REFCLK_EN		(1 << 27)
+#define PLL_LOCKED		(1 << 23)
+
+/* PCCR5 */
+#define LANE_CFG_MASK		0xf
+#define LANE_SINGLE_CHANNEL	0x1
+#define LANE0_CFG_SHIFT		28
+
+/* LN_GCR0 */
+#define TRST_B			(1 << 21)
+#define RRST_B			(1 << 22)
+#define IF20BIT_EN		(1 << 18)
+#define FIRST_LANE		(1 << 16)
+#define TPLL_LES		(1 << 27)
+#define RPLL_LES		(1 << 31)
+
+#define PROTS_SHIFT		0x7
+#define PROTS_MASK		0x1f
+#define PROT_JESD204		0xc
+
+#define RRAT_SEL_SHIFT		28
+#define TRAT_SEL_SHIFT		24
+#define RAT_SEL_MASK		0x3
+#define RRAT_QUATER		0x2
+#define LOOPBACK_EN		0x01
+#define LOOPBACK_EN_SHIFT	28
+
+#define SERDES_PLL_TIMEOUT_MS	100
+
+static void serdes_disable_lanes(u32 base_reg)
+{
+	u32 *reg, val, mask;
+
+	reg = (u32 *) (base_reg + PLL_RSTCTL);
+	/* Disable all lanes */
+	val = ~SDRST_B;
+	mask = SDRST_B;
+	jesd_update_reg(reg, val, mask);
+	udelay(1);
+
+	val = SDEN;
+	mask = SDEN;
+	jesd_update_reg(reg, val, mask);
+	udelay(1);
+}
+
+static void serdes_enable_lanes(u32 base_reg)
+{
+	u32 *reg, val, mask;
+
+	reg = (u32 *) (base_reg + PLL_RSTCTL);
+	/* enable all lanes */
+	val = SDRST_B | SDEN | PLLRST_B;
+	mask = SDRST_B | SDEN | PLLRST_B;
+	jesd_update_reg(reg, val, mask);
+}
+
+static int init_serdes_pll(struct jesd_transport_dev *tdev,
+	u32 base_reg)
+{
+	u32 *reg, val = 0, mask = 0;
+	int rc = 0;
+	unsigned long timeout;
+
+
+	serdes_disable_lanes(base_reg);
+	/* program pll*/
+	reg = (u32 *) (base_reg + PLL_CR0);
+	val |= REFCLK_122_88 << REFCLK_SEL_SHIFT;
+	mask |= REFCLK_SEL_MASK << REFCLK_SEL_SHIFT;
+
+	val |= FRATE_4_9152_GHZ << FRATE_SHIFT;
+	mask = FRATE_MASK << FRATE_SHIFT;
+
+	val |= REFCLK_EN;
+	mask |= REFCLK_EN;
+
+	jesd_update_reg(reg, val, mask);
+
+	timeout = jiffies + msecs_to_jiffies(SERDES_PLL_TIMEOUT_MS);
+
+	reg = (u32 *) (base_reg + PLL_RSTCTL);
+	val = RSTREQ;
+	mask = RSTREQ;
+	jesd_update_reg(reg, val, mask);
+
+	val = ioread32(reg);
+	while (!(val & RSTDONE)) {
+		if (jiffies > timeout) {
+			dev_err(tdev->dev, "%s: SERDES PLL reset failed [%x]\n",
+				tdev->name, val);
+			rc = -EBUSY;
+			goto out;
+		}
+		val = ioread32(reg);
+	}
+	dev_info(tdev->dev, "%s: SERDES PLL reset done, rctctl %x\n",
+		tdev->name, val);
+
+	reg = (u32 *) (base_reg + PLL_CR0);
+	val = ioread32(reg);
+	while (!(val & PLL_LOCKED)) {
+		if (jiffies > timeout) {
+			dev_err(tdev->dev, "%s: SERDES PLL lock failed [%x]\n",
+				tdev->name, val);
+			rc = -EBUSY;
+			goto out;
+		}
+		val = ioread32(reg);
+	}
+	dev_info(tdev->dev, "%s: SERDES PLL reset locked, cr0 %x\n",
+		tdev->name, val);
+
+	serdes_enable_lanes(base_reg);
+out:
+	return rc;
+}
+
+static int init_serdes_lane(struct jesd_transport_dev *tdev,
+	u32 base_reg)
+{
+	u32 *reg, val, mask;
+	int rc = 0;
+
+	reg = (u32 *) (base_reg + PCCR5);
+	val = LANE_SINGLE_CHANNEL << LANE0_CFG_SHIFT;
+	mask = LANE_CFG_MASK << LANE0_CFG_SHIFT;
+	iowrite32(val, reg);
+	/*Reset and disable lane */
+	reg = (u32 *) (base_reg + LN_CGCR0);
+	val = ~(TRST_B | RRST_B);
+	mask = TRST_B | RRST_B;
+	jesd_update_reg(reg, val, mask);
+	udelay(1);
+
+	/*configure lane*/
+	reg = (u32 *) (base_reg + LN_CGCR0);
+	val = 0;
+	val |= RRAT_QUATER << RRAT_SEL_SHIFT;
+	val |= RRAT_QUATER << TRAT_SEL_SHIFT;
+	val |= TPLL_LES;
+	val |= RPLL_LES;
+
+	val |= IF20BIT_EN;
+	val |= (PROT_JESD204 & PROTS_MASK) << PROTS_SHIFT;
+	val |= FIRST_LANE;
+	iowrite32(val, reg);
+
+	udelay(1);
+
+	/*Enable lane */
+	reg = (u32 *) (base_reg + LN_CGCR0);
+	val = (TRST_B | RRST_B);
+	mask = TRST_B | RRST_B;
+	jesd_update_reg(reg, val, mask);
+	udelay(10);
+
+	return rc;
+}
+
+#define GCR_BASE	0x012c0000
+#define GCR_SIZE	0x4000
+#define GCR72		0x13c
+#define GCR22		0x058
+#define GCR41		0x0c0
+
+#define GCR22_DMA_REQ_MASK	0x7
+#define JESDTX1_DMA_REQ_EN	0x1
+#define JESDTX1_DMA_REQ_SHIFT	6
+
+static int jesd_init_serdes(struct jesd_transport_dev *tdev)
+{
+	int rc = 0;
+	u32 base_reg = 0, val, *reg, mask;
+
+	/*XXX: init PLL only once. Need to have proper way to handle it */
+	if (tdev->type != JESD_DEV_TX)
+		goto out;
+
+	/* GCR72 -> 0x00140000 */
+	base_reg = (u32) ioremap_nocache(GCR_BASE, GCR_SIZE);
+	reg = (u32 *) (base_reg + GCR72);
+	val = 0x00140000;
+	iowrite32(val, reg);
+
+	/* JESD TX1 -> VSPA 3 DMA 8*/
+	reg = (u32 *) (base_reg + GCR22);
+	val = JESDTX1_DMA_REQ_EN << JESDTX1_DMA_REQ_SHIFT;
+	mask = GCR22_DMA_REQ_MASK << JESDTX1_DMA_REQ_SHIFT;
+	jesd_update_reg(reg, val, mask);
+	dev_info(tdev->dev, "%s: GCR22 %x\n", tdev->name, ioread32(reg));
+
+	/* JESD RX1 -> VSPA 3 DMA 8*/
+	reg = (u32 *) (base_reg + GCR41);
+	iowrite32(0x01, reg);
+	dev_info(tdev->dev, "%s: GCR41 %x\n", tdev->name, ioread32(reg));
+
+	base_reg = (u32) ioremap_nocache(SERDES1_BASE, SERDES_SIZE);
+	if (!base_reg) {
+		dev_err(tdev->dev, "%s: Failed serdes ioremap\n", tdev->name);
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	dev_info(tdev->dev, "serdes base %x, size %x, virt %x\n",
+		SERDES1_BASE, SERDES_SIZE, base_reg);
+	rc = init_serdes_pll(tdev, base_reg);
+	if (rc) {
+		dev_err(tdev->dev, "%s: serdes pll init failed\n", tdev->name);
+		goto out;
+	}
+
+	rc = init_serdes_lane(tdev, base_reg);
+	if (rc) {
+		dev_err(tdev->dev, "%s: serdes lane init failed\n", tdev->name);
+		goto out;
+	}
+out:
+	if (!base_reg)
+		iounmap((void *) base_reg);
+	return rc;
+}
+
 int jesd_start_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
@@ -467,6 +812,14 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 			__func__, tdev->old_state);
 		goto out;
 	}
+
+	rc = jesd_init_serdes(tdev);
+	if (rc) {
+		dev_err(tdev->dev, "Failed to configure SEDRDES, err %d\n",
+			rc);
+		goto out;
+	}
+
 	rc = jesd_config_phygasket(tdev);
 	if (rc) {
 		dev_err(tdev->dev, "Failed to configure phy-gasket, err %d\n",
@@ -528,7 +881,7 @@ static int jesd_set_ilas_len(struct jesd_transport_dev *tdev, int ilas_len)
 
 	dev_dbg(tdev->dev, "%s: ILAS lenght %d\n", tdev->name, ilas_len);
 
-	val = (ilas_len / 4) - 1;
+	val = (ilas_len / 4);
 
 	if (val & ~MAX_ILAS_LEN_MASK) {
 		dev_err(tdev->dev, "%s: Invalid ILAS lenght %d\n", tdev->name,
@@ -1075,7 +1428,7 @@ static int jesd_set_ils_pram(struct jesd_transport_dev *tdev)
 		mask = CF_MASK << CF_SHIFT;
 		jesd_update_reg(reg, val, mask);
 
-	} else if (tdev->type == JESD_DEV_TX) {
+	} else {
 			/*config NP*/
 		reg = &tdev->rx_regs->rx_nbcw;
 		val = ((tdev->ils.bits_per_converter - 1) & NP_MASK)
@@ -1223,7 +1576,7 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 			rc = 0;
 		break;
 	default:
-		dev_info(tdev->dev, "Invalid state transition %d -> %d\n",
+		dev_dbg(tdev->dev, "Invalid state transition %d -> %d\n",
 			old_state, new_state);
 		goto out;
 	}
@@ -1487,6 +1840,43 @@ int jesd204_release(struct inode *inode, struct file *pfile)
 	return 0;
 }
 
+static u32 jesd_get_dframer_state(struct jesd_transport_dev *tdev)
+{
+	struct config_registers_rx *rx_regs = tdev->rx_regs;
+	u32 val, status_bitmap = 0, done_flag, state = FRAME_STATE_RESERVED;
+
+	done_flag = DFRMR_STATUS_FLG_SET;
+	if (tdev->active_lanes == 2)
+		done_flag |= DFRMR_STATUS_FLG_SET << 1;
+
+	val = ioread32(&rx_regs->rx_cgs);
+	val &= DFRMR_STATUS_MASK;
+	if (val == done_flag)
+		status_bitmap |= LINK_STATUS_CODE_GRP_SYNC_DONE;
+
+	val = ioread32(&rx_regs->rx_fsf);
+	val &= DFRMR_STATUS_MASK;
+	if (val == done_flag)
+		status_bitmap |= LINK_STATUS_FRM_SYNC_DONE;
+
+	val = ioread32(&rx_regs->rx_g_csum);
+	val &= DFRMR_STATUS_MASK;
+	if (val == done_flag)
+		status_bitmap |= LINK_STATUS_CSUM_DONE;
+
+	val = ioread32(&rx_regs->rx_ilsf);
+	val &= DFRMR_STATUS_MASK;
+	if (val == done_flag)
+		status_bitmap |= LINK_STATUS_ILAS_DONE;
+
+	if (status_bitmap == LINK_STATUS_CODE_FRP_SYNC_MASK)
+		state = FRAMER_STATE_CODE_GRP_SYNC;
+
+	if (status_bitmap == LINK_STATUS_USER_DATA_MASK)
+		state = FRAMER_STATE_USER_DATA;
+
+	return state;
+}
 
 static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 {
@@ -1503,13 +1893,21 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 
 	iowrite32(DIAG_FRAMER_STATE_SEL, diag_sel_reg);
 
-	val1 = ioread32(diag_data_reg);
-	val2 = ioread32(diag_data_reg);
+	val1 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
+	val2 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
+
+	/* Diagnostic registers in JESD Rx are not consistent in D4400, thus
+	 * check status flag to determine if link is ready
+	 */
+	if (tdev->type != JESD_DEV_TX)
+		val1 = val2 = jesd_get_dframer_state(tdev);
+
+
 	/* RM recommends to use value only when two consecutive reads
 	 * return same value
 	 */
 	 if (val1 != val2) {
-		dev_dbg(tdev->dev, "%s:diag_data not consistent (%x, %x)\n",
+		dev_info(tdev->dev, "%s:diag_data not consistent (%x, %x)\n",
 			tdev->name, val1, val2);
 		goto out;
 	}
@@ -1534,7 +1932,7 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 
 out:
 	if (requeue) {
-		if (tdev->sync_timeout_ms < jiffies) {
+		if (tdev->sync_expire > jiffies) {
 			schedule_work(&tdev->link_monitor);
 		} else {
 			dev_err(tdev->dev, "%s: Failed to syncronize\n",
@@ -1577,7 +1975,7 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 	mask = SYSREF_MASK;
 	jesd_update_reg(ctrl_reg, val, mask);
 
-	val = IRQ_SYSREF_ROSE;
+	val = ~IRQ_SYSREF_ROSE;
 	mask = IRQ_SYSREF_ROSE;
 	jesd_update_reg(irq_en_reg, val, mask);
 
@@ -1594,11 +1992,8 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 		jesd_update_reg(reg, val, mask);
 	}
 
-	/*Enable TX alignment Timer for Tx or Raise SYNC for RX*/
 	if (tdev->type == JESD_DEV_TX)
 		tbgen_timer_enable(tdev->txalign_timer_handle);
-	else
-		jesd_force_sync(tdev);
 
 	tdev->sync_expire = jiffies + msecs_to_jiffies(tdev->sync_timeout_ms);
 	schedule_work(&tdev->link_monitor);
@@ -1608,19 +2003,21 @@ static void jesd_tx_tasklet(unsigned long data)
 {
 	struct jesd_transport_dev *tdev = (struct jesd_transport_dev *)data;
 	struct config_registers_tx *tx_regs = tdev->tx_regs;
-	u32 irq_status, *reg, val, mask;
+	u32 irq_status, *reg, val;
 
 	irq_status = ioread32(&tx_regs->tx_irq_status);
 	iowrite32(irq_status, &tx_regs->tx_irq_status);
 
-	if (irq_status & IRQ_SYSREF_ROSE)
+	if (irq_status & IRQ_SYSREF_ROSE) {
 		jesd_handle_sysref_rose(tdev);
+		/* Disable further SYSREF ROSE */
+		irq_status &= ~IRQ_SYSREF_ROSE;
+	}
 
 	/*Enable interrupts we serviced*/
-	val = irq_status;
-	mask = irq_status;
+	val = (irq_status & TX_IRQS_EN_MASK);
 	reg = &tx_regs->tx_irq_enable;
-	jesd_update_reg(reg, val, mask);
+	iowrite32(val, reg);
 }
 
 static irqreturn_t jesd_tx_isr(int irq, void *param)
@@ -1649,19 +2046,43 @@ static void jesd_rx_tasklet(unsigned long data)
 {
 	struct jesd_transport_dev *tdev = (struct jesd_transport_dev *)data;
 	struct config_registers_rx *rx_regs = tdev->rx_regs;
-	u32 irq_status, *reg, val, mask;
+	u32 irq_status, *reg, val;
 
 	irq_status = ioread32(&rx_regs->rx_irq_status);
 	iowrite32(irq_status, &rx_regs->rx_irq_status);
 
-	if (irq_status & IRQ_SYSREF_ROSE)
+	if (irq_status & IRQ_SYSREF_ROSE) {
 		jesd_handle_sysref_rose(tdev);
+		/* Disable further SYSREF ROSE */
+		irq_status &= ~IRQ_SYSREF_ROSE;
+	}
 
 	/*Enable interrupts we serviced*/
-	val = irq_status;
-	mask = irq_status;
 	reg = &rx_regs->rx_irq_enable;
-	jesd_update_reg(reg, val, mask);
+	val = (irq_status & RX_IRQS_EN_MASK);
+	iowrite32(val, reg);
+}
+
+void jesd_deframer_isr(struct jesd_transport_dev *tdev)
+{
+	struct config_registers_rx *rx_regs = tdev->rx_regs;
+	u32 irq_status;
+
+	irq_status = ioread32(&rx_regs->rx_irq_ve_msk);
+	dev_info(tdev->dev, "%s: deframer irq %x\n", tdev->name, irq_status);
+
+	if (irq_status & DFRMR_IRQ_FS) {
+		dev_info(tdev->dev, "%s: Frame sync %x\n", tdev->name,
+			ioread32(&rx_regs->rx_fsf));
+		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_fsf);
+	}
+
+	if (irq_status & DFRMR_IRQ_ILS) {
+		dev_info(tdev->dev, "%s: skew error %x\n", tdev->name,
+			ioread32(&rx_regs->rx_skew_err));
+		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_skew_err);
+	}
+
 }
 
 static irqreturn_t jesd_rx_isr(int irq, void *param)
@@ -1675,6 +2096,9 @@ static irqreturn_t jesd_rx_isr(int irq, void *param)
 		dev_info(tdev->dev, "%s: Spurious IRQ\n", tdev->name);
 		return IRQ_NONE;
 	}
+
+	if (irq_status & IRQ_DEFRAMER_IRQ)
+		jesd_deframer_isr(tdev);
 
 	/*Mask off IRQs that we got*/
 	val = ~irq_status;
@@ -1957,6 +2381,7 @@ static int __init jesd204_of_probe(struct platform_device *pdev)
 		tdev->state = JESD_STATE_STANDBY;
 		jdev->transports[i] = tdev;
 		dev_info(jdev->dev, "%s JESD device created\n", tdev->name);
+		enable_transport(tdev);
 		jesd_minor++;
 		i++;
 	}
@@ -1969,7 +2394,6 @@ static int __init jesd204_of_probe(struct platform_device *pdev)
 	list_add_tail(&jdev->jesd_dev_list, &pri->list);
 	dev_set_drvdata(&pdev->dev, jdev);
 
-	enable_transport(tdev);
 	return rc;
 
 out:
@@ -1999,7 +2423,7 @@ static int __exit jesd204_of_remove(struct platform_device *pdev)
 		cdev_del(&jdev->transports[id]->c_dev);
 		if (jdev->trans_type == JESD_DEV_TX)
 			regs = (u32 *) jdev->transports[id]->tx_regs;
-		else if (jdev->trans_type == JESD_DEV_RX)
+		else
 			regs = (u32 *) jdev->transports[id]->rx_regs;
 		iounmap(regs);
 		cancel_work_sync(&jdev->transports[id]->link_monitor);
