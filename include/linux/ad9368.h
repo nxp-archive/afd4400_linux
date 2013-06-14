@@ -48,6 +48,7 @@
 #define DEVICE_ID_AD9525  1
 #define DEVICE_ID_AD93682 2
 #define PRODUCT_CODE_AD93681_REG 0x04
+#define PRODUCT_CODE_AD93682_REG 0x04
 #define PRODUCT_CODE_AD9525_REG 0x04
 #define PRODUCT_ID_MASK 0x08
 #define PRODUCT_ID_9368 0x08
@@ -101,6 +102,28 @@
 #define ENSM_STATE_INVALID		0xff
 
 #define MAX_RFICS 20
+#define MAX_PHY_DEVS_PER_CARD	3
+
+#define MEDUSA_DEV_ID           0
+#define DFE_DEV_ID              1
+
+extern struct rf_phy_dev *get_attached_phy_dev(struct device_node *rf_dev_node);
+extern struct roc_dev *get_attached_roc_dev(struct device_node **dev_node);
+extern int ad9368_read(struct rf_phy_dev *phy_dev, u32 start, u32 count,
+		u32 *buff);
+extern int ad9368_write(struct rf_phy_dev *phy_dev, u32 reg,
+		 u32 data, u8 probe);
+extern int ad9368_run_cmds(struct rf_phy_dev *phy_dev,
+		struct rf_phy_cmd *cmds,
+		int count);
+extern int rfdev_message(struct rf_phy_dev *rf_dev,
+	struct spi_ioc_transfer *u_xfers, unsigned n_xfers);
+
+extern int ad_init(struct rf_phy_dev *phy, struct rf_init_params *params);
+extern int ad9368_start(struct rf_phy_dev *phy_dev);
+extern int check_cal_done(struct rf_phy_dev *phy_dev, u32 reg, u32 mask,
+		u32 bitval);
+
 struct rf_device_id {
 	char name[RF_NAME_SIZE];
 	int device_id;
@@ -115,11 +138,12 @@ enum band_config_mode {
 struct ad_dev_info {
 	struct spi_device *ad_spi;
 	u8	rx_buf[13];
+	int	device_id;
 	u8 prev_ensm_state;
-	int device_id;
 	int ensm_pin_ctl_en;
 	unsigned int freq_band;
 	spinlock_t	spi_lock;
+	struct	list_head list;
 	int reset_gpio;
 	int pa_en_gpio;
 	int lna_en_gpio;
@@ -129,38 +153,52 @@ struct ad_dev_info {
 struct rf_phy_dev {
 	char	name[RF_NAME_SIZE];
 	struct device *dev;
+	struct device_node	*rf_dev_node;
 	u32	phy_id;
-	struct	rf_phy_ops *ops;
+	struct roc_dev	*roc_dev;
 	struct	list_head list;
-	struct cdev cdev;
-	dev_t dev_t;
-	atomic_t ref;
 	void	*priv;
 };
 
+struct roc_dev {
+	struct device		*dev;
+	struct list_head	list;
+	int			device_id;
+	u8			device_flag;
+	struct	rf_phy_ops	*ops;
+	unsigned int		phy_devs;
+	struct rf_phy_dev	*phy_dev[3];
+	struct device_node	*rf_dev_node[3];
+	dev_t			dev_t;
+	struct cdev		cdev;
+	int			*cs_gpios;
+	unsigned int		irq_gen1;
+	atomic_t		ref;
+};
+
 struct rf_phy_ops {
-	int	(*init)(struct rf_phy_dev *phy,
+	int	(*init)(struct roc_dev *phy,
 				struct rf_init_params *params);
 
-	int	(*run_cmds)(struct rf_phy_dev *phy,
+	int	(*run_cmds)(struct roc_dev *phy,
 				struct rf_phy_cmd *cmds, int count);
 
-	int	(*read_regs)(struct rf_phy_dev *phy, u32 start,
+	int	(*read_regs)(struct roc_dev *phy, u32 start,
 				u32 count, u32 *buff);
 
-	int	(*write_reg)(struct rf_phy_dev *phy, u32 reg,
+	int	(*write_reg)(struct roc_dev *phy, u32 reg,
 			 u32 data, u8 probe);
-	int	(*set_tx_atten)(struct rf_phy_dev *phy, u32 reg, u32 data);
-	int	(*en_dis_tx)(struct rf_phy_dev *phy, u32 tx_if, u32 cmd);
-	int	(*get_rx_gain)(struct rf_phy_dev *phy,
+	int	(*set_tx_atten)(struct roc_dev *phy, u32 reg, u32 data);
+	int	(*en_dis_tx)(struct roc_dev *phy, u32 tx_if, u32 cmd);
+	int	(*get_rx_gain)(struct roc_dev *phy,
 			struct rf_rx_gain *rx_gain);
-	int	(*set_rx_gain)(struct rf_phy_dev *phy,
+	int	(*set_rx_gain)(struct roc_dev *phy,
 			struct rf_rx_gain *rx_gain);
-	int	(*start)(struct rf_phy_dev *phy);
-	int	(*stop)(struct rf_phy_dev *phy);
-	int	(*set_gain_ctrl_mode)(struct rf_phy_dev *phy,
+	int	(*start)(struct roc_dev *phy);
+	int	(*stop)(struct roc_dev *phy);
+	int	(*set_gain_ctrl_mode)(struct roc_dev *phy,
 			struct rf_gain_ctrl *gain_ctrl);
-	int	(*spi_ioc_transfer)(struct rf_phy_dev *phy,
+	int	(*spi_ioc_transfer)(struct roc_dev *phy,
 			struct spi_ioc_transfer *u_xfers, unsigned n_xfers);
 };
 

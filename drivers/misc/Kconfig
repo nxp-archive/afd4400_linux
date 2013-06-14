@@ -556,6 +556,13 @@ config AD9368
 	 Support for AD9368-1 (RF reciever) AD9368-2 (RF tranceiver) RFICs
 	 from Analog devices.
 
+config ROC
+	tristate "ROC driver"
+	depends on SPI
+	help
+	Support for AD9368-1 (RF reciever) AD9368-2 (RF tranceiver),
+	 AD9525 (Clock Gen) RFICs from Analog devices.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
