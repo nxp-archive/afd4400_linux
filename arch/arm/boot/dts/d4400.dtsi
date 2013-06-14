@@ -944,7 +944,13 @@
 				reg = <0x00094000 0x8000>;
 				interrupts = <0 176 0x4>;
 			};
-
+			gpc@0x98000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "fsl,d4400-gpc";
+				reg = <0x00098000 0x4000>;
+				interrupts = <0 180 0x4>;
+			};
 		};
 
                 weim-bus@30000000 {

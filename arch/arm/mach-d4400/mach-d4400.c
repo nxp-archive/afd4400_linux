@@ -96,6 +96,7 @@ static void __init d4400_init_late(void)
 /*
  *FIXME - Add power management register function here
  */
+	d4400_gpc_init();
 }
 
 static void __init d4400_map_io(void)

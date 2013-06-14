@@ -4,6 +4,8 @@
 #include <linux/spinlock.h>
 #include <linux/clk-provider.h>
 
+#define CCM_VPGCSR_OFFSET 0x9C
+
 extern spinlock_t d4400_ccm_lock;
 
 enum d4400_pll_type {
@@ -21,5 +23,9 @@ struct clk *d4400_clk_gate(struct device *dev, const char *name,
 	                const char *parent_name, unsigned long flags,
 	                void __iomem *reg, u8 bit_idx,
 		        u8 clk_gate_flags, spinlock_t *lock);
+
+extern int d4400_ccm_vspa_full_pow_gate(u8 vspa_id);
+extern int d4400_ccm_vspa_full_pow_up(u8 vspa_id);
+
 #endif
 

@@ -18,12 +18,16 @@ menu "Freescale D4400 support"
 
 comment "Device tree only"
 
+config HAVE_D4400_GPC
+	bool
+
 config SOC_D4400
 	bool "D4400 support"
 	select ARM_GIC
 	select COMMON_CLK
 	select PINCTRL
 	select PINCTRL_D4400
+	select HAVE_D4400_GPC
 	help
 	  This enables support for Freescale D4400 processor.
 

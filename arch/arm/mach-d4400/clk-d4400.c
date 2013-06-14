@@ -19,12 +19,12 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/spinlock.h>
+#include <linux/mutex.h>
 
 #include "clk.h"
 #include "common.h"
 
 DEFINE_SPINLOCK(d4400_ccm_lock);
-
 static void __iomem *ccm_base;
 
 void __init d4400_clock_map_io(void) { }
@@ -73,6 +73,38 @@ static const char *sync_ref_sels[] = {"sync_ref_src_1", "sync_ref_src_2"};
 
 static struct clk *clk[clk_max];
 static struct clk_onecell_data clk_data;
+
+int d4400_ccm_vspa_full_pow_gate(u8 vspa_id)
+{
+	u32 val;
+	unsigned long timeout = jiffies + msecs_to_jiffies(10);
+
+	val = readl(ccm_base + CCM_VPGCSR_OFFSET);
+	val |= BITS_MASK(1, (vspa_id - 1));
+	writel(val, ccm_base + CCM_VPGCSR_OFFSET);
+
+	while (!(readl(ccm_base + CCM_VPGCSR_OFFSET)
+		& BITS_MASK(1, (vspa_id + 0x10 - 1))))
+		if (time_after(jiffies, timeout))
+			return -ETIMEDOUT;
+	return 0;
+}
+
+int d4400_ccm_vspa_full_pow_up(u8 vspa_id)
+{
+	u32 val;
+	unsigned long timeout = jiffies + msecs_to_jiffies(10);
+
+	val = readl(ccm_base + CCM_VPGCSR_OFFSET);
+	val &= ~BITS_MASK(1, (vspa_id - 1));
+	writel(val, ccm_base + CCM_VPGCSR_OFFSET);
+
+	while (readl(ccm_base + CCM_VPGCSR_OFFSET)
+		& BITS_MASK(1, (vspa_id + 0x10 - 1)))
+		if (time_after(jiffies, timeout))
+			return -ETIMEDOUT;
+	return 0;
+}
 
 int __init d4400_clocks_init(void)
 {

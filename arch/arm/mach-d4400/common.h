@@ -9,6 +9,8 @@
 #ifndef __ASM_ARCH_D4400_COMMON_H__
 #define __ASM_ARCH_D4400_COMMON_H__
 
+#define BITS_MASK(len, offset)  (len << offset)
+
 struct platform_device;
 struct clk;
 
@@ -36,6 +38,11 @@ extern void d4400_pm_init(void);
 #else
 static inline void d4400_pm_init(void) {}
 #endif
+
+extern int d4400_ccm_vspa_full_pow_up(u8 vspa_id);
+extern int d4400_ccm_vspa_full_pow_gate(u8 vspa_id);
+
+extern void d4400_gpc_init(void);
 
 #endif
 
