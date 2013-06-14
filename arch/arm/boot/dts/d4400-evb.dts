@@ -21,12 +21,48 @@
         };
 
         soc@0 {
+			roc1 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "adi,roc-card";
+				interrupt-parent = <&gpioA>;
+				interrupts = <16 0x04>;
+				cs-gpios = <&gpioC 18 0>,
+					<&gpioC 19 0>;
+				9368-1-handle = <&adrx>;
+				9368-2-handle = <&adtx>;
+				9525-handle = <&clkgen>;
+			};
                 aips-bus@1000000 { /* AIPS1 */
                         uart4: serial@f8000 {
                                 pinctrl-names = "default";
                                 pinctrl-0 = <&pinctrl_uart4_1>;
                                 status = "okay";
                         };
+			ecspi@A4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi1_1>;
+				fsl,spi-num-chipselects = <3>;
+
+				adrx: ad9368-1@2 {
+					compatible = "adi,ad9368-1";
+					spi-max-frequency = <500000>;
+					reg = <0>;
+				};
+				adtx: ad9368-2@2 {
+					compatible = "adi,ad9368-2";
+					spi-max-frequency = <500000>;
+					reg = <2>;
+				};
+				clkgen: ad9525@5 {
+					compatible = "adi,ad9525";
+					spi-max-frequency = <500000>;
+					reg = <1>;
+				};
+			};
                 };
                 weim-bus@30000000 {
                         nor_flash@0 {
