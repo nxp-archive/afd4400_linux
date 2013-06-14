@@ -32,6 +32,7 @@
 void linkrate_autoneg_reset(struct cpri_framer *framer)
 {
 	u32 *gcr_regs;
+	u32 *serdes_regs;
 	u32 value;
 
 	/*XXX: This code is temporary, GCR driver will export function for
@@ -39,20 +40,49 @@ void linkrate_autoneg_reset(struct cpri_framer *framer)
 	 */
 	/* temporary code added to check with GCR0 register values
 	 */
-#define MEDUSA_BASE	0x0C000000
-#define GCR_REG_SIZE	0x1000
-#define GCR0		0x000B8000
-#define CPRI1		1
-#define CPRI2		2
-#define AUTONEG_RESET_VAL 0x1a
-	gcr_regs = ioremap_nocache((MEDUSA_BASE + GCR0), GCR_REG_SIZE);
+#define SERDES3_BASE 	0x04088000
+#define LOOP_BACK_REG	0x040888BC
+#define LOOP_BACK_VAL 	0x10000000
+#define SERDES_REG_SIZE 0x8
+#define SERDES_PLL_REG	0x0
+#define SERDES_PLL_VAL	0x80000000
+	serdes_regs = ioremap_nocache(LOOP_BACK_REG, SERDES_REG_SIZE);
+	value = readl(serdes_regs);
+	value |= LOOP_BACK_VAL;
+	writel(value, serdes_regs);
+	value = readl(serdes_regs);
+	schedule_timeout_interruptible(msecs_to_jiffies(100));
+	iounmap(serdes_regs);
+
+
+	serdes_regs = ioremap_nocache(SERDES3_BASE, SERDES_REG_SIZE);
+	value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
+	value |= (SERDES_PLL_VAL | 0x30000);
+	value &= 0xfffff0ff;
+	value |= 0x500;
+	writel(value, (u32 *)(serdes_regs + SERDES_PLL_REG));
+	schedule_timeout_interruptible(msecs_to_jiffies(500));
+	value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
+	iounmap(serdes_regs);
+	mdelay(10);
+
+#define GCR_BASE4	0x012C0010
+#define GCR_REG_SIZE	0x10
+#define LINK_RATE_VAL 		0x20
+#define AUTONEG_RESET_VAL 0x21
+	gcr_regs = ioremap_nocache(GCR_BASE4, GCR_REG_SIZE);
 	value = readl(gcr_regs);
-	value |= AUTONEG_RESET_VAL;
+	value = LINK_RATE_VAL;
 	writel(value, gcr_regs);
+	schedule_timeout_interruptible(msecs_to_jiffies(100));
+
+	value = AUTONEG_RESET_VAL;
+	writel(value, gcr_regs);
+	schedule_timeout_interruptible(msecs_to_jiffies(100));
 	value = readl(gcr_regs);
 	iounmap(gcr_regs);
+	mdelay(10);
 	/* end here */
-
 }
 
 static void set_delay_config(struct cpri_framer *framer)

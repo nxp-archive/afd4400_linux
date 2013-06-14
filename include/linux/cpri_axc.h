@@ -30,8 +30,8 @@
 #define AXC_K1_MASK				0x003f0000
 #define AXC_K0_MASK				0x0000003f
 #define AXC_MODE_MASK				0x00000003
-#define AXC_TBL_WRITE_MASK			0x800
-#define AXC_TBL_SEG_ADDR_MASK			0x7ff
+#define AXC_TBL_WRITE_MASK			0x1000
+#define AXC_TBL_SEG_ADDR_MASK			0xfff
 #define AXC_ENABLE_MASK				0x1
 
 #define SET_CMD					0x1

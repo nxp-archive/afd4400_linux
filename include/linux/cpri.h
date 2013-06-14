@@ -22,6 +22,7 @@
 
 #include <uapi/linux/cpri.h>
 #include <linux/sfp.h>
+#include <linux/gcr.h>
 #include <linux/cpri_eth.h>
 
 
@@ -376,12 +377,15 @@ struct cpri_framer_regs {
 struct cpri_framer {
 	/* Overall data structures per framer */
 	unsigned int id;
+	struct device_node *cpri_node;
 	struct cpri_framer_regs __iomem *regs;
 	struct cpri_dev *cpri_dev;
 	struct cdev cdev;
 	dev_t dev_t;
 	struct device_node *sfp_dev_node;
+	struct device_node *gcr_dev_node;
 	struct sfp_dev *sfp_dev;
+	struct gcr_priv *gcr_dev;
 	/* ISR events and bottom half */
 	unsigned int irq_rx_t;
 	unsigned int irq_tx_t;
@@ -444,6 +448,17 @@ struct cpri_framer {
 	/* misc */
 	unsigned char notification_state;
 };
+
+enum cpri_linerate {
+	CPRI_LINE_RATE_1 = 1,
+	CPRI_LINE_RATE_2,
+	CPRI_LINE_RATE_3,
+	CPRI_LINE_RATE_4,
+	CPRI_LINE_RATE_5,
+	CPRI_LINE_RATE_6,
+	CPRI_LINE_RATE_7
+};
+
 
 #define CLASS_NAME	"cp"
 #define DEV_NAME	"cp"
@@ -876,4 +891,5 @@ void cleanup_segment_table_data(struct cpri_framer *framer);
 void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state);
 int cpri_state_validation(enum cpri_state present_state,
 		enum cpri_state new_state);
+void linkrate_autoneg_reset(struct cpri_framer *framer);
 #endif /* __CPRI_H */

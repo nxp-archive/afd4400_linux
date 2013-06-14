@@ -552,6 +552,8 @@ enum mem_type {
 #define CPRI_MAP_CLEAR_AXC			_IO(CPRI_MAGIC, 34)
 #define CPRI_GET_MAP_TABLE			_IOR(CPRI_MAGIC, 35, \
 						struct axc_map_table_get *)
+#define CPRI_BD_DUMP				_IOW(CPRI_MAGIC, 36, \
+							unsigned int)
 
 /* VSS channel configuration and data Tx/Rx IOCTLS */
 #define CPRI_OPEN_VSS				_IOW(CPRI_MAGIC, 40, \

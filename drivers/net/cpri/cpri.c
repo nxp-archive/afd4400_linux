@@ -698,10 +698,12 @@ static int cpri_probe(struct platform_device *pdev)
 		raw_spin_lock_init(&framer->tx_cwt_lock);
 
 		cpri_mask_irq_events(framer);
+#if 0
 		if (process_framer_irqs(child, framer) < 0) {
 			framer->dev_flags |= CPRI_NO_EVENT;
 			dev_err(dev, "framer events not supported\n");
 		}
+#endif
 
 		/* Get the SFP handle and determine the cpri state */
 		framer->sfp_dev_node = of_parse_phandle(child,
