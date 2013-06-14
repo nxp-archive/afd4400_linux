@@ -3,6 +3,7 @@
 
 #include <linux/cdev.h>
 #include <linux/mutex.h>
+#include <uapi/linux/cpri.h>
 #include <uapi/linux/gcr.h>
 
 #define MOD_INC_USE_COUNT
@@ -256,8 +257,10 @@
 #define CPRI_RX1_DMA_REQ_2BIT(x) GCR_CPRI_FRMR1_DMA_REQ_2BIT_##x
 #define CPRI_RX2_DMA_REQ_2BIT(x) GCR_CPRI_FRMR2_DMA_REQ_2BIT_##x
 #define GCR_MSK1 0x3
-
 #define GCR_MSK2 0x1
+
+#define GCR4_CPRI_CTRL	4
+#define GCR6_CPRI_CTRL	6
 
 struct gcr_reg_map {
 
@@ -267,11 +270,19 @@ struct gcr_reg_map {
 struct gcr_priv {
 
 	struct gcr_reg_map *gcr_reg;
+	struct device_node *dev_node;
 	struct mutex gcr_lock;
 	struct device *gcr_dev;
 	struct cdev gcr_cdev;
+	struct list_head list;
+
 	dev_t dev_t;
 };
 
+extern struct gcr_priv *get_attached_gcr_dev(struct device_node *gcr_dev_node);
+extern void gcr_set_cpri_line_rate(enum cpri_link_rate linerate,
+		unsigned char cpri_id, struct gcr_priv *priv);
+extern void gcr_linkrate_autoneg_reset(unsigned char cpri_id,
+		struct gcr_priv *priv);
 
 #endif/* _GCR_DRIVER_H_ */

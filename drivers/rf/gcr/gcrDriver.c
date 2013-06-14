@@ -27,6 +27,10 @@
 #include <linux/uaccess.h>
 #include <linux/of_address.h>
 #include <linux/gcr.h>
+#include <linux/cpri.h>
+
+static LIST_HEAD(gcr_dev_list);
+raw_spinlock_t gcr_list_lock;
 
 #define DRIVER_NAME "gcr_dev"
 #define MOD_VERSION "0.1"
@@ -1308,8 +1312,53 @@ end:
 	return ret;
 }
 
+void gcr_set_cpri_line_rate(enum cpri_link_rate linerate, unsigned char cpri_id,
+		struct gcr_priv *priv)
+{
+	struct gcr_reg_map *gcr;
+	u32 value = 0;
+	unsigned char gcr_id;
+	char line_rate[8] = {0, 2, 4, 5, 8, 16};
+	u32 rate;
+
+	if (cpri_id == 1)
+		gcr_id = GCR4_CPRI_CTRL;
+	else
+		gcr_id = GCR6_CPRI_CTRL;
+
+	gcr = priv->gcr_reg;
+	rate = line_rate[linerate];
+
+	value = readl(&gcr->gcr[gcr_id]);
+	value |= rate << 1;
+	writel(value, &gcr->gcr[gcr_id]);
+	value = readl(&gcr->gcr[gcr_id]);
+}
+EXPORT_SYMBOL(gcr_set_cpri_line_rate);
+
+void gcr_linkrate_autoneg_reset(unsigned char cpri_id,
+		struct gcr_priv *priv)
+{
+	struct gcr_reg_map *gcr;
+	u32 value = 0;
+	unsigned char gcr_id;
+
+	if (cpri_id == 1)
+		gcr_id = GCR4_CPRI_CTRL;
+	else
+		gcr_id = GCR6_CPRI_CTRL;
+
+	gcr = priv->gcr_reg;
+	value = readl(&gcr->gcr[gcr_id]);
+	value |= 1;
+	writel(value, &gcr->gcr[gcr_id]);
+}
+EXPORT_SYMBOL(gcr_linkrate_autoneg_reset);
+
+
+
 static const struct of_device_id gcr_cfg_ids[] = {
-	{ .compatible = "fsl,gcr_cfg"},
+	{ .compatible = "fsl,d4400-scm"},
 	{}
 };
 
@@ -1322,6 +1371,28 @@ static struct platform_driver gcr_cfg_driver = {
 		.of_match_table = gcr_cfg_ids,
 	},
 };
+
+struct gcr_priv *get_attached_gcr_dev(struct device_node *gcr_dev_node)
+{
+	struct gcr_priv *gcr_dev = NULL;
+
+	if (list_empty(&gcr_dev_list))
+		return NULL;
+
+	raw_spin_lock(&gcr_list_lock);
+
+	list_for_each_entry(gcr_dev, &gcr_dev_list, list) {
+		if (gcr_dev_node == gcr_dev->dev_node)
+			break;
+		else
+			break;
+	}
+	raw_spin_unlock(&gcr_list_lock);
+
+	return gcr_dev;
+}
+EXPORT_SYMBOL(get_attached_gcr_dev);
+
 
 static int gcr_cfg_probe(struct platform_device *ofdev)
 {
@@ -1372,6 +1443,11 @@ static int gcr_cfg_probe(struct platform_device *ofdev)
 		iounmap(priv->gcr_reg);
 		goto err_mem;
 	}
+	priv->dev_node = np;
+	raw_spin_lock(&gcr_list_lock);
+	list_add_tail(&priv->list, &gcr_dev_list);
+	raw_spin_unlock(&gcr_list_lock);
+	dev_info(dev, "GCR probe done ....\n");
 
 	mutex_init(&priv->gcr_lock);
 	dev_set_drvdata(dev, priv);
@@ -1399,6 +1475,7 @@ static int gcr_remove(struct platform_device *ofdev)
 
 	priv = (struct gcr_priv *)dev_get_drvdata(&ofdev->dev);
 	iounmap(priv->gcr_reg);
+	list_del(&priv->list);
 	dev_set_drvdata(priv->gcr_dev, NULL);
 	if (priv->dev_t)
 		unregister_chrdev_region(priv->dev_t, GCR_DEV_MAX);
