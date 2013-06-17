@@ -60,9 +60,9 @@ static int vspa_open(struct inode *inode, struct file *fp)
 {
 	struct vspa_device *vspadev = NULL;
 	int rc = 0;
-	int vsap_id;
+	int vspa_id;
 
-	vsap_id = iminor(inode);
+	vspa_id = iminor(inode);
 	vspadev = container_of(inode->i_cdev, struct vspa_device, cdev);
 	if (vspadev != NULL) {
 		if (vspadev->state < VSPA_OPENED) {
@@ -131,10 +131,13 @@ static int vspa_register_irqs(struct vspa_device *vspadev)
 	if (rc < 0)
 		return rc;
 #else
-	rc = request_irq(vspadev->vsap_irq_no, vspa_irq_handler,
-		0, VSPA_DEVICE_NAME, vspadev)
-	if (rc < 0)
-		return rc;
+	if (!vspadev->irq_enabled) {
+		rc = request_irq(vspadev->vspa_irq_no, vspa_irq_handler,
+		0, VSPA_DEVICE_NAME, vspadev);
+		if (rc < 0)
+			return rc;
+		vspadev->irq_enabled = 1;
+	}
 #endif
 	return 0;
 }
@@ -148,6 +151,9 @@ static long vspa_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 	case IOCTL_REQ_IRQ:
 		rc = vspa_register_irqs(dev);
 		return rc;
+
+	case IOCTL_REQ_RST:
+		return 0;
 
 	default:
 		return -EINVAL;
@@ -178,9 +184,9 @@ static int vspa_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	/* Based on Offset we decide, if we map the vspa registers
 	 * or vspa DBG registers */
-	if (vma->vm_pgoff == VSPA_DBG_OFFSET) {
+	if (vma->vm_pgoff == (VSPA_DBG_OFFSET >> PAGE_SHIFT)) {
 
-		phy_addr = (unsigned long)dev->dbg_start;
+		phy_addr = (unsigned long)dev->dbg_regs;
 
 		/* Align the start address */
 		start = phy_addr & PAGE_MASK;
@@ -188,9 +194,9 @@ static int vspa_mmap(struct file *filp, struct vm_area_struct *vma)
 		/* Align the size to PAGE Size */
 		len = PAGE_ALIGN((start & ~PAGE_MASK) + dev->dbg_size);
 
-	} else if (vma->vm_pgoff == VSPA_REG_OFFSET) {
+	} else if (vma->vm_pgoff == (VSPA_REG_OFFSET >> PAGE_SHIFT)) {
 
-		phy_addr = (unsigned long)dev->mem_start;
+		phy_addr = (unsigned long)dev->mem_regs;
 
 		/* Align the start address */
 		start = phy_addr & PAGE_MASK;
@@ -200,6 +206,8 @@ static int vspa_mmap(struct file *filp, struct vm_area_struct *vma)
 	} else {
 		return -EINVAL;
 	}
+
+	vma->vm_pgoff = 0;
 
 	off = vma->vm_pgoff << PAGE_SHIFT;
 
@@ -240,45 +248,35 @@ vspa_getdts_properties(struct device_node *np, struct vspa_device *data)
 	if (!np)
 		return -EINVAL;
 
-	if (of_property_read_u32(np, "vsparegstart", &prop) < 0)
-			return -EINVAL;
-		data->mem_start = (u32 *)prop;
-
-	if (of_property_read_u32(np, "vspareglen", &prop) < 0)
-			return -EINVAL;
-		data->mem_size = prop;
-
 	if (of_property_read_u32(np, "vspadev-id", &prop) < 0)
 			return -EINVAL;
 		data->id = prop;
 
-	pr_debug("vspadev-id %d\n", data->id);
-	pr_debug("mem_start %p\n", data->mem_start);
-	pr_debug("mem_size %x\n", data->mem_size);
-
-	if (of_property_read_u32(np, "dbgregstart", &prop) < 0)
+#ifndef FSL_MEDUSA
+	if (of_property_read_u32(np, "dbgregstart", &prop) < 0) {
 		pr_err("dbgregstart attribute not found for %s%d\n",
 				VSPA_DEVICE_NAME, data->id);
-	else
-		data->dbg_start = (u32 *)prop;
+		return -EINVAL;
+	}
 
-	if (of_property_read_u32(np, "dbgreglen", &prop) < 0)
+	data->dbg_regs = (u32 *)prop;
+
+	if (of_property_read_u32(np, "dbgreglen", &prop) < 0) {
 		pr_err("dbgreglen attribute not found for %s%d\n",
 				VSPA_DEVICE_NAME, data->id);
-	else
-		data->dbg_size = prop;
+		return -EINVAL;
+	}
 
-	pr_debug("dbg_start %p\n", data->dbg_start);
-	pr_debug("dbg_size %x\n", data->dbg_size);
+	data->dbg_size = prop;
 
-#ifndef FSL_MEDUSA
 	if (of_get_property(np, "interrupts", NULL)) {
 		data->vspa_irq_no = irq_of_parse_and_map(np, 0);
 	} else {
 		pr_err("Interrupt number not found for %s%d\n",
 				 VSPA_DEVICE_NAME, data->id);
-			return -EINVAL;
+		return -EINVAL;
 	}
+
 #else
 	data->irq_dma_cmp = irq_of_parse_and_map(np, 0);
 	data->irq_dma_err = irq_of_parse_and_map(np, 1);
@@ -316,26 +314,16 @@ static int vspa_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct vspa_device *vdev = NULL;
-	int minor = vspa_devs;
+	struct resource res;
 	dev_t dev;
 	int result = 0;
-
-	/* Register our major, and accept a dynamic number. */
-	if (vspa_major) {
-		dev = MKDEV(vspa_major, minor);
-	} else {
-		pr_err("VSPA Device %s allocation failed\n",
-					vspa_major ? "minor" : "major");
-		result = -ENODEV;
-		goto reg_fail;
-	}
 
 	/* Allocate vspa device structure */
 	 vdev = kzalloc(sizeof(struct vspa_device), GFP_KERNEL);
 	 if (!vdev) {
 		pr_err("Failed to allocate vspa_dev\n");
 	    result = -ENOMEM;
-	    goto mem_fail;
+	    return result;
 	 }
 	if (vspa_getdts_properties(np, vdev) < 0) {
 		pr_err("VSPA DTS entry parse failed.\n");
@@ -343,27 +331,50 @@ static int vspa_probe(struct platform_device *pdev)
 		goto prop_fail;
 	}
 
+	/* Register our major, and accept a dynamic number. */
+	if (vspa_major) {
+		dev = MKDEV(vspa_major, vdev->id);
+	} else {
+
+		/* Register our major, and accept a dynamic number. */
+		result = alloc_chrdev_region(&dev, 0,
+				MAX_VSPA_PER_SOC, VSPA_DEVICE_NAME);
+		if (result < 0) {
+			pr_err("Device fsl-vspa allocation failed %d\n",
+					result);
+			goto reg_fail;
+		}
+		vspa_major = MAJOR(dev);
+	}
+
 	result = vspa_construct_device(vdev, vdev->id);
 	if (result == 0) {
-		vdev->regs = of_iomap(np, 0);
+		if (of_address_to_resource(np, 0, &res)) {
+			result = -EINVAL;
+			goto prop_fail;
+		}
+
+		vdev->mem_regs = (u32 __iomem *)res.start;
+		vdev->mem_size =  resource_size(&res);
+		vdev->regs = ioremap((unsigned int)vdev->mem_regs,
+				vdev->mem_size);
+
 		spin_lock_init(&vdev->lock);
 		init_waitqueue_head(&(vdev->irq_wait_q));
 		vdev->state = VSPA_PROBED;
-		vdev->minor = vspa_devs;
 		vspa_devs++;
-		pr_info("vspa probe successful\n");
+		pr_info("vspa probe successful, id:%d\n", vdev->id);
 		return 0;
 	} else {
-		return result;
+		goto cons_fail;
 	}
 
+cons_fail:
+	unregister_chrdev_region(dev, 1);
 reg_fail:
-	return result;
 prop_fail:
 	kfree(vdev);
-mem_fail:
-	unregister_chrdev_region(dev, 1);
-	return	result;
+	return result;
 }
 
 static int vspa_remove(struct platform_device *ofpdev)
@@ -406,18 +417,6 @@ static struct platform_driver vspa_driver = {
 
 static int __init vspa_mod_init(void)
 {
-	int rc = 0;
-	dev_t dev = MKDEV(vspa_major, 0);
-
-	/* Register our major, and accept a dynamic number. */
-	rc = alloc_chrdev_region(&dev, 0,
-			MAX_VSPA_PER_SOC, VSPA_DEVICE_NAME);
-	if (rc < 0) {
-		pr_err("Device fsl-vspa allocation failed %d\n", rc);
-		return rc;
-	}
-	vspa_major = MAJOR(dev);
-
 	return platform_driver_register(&vspa_driver);
 }
 

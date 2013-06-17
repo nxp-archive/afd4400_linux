@@ -20,8 +20,6 @@
 #include <linux/wait.h>
 #include <linux/vspa_uapi.h>
 
-/* FIX: This is only to be defined on MEDUSA board */
-#define FSL_MEDUSA	1
 
 #define MAX_VSPA_PER_SOC    11
 
@@ -63,16 +61,11 @@ struct vspa_device {
 	int     id;
 
 	/* Physical address of the IP registers */
-	u32 __iomem *mem_start;
+	u32 __iomem *mem_regs;
 
 	/* Size of IP register map of vspa */
 	resource_size_t mem_size;
 
-	/* Physical address of the vspa dbg registers */
-	u32 __iomem *dbg_start;
-
-	/* Size of debug registers mmap of vspa */
-	resource_size_t dbg_size;
 
 	/* Lock to prevent multiple access */
 	spinlock_t lock;
@@ -96,14 +89,22 @@ struct vspa_device {
 
 #ifndef FSL_MEDUSA
 	uint32_t vspa_irq_no;
+
+	/* Physical address of the vspa dbg registers */
+	u32 __iomem *dbg_regs;
+
+	/* Size of debug registers mmap of vspa */
+	resource_size_t dbg_size;
+
+	/*Interrupt enabled for this device*/
+
+	int irq_enabled;
 #else
 	uint32_t irq_dma_cmp;
 	uint32_t irq_dma_err;
 	uint32_t irq_vspa_done;
 	uint32_t irq_vspa_msg;
 #endif
-	/* Minor number of the VSAP instance */
-	unsigned    minor;
 
 	/* Current state of the device */
 	enum vspa_state state;

@@ -16,11 +16,12 @@
 
 #define VSP_MAGIC_NUM 'V'
 #define IOCTL_REQ_IRQ   _IOR(VSP_MAGIC_NUM, 1, int)
+#define IOCTL_REQ_RST   _IOR(VSP_MAGIC_NUM, 2, int)
 
 /* mmap offset argument for vspa regsiters */
 #define VSPA_REG_OFFSET	0
 
 /* mmap offset argument for dbg regsiter */
-#define VSPA_DBG_OFFSET	1
+#define VSPA_DBG_OFFSET	4096
 
 #endif
