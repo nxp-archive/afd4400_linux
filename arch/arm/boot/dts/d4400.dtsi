@@ -328,6 +328,53 @@
                                  clock-names = "ipg", "per";
                                  status = "disabled";
                         };
+			cpri@0x100000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "fsl,d4400-cpri";
+				id = <1>;
+				ranges = <0x0 0x100000 0x10000>;
+				reg = <0x00107E00 0x400>;
+				status = "okay";
+				interrupts = <0 67 0x4>,
+					<0 68 0x4>,
+					<0 69 0x4>,
+					<0 70 0x4>,
+					<0 79 0x4>;
+
+			framer0@0x0 {
+				reg = <0x0 0x8000>;
+				framer-id = <1>;
+				max-axcs = <24>;
+				memblk-rx = <0x200 0x1800 0x1A00 0x1800>;
+				memblk-tx = <0x200 0x1800 0x1A00 0x1800>;
+				local-mac-address = [ 00 00 AB CD 21 AB ];
+				interrupts = <0 71 0x04>,
+					 <0 73 0x04>,
+					 <0 75 0x04>,
+					 <0 77 0x04>;
+				sfp-handle = <&cpriphy0>;
+				gcr-handle = <&scm>;
+			};
+
+			framer1@0x8000 {
+				reg = <0x8000 0x8000>;
+				framer-id = <2>;
+				max-axcs = <24>;
+				memblk-rx = <0x84000000 0x1800 0x84001800 0x1800>;
+				memblk-tx = <0x84800000 0x1800 0x84801800 0x1800>;
+				local-mac-address = [ 00 00 AB CD 21 CD ];
+				interrupts = <0 72 0x4>,
+					 <0 74 0x4>,
+					 <0 76 0x4>,
+					 <0 78 0x4>;
+				sfp-handle = <&cpriphy1>;
+				gcr-handle = <&scm>;
+				};
+			};
+
+
+
                 };
 
                 aips-bus@1200000 { /* AIPS2 */
