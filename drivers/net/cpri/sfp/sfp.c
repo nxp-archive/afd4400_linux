@@ -300,7 +300,7 @@ static int read_sfp_info(struct sfp_dev *sfp)
 	/* Try reading basic eeprom info */
 	ret = sfp_raw_read(sfp, buf, offset, count, type);
 	if (ret != count) {
-		dev_dbg(dev, "basic data read failure");
+		dev_err(dev, "basic data read failure");
 		ret = -1;
 	}
 
@@ -308,7 +308,7 @@ static int read_sfp_info(struct sfp_dev *sfp)
 	csum = do_bdata_sanity_check(&sfp->info);
 
 	if ((u8)csum != sfp->info.check_code_b) {
-		dev_dbg(dev, "basic data verification failed");
+		dev_err(dev, "basic data verification failed");
 		ret = -1;
 		goto out;
 	}
@@ -453,19 +453,20 @@ static int sfp_probe(struct i2c_client *client,
 	unsigned addr;
 	unsigned write_max;
 	int i;
+	u32 prop[3] = { 0 };
 
 	/* Getting the device node from platform */
 	node = client->dev.of_node;
-
 	/* Get the number of eeproms supported by the transceiver */
 	if (client->dev.of_node) {
-		num_addr = (unsigned int) of_get_property(client->dev.of_node,
-					"max-addr", NULL);
-		sfp = kzalloc(sizeof(struct sfp_dev) +
-				num_addr * sizeof(struct i2c_client *),
+		of_property_read_u32(client->dev.of_node, "max-addr",
+				&num_addr);
+		sfp = kzalloc((sizeof(struct sfp_dev) +
+				num_addr * sizeof(struct i2c_client *)),
 				GFP_KERNEL);
 		if (!sfp) {
 			err = -ENOMEM;
+			dev_err(dev, "probe error\n");
 			goto err_out;
 		}
 	}
@@ -510,30 +511,41 @@ static int sfp_probe(struct i2c_client *client,
 	 * nodes and as well by this driver to send notification
 	 * on connected framer
 	 */
-	sfp->id = (u32) of_get_property(child, "reg", NULL);
+	of_property_read_u32_array(client->dev.of_node, "reg", prop,
+			ARRAY_SIZE(prop));
+
+	sfp->id = prop[0];
 
 	/* Getting eeprom mem interface address */
-	addr = (unsigned int) of_get_property(client->dev.of_node,
-				"eeprom", NULL);
 	sfp->client[0] = client;
-	sfp->client[0]->addr = addr;
+	sfp->client[0]->addr = prop[0];
 
 	/* Getting diagnostic mem interface address */
-	addr = (unsigned int) of_get_property(client->dev.of_node,
-					"diagnostics", NULL);
+	addr = prop[1];
 	sfp->client[1] = i2c_new_dummy(client->adapter, addr);
 	if (!sfp->client[1]) {
 		dev_err(dev, "addr 0x%02x unavailable\n", client->addr + 1);
 		err = -EADDRINUSE;
 		goto err_clients;
 	}
-	/* ------------ End populating sfp_dev ---------- */
+#if 0
+	addr = prop[2];
+	sfp->client[2] = i2c_new_dummy(client->adapter, addr);
+	if (!sfp->client[2]) {
+		dev_err(dev, "addr 0x%02x unavailable\n", addr);
+		err = -EADDRINUSE;
+		goto err_clients;
+	}
+#endif
 
+	/* ------------ End populating sfp_dev ---------- */
+#if 0
 	/* Configure transceiver pins */
 	if (config_sfp_lines(sfp) < 0) {
 		dev_err(dev, "sfp pin configuration failed\n");
 		goto err_clients;
 	}
+#endif
 
 	dev_notice(dev, "Tx Fault pin: %d, Rx LOS pin: %d ",
 			sfp->irq_txfault, sfp->irq_rxlos);
@@ -620,14 +632,14 @@ static int sfp_remove(struct i2c_client *client)
 }
 
 static const struct i2c_device_id sfp_ids[] = {
-	{ "fsl,sfp", 0 },
+	{ "finisar-FTLF8526P3", 0 },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, sfp_ids);
 
 static struct i2c_driver sfp_driver = {
 	.driver = {
-		.name = "fsl-sfp",
+		.name = "finisar-FTLF8526P3",
 		.owner = THIS_MODULE,
 	},
 	.probe = sfp_probe,
