@@ -223,6 +223,7 @@ struct config_registers_rx {
 #define SYNC_PIPELINE_MASK	0x1ff
 #define SYNC_PIPELINE_SHIFT	23
 #define SW_DMA_ENABLE		(1 << 17)
+#define SW_DMA_ENABLE_SELECT	(1 << 16)
 #define OTHR_TRANS_IDLE_SELECT	(1 << 1)
 #define SWAP_IQ			(1 << 7)
 #define PHYPACK_MS_OCTECT_FIRST	(1 << 9)
@@ -236,11 +237,25 @@ struct config_registers_rx {
 #define M_EN_MASK		0x3
 
 /* Tn_IRQ_STATUS & IRQ_ENABLE*/
-#define IRQ_SYSREF_ROSE		(1 << 8)
-#define IRQ_SYNC_RECIEVED	(1 << 9)
-#define IRQ_DEFRAMER_IRQ	(1 << 0)
-#define TX_IRQS_EN_MASK		(IRQ_SYSREF_ROSE)
-#define RX_IRQS_EN_MASK		(IRQ_SYSREF_ROSE)
+#define IRQ_SYSREF_ROSE			(1 << 8)
+#define IRQ_SYNC_RECIEVED		(1 << 9)
+#define IRQ_DEFRAMER_IRQ		(1 << 0)
+#define IRQ_TX_UNPACKER_UNDERFLOW	(1 << 3)
+#define IRQ_TX_WCBUF_OVERFLOW		(1 << 4)
+#define IRQ_RX_PACKER_UNDERLOW		(1 << 3)
+#define IRQ_RX_RCBUF_OVERFLOW		(1 << 4)
+#define IRQ_RX_RCBUF_UNDERFLOW		(1 << 5)
+#define IRQ_RX_SFIFO_OVERFLOW		(1 << 6)
+
+#define TX_IRQS_EN_MASK		(IRQ_SYSREF_ROSE		|	\
+				IRQ_TX_UNPACKER_UNDERFLOW	|	\
+				IRQ_TX_WCBUF_OVERFLOW)
+
+#define RX_IRQS_EN_MASK		(IRQ_SYSREF_ROSE		|	\
+				IRQ_RX_PACKER_UNDERLOW		|	\
+				IRQ_RX_RCBUF_OVERFLOW		|	\
+				IRQ_RX_RCBUF_UNDERFLOW		|	\
+				IRQ_RX_SFIFO_OVERFLOW)
 
 /* TN_IRQ_VECTOR_MASK */
 #define DFRMR_IRQ_CGS		(1 << 0)

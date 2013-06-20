@@ -741,20 +741,24 @@ static int init_serdes_lane(struct jesd_transport_dev *tdev,
 
 #define GCR_BASE	0x012c0000
 #define GCR_SIZE	0x4000
+#define GCR4		0x010
+#define GCR6		0x018
 #define GCR72		0x13c
 #define GCR22		0x058
 #define GCR41		0x0c0
+#define GCR43		0x0c8
+#define GCR45		0x0d0
+#define GCR52		0x0ec
 
 #define GCR22_DMA_REQ_MASK	0x7
 #define JESDTX1_DMA_REQ_EN	0x1
 #define JESDTX1_DMA_REQ_SHIFT	6
 
-static int jesd_init_serdes(struct jesd_transport_dev *tdev)
+static void jesd_init_gcr(struct jesd_transport_dev *tdev)
 {
-	int rc = 0;
 	u32 base_reg = 0, val, *reg, mask;
 
-	/*XXX: init PLL only once. Need to have proper way to handle it */
+	/* init GCR only once*/
 	if (tdev->type != JESD_DEV_TX)
 		goto out;
 
@@ -769,12 +773,34 @@ static int jesd_init_serdes(struct jesd_transport_dev *tdev)
 	val = JESDTX1_DMA_REQ_EN << JESDTX1_DMA_REQ_SHIFT;
 	mask = GCR22_DMA_REQ_MASK << JESDTX1_DMA_REQ_SHIFT;
 	jesd_update_reg(reg, val, mask);
-	dev_info(tdev->dev, "%s: GCR22 %x\n", tdev->name, ioread32(reg));
 
 	/* JESD RX1 -> VSPA 3 DMA 8*/
 	reg = (u32 *) (base_reg + GCR41);
 	iowrite32(0x01, reg);
-	dev_info(tdev->dev, "%s: GCR41 %x\n", tdev->name, ioread32(reg));
+
+	reg = (u32 *) (base_reg + GCR43);
+	iowrite32(0x03, reg);
+
+	/*JESD RX1 Ptr reset request to VSPA 5 DMA 8*/
+	reg = (u32 *) (base_reg + GCR45);
+	iowrite32(0x01, reg);
+
+	/*JESD TX1 Ptr reset request to VSPA 3 DMA 8*/
+	reg = (u32 *) (base_reg + GCR52);
+	iowrite32(0x400, reg);
+
+out:
+	return;
+}
+
+static int jesd_init_serdes(struct jesd_transport_dev *tdev)
+{
+	int rc = 0;
+	u32 base_reg = 0;
+
+	/*XXX: init PLL only once. Need to have proper way to handle it */
+	if (tdev->type != JESD_DEV_TX)
+		goto out;
 
 	base_reg = (u32) ioremap_nocache(SERDES1_BASE, SERDES_SIZE);
 	if (!base_reg) {
@@ -812,6 +838,8 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 			__func__, tdev->old_state);
 		goto out;
 	}
+
+	jesd_init_gcr(tdev);
 
 	rc = jesd_init_serdes(tdev);
 	if (rc) {
@@ -1881,14 +1909,17 @@ static u32 jesd_get_dframer_state(struct jesd_transport_dev *tdev)
 static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 {
 	u32 *diag_sel_reg, *diag_data_reg, val1, val2;
+	u32 *transport_ctrl_reg, val, mask;
 	int requeue = 1;
 
 	if (tdev->type == JESD_DEV_TX) {
 		diag_sel_reg = &tdev->tx_regs->tx_diag_sel;
 		diag_data_reg = &tdev->tx_regs->tx_diag_data;
+		transport_ctrl_reg = &tdev->tx_regs->tx_transcontrol;
 	} else {
 		diag_sel_reg = &tdev->rx_regs->rx_diag_sel;
 		diag_data_reg = &tdev->rx_regs->rx_diag_data;
+		transport_ctrl_reg = &tdev->rx_regs->rx_transcontrol;
 	}
 
 	iowrite32(DIAG_FRAMER_STATE_SEL, diag_sel_reg);
@@ -1921,6 +1952,11 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 		break;
 	case FRAMER_STATE_USER_DATA:
 		jesd_change_state(tdev, JESD_STATE_READY);
+		if (tdev->type != JESD_DEV_TX) {
+			val = SW_DMA_ENABLE;
+			mask = SW_DMA_ENABLE;
+			jesd_update_reg(transport_ctrl_reg, val, mask);
+		}
 		tbgen_timer_enable(tdev->timer_handle);
 		/* We don't need sysref now till link is restarted */
 		jesd_marks_syref_capture_ready(tdev, 0);
@@ -1994,7 +2030,6 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 
 	if (tdev->type == JESD_DEV_TX)
 		tbgen_timer_enable(tdev->txalign_timer_handle);
-
 	tdev->sync_expire = jiffies + msecs_to_jiffies(tdev->sync_timeout_ms);
 	schedule_work(&tdev->link_monitor);
 }
@@ -2003,7 +2038,7 @@ static void jesd_tx_tasklet(unsigned long data)
 {
 	struct jesd_transport_dev *tdev = (struct jesd_transport_dev *)data;
 	struct config_registers_tx *tx_regs = tdev->tx_regs;
-	u32 irq_status, *reg, val;
+	u32 irq_status, *reg, val, mask;
 
 	irq_status = ioread32(&tx_regs->tx_irq_status);
 	iowrite32(irq_status, &tx_regs->tx_irq_status);
@@ -2015,9 +2050,10 @@ static void jesd_tx_tasklet(unsigned long data)
 	}
 
 	/*Enable interrupts we serviced*/
-	val = (irq_status & TX_IRQS_EN_MASK);
+	val = irq_status;
 	reg = &tx_regs->tx_irq_enable;
-	iowrite32(val, reg);
+	mask = (irq_status & TX_IRQS_EN_MASK);
+	jesd_update_reg(reg, val, mask);
 }
 
 static irqreturn_t jesd_tx_isr(int irq, void *param)
@@ -2046,7 +2082,7 @@ static void jesd_rx_tasklet(unsigned long data)
 {
 	struct jesd_transport_dev *tdev = (struct jesd_transport_dev *)data;
 	struct config_registers_rx *rx_regs = tdev->rx_regs;
-	u32 irq_status, *reg, val;
+	u32 irq_status, *reg, val, mask;
 
 	irq_status = ioread32(&rx_regs->rx_irq_status);
 	iowrite32(irq_status, &rx_regs->rx_irq_status);
@@ -2059,8 +2095,9 @@ static void jesd_rx_tasklet(unsigned long data)
 
 	/*Enable interrupts we serviced*/
 	reg = &rx_regs->rx_irq_enable;
-	val = (irq_status & RX_IRQS_EN_MASK);
-	iowrite32(val, reg);
+	val = irq_status;
+	mask = (irq_status & RX_IRQS_EN_MASK);
+	jesd_update_reg(reg, val, mask);
 }
 
 void jesd_deframer_isr(struct jesd_transport_dev *tdev)
@@ -2173,7 +2210,8 @@ static struct jesd_transport_dev *
 {
 	int type = jdev->trans_type, rc;
 	struct jesd_transport_dev *tdev = NULL;
-	u32 *base, max_lanes;
+	u32 *base, max_lanes, *irq_enable_reg, *irq_status_reg;
+	u32 irq_status, val, mask;
 
 	tdev = kzalloc(sizeof(struct jesd_transport_dev), GFP_KERNEL);
 
@@ -2232,6 +2270,27 @@ static struct jesd_transport_dev *
 	}
 
 	INIT_WORK(&tdev->link_monitor, jesd_link_monitor_worker);
+
+	if (tdev->type == JESD_DEV_TX) {
+		irq_enable_reg = &tdev->tx_regs->tx_irq_enable;
+		irq_status_reg = &tdev->tx_regs->tx_irq_status;
+		val = TX_IRQS_EN_MASK;
+		mask = TX_IRQS_EN_MASK;
+	} else {
+		irq_enable_reg = &tdev->rx_regs->rx_irq_enable;
+		irq_status_reg = &tdev->rx_regs->rx_irq_status;
+		val = RX_IRQS_EN_MASK;
+		mask = RX_IRQS_EN_MASK;
+	}
+	/* clear any stray interrupts*/
+	irq_status = ioread32(irq_status_reg);
+	iowrite32(irq_status, irq_status_reg);
+	/* enable all interrupts except SYSREF ROSE
+	 * SYSREF ROSE is enabled when device is started
+	 * after detecting sysref in TBGEN
+	 */
+	val &= ~IRQ_SYSREF_ROSE;
+	iowrite32(val, irq_enable_reg);
 
 	return tdev;
 out:
