@@ -501,7 +501,7 @@
 
 				transport0@0x0{
 					reg = <0x00000000 0x3FF>;
-					transport-type = <1>;
+					transport-type = <2>;
 					transport-id = <0>;
 					timer-id = <0>;
 					phy-gasket = <&phy1>;
@@ -511,7 +511,7 @@
 
 				transport1@0x400{
 					reg = <0x00000400 0x3FF>;
-					transport-type = <1>;
+					transport-type = <2>;
 					transport-id = <1>;
 					timer-id = <1>;
 					phy-gasket = <&phy1>;
