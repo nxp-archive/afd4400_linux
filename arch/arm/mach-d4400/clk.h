@@ -16,7 +16,7 @@ enum d4400_pll_type {
 };
 
 struct clk *d4400_clk_pll(enum d4400_pll_type type, const char *name,
-			void __iomem *scm_base, void __iomem *ccm_base,
+			void __iomem *ccm_base,
 			const char **parent_name, int num_parents);
 
 struct clk *d4400_clk_gate(struct device *dev, const char *name,

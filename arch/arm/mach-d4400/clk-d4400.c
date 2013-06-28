@@ -109,7 +109,6 @@ int d4400_ccm_vspa_full_pow_up(u8 vspa_id)
 int __init d4400_clocks_init(void)
 {
 	struct device_node *np;
-	void __iomem *scm_base;
 	void __iomem *base;
 	int i, irq;
 
@@ -130,14 +129,6 @@ int __init d4400_clocks_init(void)
 					CLK_IS_ROOT, rate);
 	}
 
-	np = of_find_compatible_node(NULL, NULL, "fsl,d4400-scm");
-	/* no device tree device */
-	if (!np)
-		return -ENODEV;
-
-	scm_base = of_iomap(np, 0);
-	WARN_ON(!scm_base);
-
 	np = of_find_compatible_node(NULL, NULL, "fsl,d4400-ccm");
 	/* no device tree device */
 	if (!np)
@@ -146,13 +137,13 @@ int __init d4400_clocks_init(void)
 	ccm_base = of_iomap(np, 0);
 	WARN_ON(!ccm_base);
 
-	clk[sys_pll] = d4400_clk_pll(D4400_PLL_SYS, "sys_pll", scm_base,
+	clk[sys_pll] = d4400_clk_pll(D4400_PLL_SYS, "sys_pll",
 				ccm_base, pll_sys_sels,
 				ARRAY_SIZE(pll_sys_sels));
-	clk[ddr_pll] = d4400_clk_pll(D4400_PLL_DDR, "ddr_pll", scm_base,
+	clk[ddr_pll] = d4400_clk_pll(D4400_PLL_DDR, "ddr_pll",
 				ccm_base, pll_ddr_sels,
 				ARRAY_SIZE(pll_ddr_sels));
-	clk[tbgen_pll] = d4400_clk_pll(D4400_PLL_TBGEN, "tbgen_pll", scm_base,
+	clk[tbgen_pll] = d4400_clk_pll(D4400_PLL_TBGEN, "tbgen_pll",
 				ccm_base, pll_tbgen_sels,
 				ARRAY_SIZE(pll_tbgen_sels));
 

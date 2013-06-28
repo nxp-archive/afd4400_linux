@@ -261,6 +261,35 @@
 
 #define GCR4_CPRI_CTRL	4
 #define GCR6_CPRI_CTRL	6
+#define GCR0_PLL_SYS_DEV_CLK_OFFSET     19
+#define GCR0_PLL_SYS_DEV_CLK_MASK       (1<<GCR0_PLL_SYS_DEV_CLK_OFFSET)
+#define GCR0_PLL_SYS_RGMII_CLK_OFFSET   20
+#define GCR0_PLL_SYS_RGMII_CLK_MASK     (1<<GCR0_PLL_SYS_RGMII_CLK_OFFSET)
+#define GCR0_PLL_DDR_DEV_CLK_OFFSET     21
+#define GCR0_PLL_DDR_DEV_CLK_MASK       (1<<GCR0_PLL_DDR_DEV_CLK_OFFSET)
+#define GCR0_PLL_DDR_RGMII_CLK_OFFSET   22
+#define GCR0_PLL_DDR_RGMII_CLK_MASK     (1<<GCR0_PLL_DDR_RGMII_CLK_OFFSET)
+
+#define SYS_PARENT_CLK_SRC (GCR0_PLL_SYS_DEV_CLK_MASK |\
+		GCR0_PLL_SYS_RGMII_CLK_MASK)
+
+#define DDR_PARENT_CLK_SRC (GCR0_PLL_DDR_DEV_CLK_MASK |\
+		GCR0_PLL_DDR_RGMII_CLK_MASK)
+
+enum gcr_get_pll_parent_param_t {
+	GET_SYS_PLL_PARENT,
+	GET_DDR_PLL_PARENT,
+};
+
+enum gcr_set_pll_parent_param_t {
+	SET_SYS_PLL_PARENT,
+	SET_DDR_PLL_PARENT
+};
+
+enum parent_src_clk_t {
+	PARENT_SRC_DEVCLK,
+	PARENT_SRC_SGMIICLK
+};
 
 struct gcr_reg_map {
 
@@ -294,5 +323,8 @@ extern int gcr_cpri_dma_mux(struct cpri_dma_mux_config *cpri_mux_parm,
 		unsigned count, struct gcr_reg_map *gcr);
 extern int gcr_vsp_intf_dma_cfg(struct dma_intf_switch_parm_t *chan_parm,
 		unsigned char count, struct gcr_reg_map *gcr);
+extern u32 gcr_set_pll_parent(enum gcr_set_pll_parent_param_t gcr_param,
+		enum parent_src_clk_t parent_src_clk);
+extern u32 gcr_get_pll_parent(enum gcr_get_pll_parent_param_t gcr_param);
 
 #endif/* _GCR_DRIVER_H_ */

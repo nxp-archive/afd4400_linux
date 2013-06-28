@@ -16,20 +16,19 @@
 #include <linux/slab.h>
 #include <linux/jiffies.h>
 #include <linux/err.h>
-#include "clk.h"
+#include <linux/gcr.h>
 
+#include "clk.h"
 
 /**
  * struct d4400_hw_clk_pll - D4400 PLL clock
  * @clk_hw:	 clock source
- * @scm_base:	 base address of SCM registers
  * @ccm_base:	 base address of CCM registers
  * @type:	 pll type
  * @lock:	register lock
  */
 struct d4400_hw_clk_pll {
 	struct clk_hw	hw;
-	void __iomem	*scm_base;
 	void __iomem	*ccm_base;
 	enum d4400_pll_type type;
 	spinlock_t	*lock;
@@ -82,16 +81,6 @@ struct d4400_hw_clk_pll {
 #define DPLL_ACTIVE DPLL_MASK
 #define TPLL_MASK (TPLLLKSR_PLL_LKD_MASK | TPLLLKSR_LFM_LKD_MASK)
 #define TPLL_ACTIVE TPLL_MASK
-
-#define GCR0_REG_OFFSET		0
-#define GCR0_PLL_SYS_DEV_CLK_OFFSET     19
-#define GCR0_PLL_SYS_DEV_CLK_MASK       (1<<GCR0_PLL_SYS_DEV_CLK_OFFSET)
-#define GCR0_PLL_SYS_RGMII_CLK_OFFSET   20
-#define GCR0_PLL_SYS_RGMII_CLK_MASK     (1<<GCR0_PLL_SYS_RGMII_CLK_OFFSET)
-#define GCR0_PLL_DDR_DEV_CLK_OFFSET     21
-#define GCR0_PLL_DDR_DEV_CLK_MASK       (1<<GCR0_PLL_DDR_DEV_CLK_OFFSET)
-#define GCR0_PLL_DDR_RGMII_CLK_OFFSET   22
-#define GCR0_PLL_DDR_RGMII_CLK_MASK     (1<<GCR0_PLL_DDR_RGMII_CLK_OFFSET)
 
 #define to_clk_pll(_hw) container_of(_hw, struct d4400_hw_clk_pll, hw)
 
@@ -203,7 +192,6 @@ unsigned long clk_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 static int clk_pll_set_parent(struct clk_hw *hw, u8 index)
 {
 	struct d4400_hw_clk_pll *pll = to_clk_pll(hw);
-	u32 val;
 	unsigned long flags = 0;
 
 	switch (pll->type) {
@@ -211,18 +199,12 @@ static int clk_pll_set_parent(struct clk_hw *hw, u8 index)
 		if (pll->lock)
 			spin_lock_irqsave(pll->lock, flags);
 
-		val = readl_relaxed(pll->scm_base + GCR0_REG_OFFSET);
-		if (index) {
-			val |= GCR0_PLL_SYS_DEV_CLK_MASK;
-			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
-			val |= GCR0_PLL_SYS_RGMII_CLK_MASK;
-			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
-		} else {
-			val &= ~GCR0_PLL_SYS_RGMII_CLK_MASK;
-			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
-			val &= ~GCR0_PLL_SYS_DEV_CLK_MASK;
-			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
-		}
+		if (index)
+			gcr_set_pll_parent(SET_SYS_PLL_PARENT,
+						PARENT_SRC_SGMIICLK);
+		else
+			gcr_set_pll_parent(SET_SYS_PLL_PARENT,
+						PARENT_SRC_DEVCLK);
 
 		if (pll->lock)
 			spin_unlock_irqrestore(pll->lock, flags);
@@ -230,19 +212,12 @@ static int clk_pll_set_parent(struct clk_hw *hw, u8 index)
 	case D4400_PLL_DDR:
 		if (pll->lock)
 			spin_lock_irqsave(pll->lock, flags);
-
-		val = readl_relaxed(pll->scm_base + GCR0_REG_OFFSET);
-		if (index) {
-			val |= GCR0_PLL_DDR_DEV_CLK_MASK;
-			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
-			val |= GCR0_PLL_DDR_RGMII_CLK_MASK;
-			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
-		} else {
-			val &= ~GCR0_PLL_DDR_RGMII_CLK_MASK;
-			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
-			val &= ~GCR0_PLL_DDR_DEV_CLK_MASK;
-			writel_relaxed(val, pll->scm_base + GCR0_REG_OFFSET);
-		}
+		if (index)
+			gcr_set_pll_parent(SET_DDR_PLL_PARENT,
+						PARENT_SRC_SGMIICLK);
+		else
+			gcr_set_pll_parent(SET_DDR_PLL_PARENT,
+						PARENT_SRC_DEVCLK);
 
 		if (pll->lock)
 			spin_unlock_irqrestore(pll->lock, flags);
@@ -263,49 +238,47 @@ static u8 clk_pll_get_parent(struct clk_hw *hw)
 
 	switch (pll->type) {
 	case D4400_PLL_SYS:
-		val = readl_relaxed(pll->scm_base + GCR0_REG_OFFSET);
-		val &= (GCR0_PLL_SYS_DEV_CLK_MASK |
-				GCR0_PLL_SYS_RGMII_CLK_MASK);
-		if (val)
+		val = gcr_get_pll_parent(GET_SYS_PLL_PARENT);
+		if (val == SYS_PARENT_CLK_SRC)
 			return 1;
-		else
+		else if (!val)
 			return 0;
+		break;
 	case D4400_PLL_DDR:
-		val = readl_relaxed(pll->scm_base + GCR0_REG_OFFSET);
-		val &= (GCR0_PLL_DDR_DEV_CLK_MASK |
-				GCR0_PLL_DDR_RGMII_CLK_MASK);
-		if (val)
+		val = gcr_get_pll_parent(GET_DDR_PLL_PARENT);
+		if (val == DDR_PARENT_CLK_SRC)
 			return 1;
-		else
+		else if (!val)
 			return 0;
 		break;
 	default:
-		return -EBADRQC;
+		break;
 	}
+	return -EBADRQC;
 }
 
 static long clk_pll_round_rate(struct clk_hw *hw, unsigned long rate,
-                                    unsigned long *prate)
+			unsigned long *prate)
 {
-        unsigned long parent_rate = *prate;
-        unsigned long min_rate = parent_rate * 1;
-        unsigned long max_rate = parent_rate * 64;
-        u32 div;
-        u32 mfn, mfd = 1000000;
-        s64 temp64;
+	unsigned long parent_rate = *prate;
+	unsigned long min_rate = parent_rate * 1;
+	unsigned long max_rate = parent_rate * 64;
+	u32 div;
+	u32 mfn, mfd = 1000000;
+	s64 temp64;
 
-        if (rate > max_rate)
-                rate = max_rate;
-        else if (rate < min_rate)
-                rate = min_rate;
+	if (rate > max_rate)
+		rate = max_rate;
+	else if (rate < min_rate)
+		rate = min_rate;
 
-        div = rate / parent_rate;
-        temp64 = (u64) (rate - div * parent_rate);
-        temp64 *= mfd;
-        do_div(temp64, parent_rate);
-        mfn = temp64;
+	div = rate / parent_rate;
+	temp64 = (u64) (rate - div * parent_rate);
+	temp64 *= mfd;
+	do_div(temp64, parent_rate);
+	mfn = temp64;
 
-        return parent_rate * div + parent_rate / mfd * mfn;
+	return parent_rate * div + parent_rate / mfd * mfn;
 }
 
 static const struct clk_ops clk_pll_ops = {
@@ -324,7 +297,7 @@ static const struct clk_ops clk_pll_tbgen_ops = {
 	.round_rate	= clk_pll_round_rate,
 };
 struct clk *d4400_clk_pll(enum d4400_pll_type type, const char *name,
-			  void __iomem *scm_base, void __iomem *ccm_base,
+			 void __iomem *ccm_base,
 			  const char **parent_names, int num_parents)
 {
 	struct d4400_hw_clk_pll *pll;
@@ -339,7 +312,6 @@ struct clk *d4400_clk_pll(enum d4400_pll_type type, const char *name,
 		ops = &clk_pll_ops;
 	else
 		ops = &clk_pll_tbgen_ops;
-	pll->scm_base = scm_base;
 	pll->ccm_base = ccm_base;
 	pll->type = type;
 

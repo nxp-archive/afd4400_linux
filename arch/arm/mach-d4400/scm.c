@@ -31,6 +31,67 @@
 #include "common.h"
 
 static struct gcr_priv *priv;
+u32 gcr_get_pll_parent(enum gcr_get_pll_parent_param_t gcr_param)
+{
+	struct gcr_reg_map *gcr;
+	u32 val = 0;
+	gcr = priv->gcr_reg;
+
+	switch (gcr_param) {
+	case GET_SYS_PLL_PARENT:
+		val = readl(&gcr->gcr[0]);
+		val &= SYS_PARENT_CLK_SRC;
+		return val;
+	case GET_DDR_PLL_PARENT:
+		val = readl(&gcr->gcr[0]);
+		val &= DDR_PARENT_CLK_SRC;
+		return val;
+	default:
+		return -EBADRQC;
+	}
+}
+
+u32 gcr_set_pll_parent(enum gcr_set_pll_parent_param_t gcr_param,
+		enum parent_src_clk_t parent_src_clk)
+{
+	struct gcr_reg_map *gcr;
+	u32 val = 0;
+	gcr = priv->gcr_reg;
+
+	switch (gcr_param) {
+	case SET_SYS_PLL_PARENT:
+		val = readl(&gcr->gcr[0]);
+		if (parent_src_clk == PARENT_SRC_SGMIICLK) {
+			val |= GCR0_PLL_SYS_DEV_CLK_MASK;
+			writel(val, &gcr->gcr[0]);
+			val |= GCR0_PLL_SYS_RGMII_CLK_MASK;
+			writel(val, &gcr->gcr[0]);
+		} else {
+			val &= ~GCR0_PLL_SYS_RGMII_CLK_MASK;
+			writel(val, &gcr->gcr[0]);
+			val &= ~GCR0_PLL_SYS_DEV_CLK_MASK;
+			writel(val, &gcr->gcr[0]);
+		}
+		break;
+	case SET_DDR_PLL_PARENT:
+		val = readl(&gcr->gcr[0]);
+		if (parent_src_clk == PARENT_SRC_SGMIICLK) {
+			val |= GCR0_PLL_DDR_DEV_CLK_MASK;
+			writel(val, &gcr->gcr[0]);
+			val |= GCR0_PLL_DDR_RGMII_CLK_MASK;
+			writel(val, &gcr->gcr[0]);
+		} else {
+			val &= ~GCR0_PLL_DDR_RGMII_CLK_MASK;
+			writel(val, &gcr->gcr[0]);
+			val &= ~GCR0_PLL_DDR_DEV_CLK_MASK;
+			writel(val, &gcr->gcr[0]);
+		}
+		break;
+	default:
+		return -EBADRQC;
+	}
+	return 0;
+}
 
 static int jesd_conf_val_set1(unsigned char jesd_chan)
 {
