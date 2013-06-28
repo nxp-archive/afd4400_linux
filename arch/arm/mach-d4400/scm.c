@@ -1,55 +1,38 @@
-/* GCR configuration driver
- * Authod: Anand Singh
- * Anand Singh<b44195@freescale.com>
- * Copyright 2013 Freescale Semiconductor, Inc.
+/*
+ * linux/arch/arm/mach-d4400/scm.c
  *
- * The code contained herein is licensed under the GNU General Public
- * License. You may obtain a copy of the GNU General Public License
- * Version 2 or later at the following locations:
+ * Copyright (C) 2013 Freescale Semiconductor, Inc.
  *
- * http://www.opensource.org/licenses/gpl-license.html
- * http://www.gnu.org/copyleft/gpl.html
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ * MA 02110-1301, USA.
  */
-#include <linux/kernel.h>
-#include <linux/kmod.h>
 #include <linux/device.h>
-#include <linux/fs.h>
 #include <linux/io.h>
 #include <linux/init.h>
-#include <linux/cache.h>
 #include <linux/mutex.h>
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
 #include <linux/slab.h>
-#include <linux/mod_devicetable.h>
-#include <linux/export.h>
-#include <linux/sched.h>
-#include <linux/uaccess.h>
 #include <linux/of_address.h>
 #include <linux/gcr.h>
 #include <linux/cpri.h>
 
-static LIST_HEAD(gcr_dev_list);
-raw_spinlock_t gcr_list_lock;
+#include "common.h"
 
-#define DRIVER_NAME "gcr_dev"
-#define MOD_VERSION "0.1"
+static struct gcr_priv *priv;
 
-static int gcr_open(struct inode *inode, struct file *filp);
-static int gcr_release(struct inode *inode, struct file *filp);
-static long gcr_ctrl(struct file *filp, unsigned int cmd, unsigned long arg);
-static int gcr_cfg_probe(struct platform_device *ofdev);
-static int gcr_remove(struct platform_device *ofdev);
-
-static const struct file_operations gcr_fops = {
-	.owner		= THIS_MODULE,
-	.unlocked_ioctl	= gcr_ctrl,
-	.open		= gcr_open,
-	.release	= gcr_release,
-};
-
-
-int jesd_conf_val_set1(unsigned char jesd_chan)
+static int jesd_conf_val_set1(unsigned char jesd_chan)
 {
 	int val = 0;
 	switch (jesd_chan) {
@@ -91,7 +74,7 @@ int jesd_conf_val_set1(unsigned char jesd_chan)
 	return val;
 }
 
-int jesd_conf_val_set2(unsigned char jesd_chan, unsigned char gcr_id)
+static int jesd_conf_val_set2(unsigned char jesd_chan, unsigned char gcr_id)
 {
 	int val = 0;
 	switch (jesd_chan) {
@@ -154,7 +137,7 @@ int jesd_conf_val_set2(unsigned char jesd_chan, unsigned char gcr_id)
 	return val;
 }
 
-int jesd_conf_val_set3(unsigned char jesd_chan)
+static int jesd_conf_val_set3(unsigned char jesd_chan)
 {
 	int val = 0;
 
@@ -188,7 +171,7 @@ int jesd_conf_val_set3(unsigned char jesd_chan)
 	return val;
 }
 
-int cpri_conf_val_set1(enum cpri_core_info cpri_framert_id,
+static int cpri_conf_val_set1(enum cpri_core_info cpri_framert_id,
 		unsigned char cpri_chan)
 {
 	int val = 0;
@@ -251,7 +234,7 @@ int cpri_conf_val_set1(enum cpri_core_info cpri_framert_id,
 	return val;
 }
 
-int cpri_conf_val_set2(enum cpri_core_info cpri_framert_id,
+static int cpri_conf_val_set2(enum cpri_core_info cpri_framert_id,
 		unsigned char cpri_chan, unsigned char gcr_id)
 {
 	int val = 0;
@@ -338,7 +321,7 @@ int cpri_conf_val_set2(enum cpri_core_info cpri_framert_id,
 	return val;
 }
 
-int cpri_conf_val_set3(enum cpri_core_info cpri_framert_id,
+static int cpri_conf_val_set3(enum cpri_core_info cpri_framert_id,
 		unsigned char cpri_chan)
 {
 	int val = 0;
@@ -490,7 +473,7 @@ int cpri_conf_val_set3(enum cpri_core_info cpri_framert_id,
 	}
 	return val;
 }
-int cpri_conf_val_set4(enum cpri_core_info cpri_framert_id,
+static int cpri_conf_val_set4(enum cpri_core_info cpri_framert_id,
 		unsigned char cpri_chan)
 {
 	int val = 0;
@@ -562,7 +545,7 @@ static inline int get_tx_module(enum vsp_id_t vsp)
 	return -EINVAL;
 }
 
-u32 vsp_intf_gcr_reg_cfg(unsigned char gcr_id,
+static u32 vsp_intf_gcr_reg_cfg(unsigned char gcr_id,
 		struct dma_intf_switch_parm_t *chan_parm,
 		struct gcr_reg_map *gcr)
 {
@@ -694,7 +677,7 @@ u32 vsp_intf_gcr_reg_cfg(unsigned char gcr_id,
 	return ret;
 }
 
-u32 vsp_intf_gcr_reg_cfg_2bit(unsigned char gcr_id,
+static u32 vsp_intf_gcr_reg_cfg_2bit(unsigned char gcr_id,
 		struct dma_intf_switch_parm_t *chan_parm,
 		struct gcr_reg_map *gcr)
 {
@@ -860,8 +843,8 @@ u32 vsp_intf_gcr_reg_cfg_2bit(unsigned char gcr_id,
 			| (val << ((chan_id - 16) * 2)));
 }
 
-
-unsigned int get_up_link_gcr_reg(enum vsp_id_t vsp, enum dma_comm_type_t chan)
+static unsigned int get_up_link_gcr_reg(enum vsp_id_t vsp,
+					enum dma_comm_type_t chan)
 {
 	unsigned char gcr_id = 0; /*invalid id*/
 
@@ -892,7 +875,7 @@ out:
 	return gcr_id;
 }
 
-unsigned char get_down_link_gcr_reg(enum vsp_id_t vsp,
+static unsigned char get_down_link_gcr_reg(enum vsp_id_t vsp,
 		enum dma_comm_type_t chan)
 {
 	unsigned char gcr_id = 0; /*invalid id*/
@@ -1031,7 +1014,7 @@ static inline u32 ivsp_gcr_reg_cfg(unsigned int reg, enum vsp_id_t vsp1,
 				((vsp2 - 1) << ((chan - 4) * 4)));
 }
 
-inline int ivsp_parm_validate(enum vsp_id_t vsp1, enum vsp_id_t vsp2,
+static inline int ivsp_parm_validate(enum vsp_id_t vsp1, enum vsp_id_t vsp2,
 		enum dma_channel_id_t chan)
 {
 	return ((vsp1 == vsp2) | ((chan < INTER_VSP_CHAN_MIN) |
@@ -1039,18 +1022,18 @@ inline int ivsp_parm_validate(enum vsp_id_t vsp1, enum vsp_id_t vsp2,
 }
 
 
-inline int ivsp_get_gcr_id(enum vsp_id_t srcVsp)
+static inline int ivsp_get_gcr_id(enum vsp_id_t srcvsp)
 {
 
-	if (srcVsp <= 2)
+	if (srcvsp <= 2)
 		return 8; /* gcr id returned */
-	else if (srcVsp <= 4)
+	else if (srcvsp <= 4)
 		return 9;
-	else if (srcVsp <= 6)
+	else if (srcvsp <= 6)
 		return 10;
-	else if (srcVsp <= 8)
+	else if (srcvsp <= 8)
 		return 11;
-	else if (srcVsp <= 10)
+	else if (srcvsp <= 10)
 		return 12;
 	else
 		return 13;
@@ -1083,30 +1066,26 @@ int gcr_inter_vsp_dma_cfg(struct inter_vsp_dma_config_t *vsp_parm,
 	return 0;
 }
 
-
-
-
-
 int gcr_jesd_dma_ptr_rst_req(struct jesd_dma_ptr_rst_parm *ptr_rst_parm,
 		unsigned count, struct gcr_reg_map *gcr)
 {
 	return 0;
 }
 
-static int gcr_write_set(struct gcr_ctl_parm *param,
+int gcr_write_set(struct gcr_ctl_parm *param,
 		unsigned char count, struct gcr_reg_map *gcr)
 {
-	unsigned int mAddr, effectiveAddr;
+	unsigned int maddr, effective_addr;
 	int tmp = 0;
 	u32 reg;
 
 	for (tmp = 0; tmp < count; tmp++) {
-		mAddr = (param + tmp)->reg_offset;
+		maddr = (param + tmp)->reg_offset;
 		/* Patch offset into base param->address. */
-		effectiveAddr = (unsigned int)gcr + mAddr;
+		effective_addr = (unsigned int)gcr + maddr;
 		/* Read the param->param. */
 		reg = (param+tmp)->param;
-		writel(reg, (unsigned int *)effectiveAddr);
+		writel(reg, (unsigned int *)effective_addr);
 	}
 	return 0;
 }
@@ -1114,7 +1093,7 @@ static int gcr_write_set(struct gcr_ctl_parm *param,
 u32 *gcr_read_reg(struct gcr_ctl_parm *param, struct device *gcr_dev,
 		unsigned char count, struct gcr_reg_map *gcr)
 {
-	unsigned int mAddr, effectiveAddr;
+	unsigned int maddr, effective_addr;
 	int tmp = 0;
 	u32 *reg;
 
@@ -1123,376 +1102,43 @@ u32 *gcr_read_reg(struct gcr_ctl_parm *param, struct device *gcr_dev,
 	for (tmp = 0; tmp < count; tmp++) {
 
 
-		mAddr = param->reg_offset + tmp;
+		maddr = param->reg_offset + tmp;
 		/* Patch offset into base param->address. */
-		effectiveAddr = (unsigned int)gcr + mAddr;
+		effective_addr = (unsigned int)gcr + maddr;
 		/* Read the param->param. */
-		*(reg + tmp) = readl((unsigned int *)effectiveAddr);
+		*(reg + tmp) = readl((unsigned int *)effective_addr);
 	}
 	return reg;
 }
 
-static int gcr_open(struct inode *inode, struct file *file)
+void *get_scm_priv(void)
 {
-	struct gcr_priv *priv = NULL;
-
-	priv = container_of(inode->i_cdev, struct gcr_priv, gcr_cdev);
-	MOD_INC_USE_COUNT;
-	file->private_data = priv;
-	dev_dbg(((struct gcr_priv *)file->private_data)->gcr_dev,
-			"gcr_dev:: Device opened\n");
-	return 0;
+	return (void *)priv;
 }
 
-long gcr_ctrl(struct file *file, unsigned int cmd, unsigned long ioctl_arg)
+int __init d4400_scm_init(void)
 {
 	int ret = 0;
-	struct gcr_priv *priv;
-	struct gcr_reg_map *gcr;
-	unsigned int size;
-	struct gcr_parm *arg = NULL;
-	unsigned int count;
-	u32 *reg_val;
+	struct device_node *of_np;
+	struct device *dev;
 
-	size = sizeof(struct gcr_parm);
-	arg = kmalloc(size, GFP_KERNEL);
-	if (copy_from_user((void *)arg, (struct gcr_parm *)ioctl_arg, size)) {
-		kfree(arg);
-		ret = -EFAULT;
-		goto end;
-
-	}
-	count = ((struct gcr_parm *)arg)->count;
-	priv = (struct gcr_priv *)file->private_data;
-	gcr = priv->gcr_reg;
-	dev_dbg(priv->gcr_dev, "IOCTL cmd:: %u\n", cmd);
-	switch (cmd) {
-	case GCR_CONFIG_CMD:
-		{
-			struct dma_intf_switch_parm_t *chan_parm;
-
-			size = count * sizeof(
-					struct dma_intf_switch_parm_t);
-			chan_parm = kmalloc(size, GFP_KERNEL);
-			if (copy_from_user((void *)chan_parm,
-						((struct gcr_parm *)arg)->parm,
-						size)) {
-				kfree(chan_parm);
-				ret = -EFAULT;
-				goto end;
-			}
-			mutex_lock(&priv->gcr_lock);
-			ret = gcr_vsp_intf_dma_cfg(chan_parm, count,
-					gcr);
-			mutex_unlock(&priv->gcr_lock);
-			kfree(chan_parm);
-		}
-		break;
-	case GCR_CPRI_DMA_MUX_CMD:
-		{
-			struct cpri_dma_mux_config *cpri_mux_parm;
-
-			size = count * sizeof(
-					struct cpri_dma_mux_config);
-			cpri_mux_parm = kmalloc(size, GFP_KERNEL);
-			if (copy_from_user((void *)cpri_mux_parm,
-						((struct gcr_parm *)arg)->parm,
-						size)) {
-				kfree(cpri_mux_parm);
-				ret = -EFAULT;
-				goto end;
-			}
-			mutex_lock(&priv->gcr_lock);
-			ret = gcr_cpri_dma_mux(cpri_mux_parm,
-					count, gcr);
-			mutex_unlock(&priv->gcr_lock);
-			kfree(cpri_mux_parm);
-		}
-		break;
-	case GCR_INTER_VSP_CFG:
-		{
-			struct inter_vsp_dma_config_t *inter_vsp_parm;
-
-			size = count * sizeof(
-					struct inter_vsp_dma_config_t);
-			inter_vsp_parm =  kmalloc(size, GFP_KERNEL);
-			if (copy_from_user((void *)inter_vsp_parm,
-						((struct gcr_parm *)arg)->parm,
-						size)) {
-				kfree(inter_vsp_parm);
-				ret = -EFAULT;
-				goto end;
-			}
-			mutex_lock(&priv->gcr_lock);
-			ret = gcr_inter_vsp_dma_cfg(inter_vsp_parm,
-					count, gcr);
-			mutex_unlock(&priv->gcr_lock);
-			kfree(inter_vsp_parm);
-
-		}
-		break;
-	case GCR_JESD_PTR_RST_CFG:
-		{
-			struct jesd_dma_ptr_rst_parm *jesd_ptr_parm;
-
-			size = count * sizeof(
-					struct jesd_dma_ptr_rst_parm);
-			jesd_ptr_parm = kmalloc(size, GFP_KERNEL);
-			if (copy_from_user((void *)jesd_ptr_parm,
-						((struct gcr_parm *)arg)->parm,
-						size)) {
-				kfree(jesd_ptr_parm);
-				ret = -EFAULT;
-				goto end;
-			}
-			mutex_lock(&priv->gcr_lock);
-			ret = gcr_jesd_dma_ptr_rst_req(jesd_ptr_parm,
-					count, gcr);
-			mutex_unlock(&priv->gcr_lock);
-			kfree(jesd_ptr_parm);
-		}
-		break;
-	case GCR_WRITE_REG:
-		{
-			struct gcr_ctl_parm *param;
-
-			size = count * sizeof(
-					struct gcr_ctl_parm);
-			param = kmalloc(size, GFP_KERNEL);
-			if (copy_from_user((void *)param,
-						((struct gcr_parm *)arg)->parm,
-						size)) {
-				kfree(param);
-				ret = -EFAULT;
-				goto end;
-			}
-			mutex_lock(&priv->gcr_lock);
-			ret = gcr_write_set(param, count, gcr);
-			mutex_unlock(&priv->gcr_lock);
-			kfree(param);
-		}
-		break;
-	case GCR_READ_REG:
-		{
-			struct gcr_ctl_parm *param;
-			size = count * sizeof(
-					struct gcr_ctl_parm);
-			param = kmalloc(size, GFP_KERNEL);
-			if (copy_from_user((void *)param,
-						((struct gcr_parm *)arg)->parm,
-						size)) {
-				kfree(param);
-				ret = -EFAULT;
-				goto end;
-			}
-			mutex_lock(&priv->gcr_lock);
-			reg_val = gcr_read_reg(param, priv->gcr_dev, count,
-					gcr);
-			size = count * sizeof(u32);
-			if (copy_to_user((void *)param->param, reg_val,	size)) {
-				kfree(reg_val);
-				ret = -EFAULT;
-				goto end;
-			}
-			kfree(reg_val);
-			kfree(param);
-			mutex_unlock(&priv->gcr_lock);
-		}
-		break;
-	default:
-		dev_warn(priv->gcr_dev, "gcr_dev:: invalid ioctl cmd[%u]\n",
-				cmd);
-		ret = -EINVAL;
-		goto end;
-		break;
-	}
-
-end:
-	kfree(arg);
-	return ret;
-}
-
-void gcr_set_cpri_line_rate(enum cpri_link_rate linerate, unsigned char cpri_id,
-		struct gcr_priv *priv)
-{
-	struct gcr_reg_map *gcr;
-	u32 value = 0;
-	unsigned char gcr_id;
-	char line_rate[8] = {0, 2, 4, 5, 8, 16};
-	u32 rate;
-
-	if (cpri_id == 1)
-		gcr_id = GCR4_CPRI_CTRL;
-	else
-		gcr_id = GCR6_CPRI_CTRL;
-
-	gcr = priv->gcr_reg;
-	rate = line_rate[linerate];
-
-	value = readl(&gcr->gcr[gcr_id]);
-	value |= rate << 1;
-	writel(value, &gcr->gcr[gcr_id]);
-	value = readl(&gcr->gcr[gcr_id]);
-}
-EXPORT_SYMBOL(gcr_set_cpri_line_rate);
-
-void gcr_linkrate_autoneg_reset(unsigned char cpri_id,
-		struct gcr_priv *priv)
-{
-	struct gcr_reg_map *gcr;
-	u32 value = 0;
-	unsigned char gcr_id;
-
-	if (cpri_id == 1)
-		gcr_id = GCR4_CPRI_CTRL;
-	else
-		gcr_id = GCR6_CPRI_CTRL;
-
-	gcr = priv->gcr_reg;
-	value = readl(&gcr->gcr[gcr_id]);
-	value |= 1;
-	writel(value, &gcr->gcr[gcr_id]);
-}
-EXPORT_SYMBOL(gcr_linkrate_autoneg_reset);
-
-
-
-static const struct of_device_id gcr_cfg_ids[] = {
-	{ .compatible = "fsl,d4400-scm"},
-	{}
-};
-
-static struct platform_driver gcr_cfg_driver = {
-	.probe = gcr_cfg_probe,
-	.remove = gcr_remove,
-	.driver = {
-		.name = DRIVER_NAME,
-		.owner = THIS_MODULE,
-		.of_match_table = gcr_cfg_ids,
-	},
-};
-
-struct gcr_priv *get_attached_gcr_dev(struct device_node *gcr_dev_node)
-{
-	struct gcr_priv *gcr_dev = NULL;
-
-	if (list_empty(&gcr_dev_list))
-		return NULL;
-
-	raw_spin_lock(&gcr_list_lock);
-
-	list_for_each_entry(gcr_dev, &gcr_dev_list, list) {
-		if (gcr_dev_node == gcr_dev->dev_node)
-			break;
-		else
-			break;
-	}
-	raw_spin_unlock(&gcr_list_lock);
-
-	return gcr_dev;
-}
-EXPORT_SYMBOL(get_attached_gcr_dev);
-
-
-static int gcr_cfg_probe(struct platform_device *ofdev)
-{
-	struct device_node *np = ofdev->dev.of_node;
-	struct device *dev = &ofdev->dev;
-	unsigned int property[2] = { 0, 0 };
-	int ret = 0;
-	int err;
-	struct gcr_priv *priv;
-
-	if (!np || !of_device_is_available(np)) {
-		ret = -ENODEV;
-		goto err_out;
-	}
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv) {
-		dev_dbg(dev, "Failed to allocate gcr private data\n");
+		pr_err("Failed to allocate gcr private data\n");
 		ret = -ENOMEM;
-		goto err_mem;
 	}
+	of_np = of_find_compatible_node(NULL, NULL, "fsl,d4400-scm");
+	priv->gcr_reg = of_iomap(of_np, 0);
+	WARN_ON(!priv->gcr_reg);
+	if (!priv->gcr_reg)
+		goto err_out;
+
+	dev = (struct device *)((char *)of_np -
+			offsetof(struct device, of_node));
 	priv->gcr_dev = dev;
-	ret = of_property_read_u32_array(np, "reg", property,
-			ARRAY_SIZE(property));
-	if (ret) {
-		dev_err(&ofdev->dev, "gcr_dev:: of_prop_read Failed ...\n");
-		ret = -EFAULT;
-		goto err_mem;
-	}
-	priv->gcr_reg = of_iomap(ofdev->dev.of_node, 0);
-
-	if (!priv->gcr_reg) {
-		dev_err(dev, "gcr_dev:: ioremap_nocache Failed ...\n");
-		ret = -EFAULT;
-		goto err_mem;
-	}
-	err = alloc_chrdev_region(&priv->dev_t, 0, GCR_DEV_MAX, DRIVER_NAME);
-	if (err) {
-		pr_err("cannot register gcr driver\n");
-		ret = -EFAULT;
-		iounmap(priv->gcr_reg);
-		goto err_mem;
-	}
-	cdev_init(&priv->gcr_cdev, &gcr_fops);
-	err = cdev_add(&priv->gcr_cdev, priv->dev_t, 1);
-	if (err) {
-		pr_err("cannot add gcr driver\n");
-		ret = -EFAULT;
-		iounmap(priv->gcr_reg);
-		goto err_mem;
-	}
-	priv->dev_node = np;
-	raw_spin_lock(&gcr_list_lock);
-	list_add_tail(&priv->list, &gcr_dev_list);
-	raw_spin_unlock(&gcr_list_lock);
-	dev_info(dev, "GCR probe done ....\n");
-
-	mutex_init(&priv->gcr_lock);
-	dev_set_drvdata(dev, priv);
-	return 0;
-err_mem:
-	kfree(priv);
+	return ret;
 err_out:
-	pr_err("gcr probe error\n");
+	kfree(priv);
+	priv = NULL;
 	return ret;
 }
-
-static int gcr_release(struct inode *inode, struct file *fp)
-{
-	struct gcr_priv *priv = (struct gcr_priv *)fp->private_data;
-
-	if (!priv)
-		return -ENODEV;
-	cdev_del(&priv->gcr_cdev);
-	return 0;
-}
-
-static int gcr_remove(struct platform_device *ofdev)
-{
-	struct gcr_priv *priv = NULL;
-
-	priv = (struct gcr_priv *)dev_get_drvdata(&ofdev->dev);
-	iounmap(priv->gcr_reg);
-	list_del(&priv->list);
-	dev_set_drvdata(priv->gcr_dev, NULL);
-	if (priv->dev_t)
-		unregister_chrdev_region(priv->dev_t, GCR_DEV_MAX);
-	kfree(priv);
-	return 0;
-}
-
-static int __init init_gcr(void)
-{
-	return platform_driver_register(&gcr_cfg_driver);
-}
-
-static void __exit exit_gcr(void)
-{
-	platform_driver_unregister(&gcr_cfg_driver);
-	return;
-}
-
-module_init(init_gcr);
-module_exit(exit_gcr);

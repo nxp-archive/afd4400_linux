@@ -43,6 +43,7 @@ extern int d4400_ccm_vspa_full_pow_up(u8 vspa_id);
 extern int d4400_ccm_vspa_full_pow_gate(u8 vspa_id);
 
 extern void d4400_gpc_init(void);
+extern int d4400_scm_init(void);
 
 #endif
 

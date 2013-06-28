@@ -118,6 +118,7 @@ static void __init d4400_init_irq(void)
 
 static void __init d4400_timer_init(void)
 {
+	d4400_scm_init();
 	d4400_clocks_init();
 	d4400_print_silicon_rev("D4400", d4400_revision());
 }

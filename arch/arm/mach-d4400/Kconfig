@@ -28,6 +28,7 @@ config SOC_D4400
 	select PINCTRL
 	select PINCTRL_D4400
 	select HAVE_D4400_GPC
+	select GCR_DEV
 	help
 	  This enables support for Freescale D4400 processor.
 

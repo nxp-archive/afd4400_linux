@@ -268,14 +268,11 @@ struct gcr_reg_map {
 };
 
 struct gcr_priv {
-
 	struct gcr_reg_map *gcr_reg;
 	struct device_node *dev_node;
 	struct mutex gcr_lock;
 	struct device *gcr_dev;
 	struct cdev gcr_cdev;
-	struct list_head list;
-
 	dev_t dev_t;
 };
 
@@ -284,5 +281,18 @@ extern void gcr_set_cpri_line_rate(enum cpri_link_rate linerate,
 		unsigned char cpri_id, struct gcr_priv *priv);
 extern void gcr_linkrate_autoneg_reset(unsigned char cpri_id,
 		struct gcr_priv *priv);
+void *get_scm_priv(void);
+extern u32 *gcr_read_reg(struct gcr_ctl_parm *param, struct device *gcr_dev,
+		unsigned char count, struct gcr_reg_map *gcr);
+extern int gcr_write_set(struct gcr_ctl_parm *param,
+		unsigned char count, struct gcr_reg_map *gcr);
+extern int gcr_jesd_dma_ptr_rst_req(struct jesd_dma_ptr_rst_parm *ptr_rst_parm,
+		unsigned count, struct gcr_reg_map *gcr);
+extern int gcr_inter_vsp_dma_cfg(struct inter_vsp_dma_config_t *vsp_parm,
+		unsigned char count, struct gcr_reg_map *gcr);
+extern int gcr_cpri_dma_mux(struct cpri_dma_mux_config *cpri_mux_parm,
+		unsigned count, struct gcr_reg_map *gcr);
+extern int gcr_vsp_intf_dma_cfg(struct dma_intf_switch_parm_t *chan_parm,
+		unsigned char count, struct gcr_reg_map *gcr);
 
 #endif/* _GCR_DRIVER_H_ */
