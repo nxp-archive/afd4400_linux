@@ -2281,7 +2281,10 @@ static struct jesd_transport_dev *
 	} else {
 		irq_enable_reg = &tdev->rx_regs->rx_irq_enable;
 		irq_status_reg = &tdev->rx_regs->rx_irq_status;
-		val = RX_IRQS_EN_MASK;
+		/* XXX: disable error interrupts on RX, they seem to
+		 * be getting genrated spuriously
+		 */
+		val = 0;
 		mask = RX_IRQS_EN_MASK;
 		iowrite32(0, &tdev->rx_regs->rx_irq_ve_msk);
 	}
