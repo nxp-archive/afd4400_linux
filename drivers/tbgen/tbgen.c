@@ -852,6 +852,7 @@ int tbgen_timer_set_sysref_capture(struct tbgen_timer *timer, int enabled)
 int tbgen_set_sync_loopback(struct tbgen_timer *timer, int enabled)
 {
 	struct tbg_regs *tbgregs = timer->tbg->tbgregs;
+	struct tbgen_dev *tbg = timer->tbg;
 	u32 *reg, val, mask;
 	int rc = 0;
 
@@ -864,7 +865,6 @@ int tbgen_set_sync_loopback(struct tbgen_timer *timer, int enabled)
 	val = (1 << timer->id);
 	mask = val;
 	reg = &tbgregs->debug;
-
 	if (!enabled)
 		val = ~val;
 
@@ -1341,6 +1341,7 @@ static int __init tbgen_of_probe(struct platform_device *pdev)
 	if (!tbg->tbgregs)
 		goto out;
 
+	dev_info(tbg->dev, "TBGEN REGS %p\n", tbg->tbgregs);
 	tbg->irq = irq_of_parse_and_map(tbg->node, 0);
 	if (tbg->irq) {
 		retcode = tbgen_register_irq(tbg);
