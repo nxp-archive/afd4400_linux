@@ -472,13 +472,13 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 		val = SYNC_SELECT_TBGEN;
 		mask = SYNC_SELECT_TBGEN;
 		jesd_update_reg(reg, val, mask);
-		tbgen_set_sync_loopback(tdev->timer_handle, 1);
+		tbgen_set_sync_loopback(tdev->txalign_timer_handle, 1);
 	} else {
 		reg = &tdev->tx_regs->tx_transcontrol;
 		val = ~SYNC_SELECT_TBGEN;
 		mask = SYNC_SELECT_TBGEN;
 		jesd_update_reg(reg, val, mask);
-		tbgen_set_sync_loopback(tdev->timer_handle, 0);
+		tbgen_set_sync_loopback(tdev->txalign_timer_handle, 0);
 	}
 
 	return rc;
@@ -2115,9 +2115,9 @@ void jesd_deframer_isr(struct jesd_transport_dev *tdev)
 	}
 
 	if (irq_status & DFRMR_IRQ_ILS) {
-		dev_info(tdev->dev, "%s: skew error %x\n", tdev->name,
-			ioread32(&rx_regs->rx_skew_err));
-		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_skew_err);
+		dev_info(tdev->dev, "%s: ILS flag %x\n", tdev->name,
+			ioread32(&rx_regs->rx_ilsf));
+		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_ilsf);
 	}
 
 }
@@ -2245,6 +2245,8 @@ static struct jesd_transport_dev *
 	}
 
 	get_device_name(tdev);
+	dev_info(tdev->dev, "%s: Regs %p\n", tdev->name, base);
+
 	rc = of_property_read_u32(dev_node, "max-lanes", &max_lanes);
 
 	if (rc) {
@@ -2281,6 +2283,7 @@ static struct jesd_transport_dev *
 		irq_status_reg = &tdev->rx_regs->rx_irq_status;
 		val = RX_IRQS_EN_MASK;
 		mask = RX_IRQS_EN_MASK;
+		iowrite32(0, &tdev->rx_regs->rx_irq_ve_msk);
 	}
 	/* clear any stray interrupts*/
 	irq_status = ioread32(irq_status_reg);
