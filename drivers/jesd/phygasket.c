@@ -214,7 +214,7 @@ int do_patter_generator(struct phygasket *phy, struct patgen *pgen)
 	return retcode;
 }
 
-static int __init phygasket_probe(struct platform_device *pdev)
+static int phygasket_probe(struct platform_device *pdev)
 {
 	int retcode = 0;
 	struct device_node *node = pdev->dev.of_node;
@@ -257,7 +257,7 @@ out:
 }
 
 
-static int __exit phygasket_remove(struct platform_device *pdev)
+static int phygasket_remove(struct platform_device *pdev)
 {
 	struct phygasket *phy, *phy_temp;
 	struct list_head *pos, *nx;

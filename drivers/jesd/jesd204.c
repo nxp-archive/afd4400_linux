@@ -2343,7 +2343,7 @@ static int enable_transport(struct jesd_transport_dev *tdev)
 	return 0;
 }
 
-static int __init jesd204_of_probe(struct platform_device *pdev)
+static int jesd204_of_probe(struct platform_device *pdev)
 {
 	int rc = -ENODEV;
 	int jesd_major, jesd_minor, max_lanes;
@@ -2468,7 +2468,7 @@ out:
 	return rc;
 }
 
-static int __exit jesd204_of_remove(struct platform_device *pdev)
+static int jesd204_of_remove(struct platform_device *pdev)
 {
 	int id = 0;
 	int rc = 0;
