@@ -1530,7 +1530,7 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 				(map_width / 2));
 			cpri_reg_set_val(reg_rcmd1, axc_num, axc->id);
 		} else {
-			dev_dbg(dev, "rcmd0 -> subsegNum[%d], tcm_enable: 0x%x,"
+			dev_dbg(dev, "rcmd0 -> subsgNum[%d], tcm_enable: 0x%x,",
 					subsegloop, tcm_enable);
 			dev_dbg(dev, "pos[0x%x] - 0x%x\n",
 					position, (subsegment->offset / 2));
