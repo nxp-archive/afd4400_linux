@@ -143,9 +143,6 @@ static int tbgen_handle_rfg_irq(struct tbgen_dev *tbg)
 {
 	int disable_fs_irq = 0;
 	u32 *reg, val;
-	unsigned long flags;
-
-	spin_lock_irqsave(&tbg->lock, flags);
 
 	switch (tbg->sync_state) {
 	case SYNC_CPRI_RX_RFP:
@@ -167,7 +164,6 @@ static int tbgen_handle_rfg_irq(struct tbgen_dev *tbg)
 		/*Nothing*/
 		break;
 	}
-	spin_unlock_irqrestore(&tbg->lock, flags);
 
 	return disable_fs_irq;
 }
@@ -370,10 +366,6 @@ int rfg_enable(struct tbgen_dev *tbg, u8 enable)
 
 		mask = RFGEN | START_INTERNAL_RF_SYNC;
 		tbgen_update_reg(reg, val, mask);
-		mdelay(30);
-		tbgen_tasklet((unsigned long) tbg);
-		mdelay(30);
-		tbgen_tasklet((unsigned long) tbg);
 	} else {
 		/* FSIE should be disabled after first frame sync interrupt
 		 * but disabling it just in case it was enabled for some
@@ -525,10 +517,11 @@ static void tbgen_tasklet(unsigned long data)
 	struct tbgen_dev *tbg = (struct tbgen_dev *)data;
 	struct tbg_regs *tbgregs = tbg->tbgregs;
 	u32 int_stat = 0;
+	unsigned long flags;
 
+	spin_lock_irqsave(&tbg->lock, flags);
 	int_stat = tbgen_read_reg(&tbgregs->int_stat);
 	/* Clear the IRQs which we serviced*/
-	tbgen_write_reg(&tbgregs->int_stat, int_stat);
 	if (int_stat & IRQ_FS) {
 		if (tbgen_handle_rfg_irq(tbg)) {
 			/* Disable FS IRQ */
@@ -537,7 +530,8 @@ static void tbgen_tasklet(unsigned long data)
 	}
 
 	/* Enable IRQs which we serviced */
-	tbgen_write_reg(&tbgregs->cntrl_1, int_stat);
+	tbgen_write_reg(&tbgregs->cntrl_1, (int_stat & IRQ_EN_MASK));
+	spin_unlock_irqrestore(&tbg->lock, flags);
 }
 
 static irqreturn_t tbgen_isr(int irq, void *dev)
@@ -556,7 +550,6 @@ static irqreturn_t tbgen_isr(int irq, void *dev)
 	val &= ~int_stat;
 	tbgen_write_reg(&tbgregs->cntrl_1, val);
 	spin_unlock(&tbg->lock);
-
 	tasklet_hi_schedule(&tbg->tasklet);
 
 	return IRQ_HANDLED;

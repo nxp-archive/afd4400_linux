@@ -239,6 +239,7 @@ struct tbg_regs {
 #define IRQ_SSR				(1 << 7)
 #define IRQ_SER				(1 << 24)
 #define IRQ_RESYNC			(1 << 25)
+#define IRQ_EN_MASK			(IRQ_FS)
 
 struct tbgen_dev *get_tbgen_device(void);
 u32 get_ref_clock(struct tbgen_dev *tbg);
