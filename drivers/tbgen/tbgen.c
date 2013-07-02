@@ -1315,7 +1315,7 @@ static struct miscdevice tbg_miscdev = {
  * \return zero on success or negative number on failure.
  */
 
-static int __init tbgen_of_probe(struct platform_device *pdev)
+static int tbgen_of_probe(struct platform_device *pdev)
 {
 	int retcode = 0, id;
 	struct tbgen_timer *timer;
@@ -1407,7 +1407,7 @@ out:
  *  \params platform device instance given from platform base
  *  \return zero on success or negative number on failure.
  */
-static int __exit tbgen_of_remove(struct platform_device *pdev)
+static int tbgen_of_remove(struct platform_device *pdev)
 {
 	int retcode = 0, id;
 	struct tbgen_dev *tbg = dev_get_drvdata(&pdev->dev);
