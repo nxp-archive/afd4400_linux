@@ -942,7 +942,7 @@
 				#size-cells = <1>;
 				compatible = "fsl,d4400-tbgen";
 				reg = <0x00094000 0x8000>;
-				interrupts = <0 173 0x4>;
+				interrupts = <0 176 0x4>;
 			};
 
 		};
