@@ -38,11 +38,6 @@ void clear_control_tx_table(struct cpri_framer *framer)
 	struct cpri_framer_regs *regs = framer->regs;
 
 	for (i = 0; i <= MAX_TCTA_ADDR; i++) {
-		value = i;
-		value = value << TCTA_ADDR_OFFSET;
-		value |= TCT_WRITE_MASK;
-		cpri_reg_set_val(&regs->cpri_tctrlattrib,
-				MASK_ALL, value);
 
 		cpri_reg_clear(&regs->cpri_tctrldata0,
 			MASK_ALL);
@@ -52,6 +47,11 @@ void clear_control_tx_table(struct cpri_framer *framer)
 			MASK_ALL);
 		cpri_reg_clear(&regs->cpri_tctrldata3,
 			MASK_ALL);
+		value = i;
+		value = value << TCTA_ADDR_OFFSET;
+		value |= TCT_WRITE_MASK;
+		cpri_reg_set_val(&regs->cpri_tctrlattrib,
+				MASK_ALL, value);
 	}
 }
 

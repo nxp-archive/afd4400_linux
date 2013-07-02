@@ -19,12 +19,15 @@
 #define AXC_BASE_ADDR_MASK			0X1fff
 #define AXC_SW_MASK				0x1f0000
 #define AXC_TH_MASK				0xfff
+#define AXC_MAX_MASK				0xf
 
 #define AXC_MEM_ENABLE_MASK			0x1
 #define AXC_NUM_MASK				0x1f
 #define AXC_POS_MASK				0x7
 #define AXC_WIDTH_MASK				0x1f
 #define CPRI_AXC_ID_INVAL			0xff
+
+#define RX_TX_MEM_ALLOCATED			2
 
 /* axc map table configuration defines */
 #define AXC_K1_MASK				0x003f0000
@@ -33,6 +36,10 @@
 #define AXC_TBL_WRITE_MASK			0x1000
 #define AXC_TBL_SEG_ADDR_MASK			0xfff
 #define AXC_ENABLE_MASK				0x1
+
+#define AXC_CONF_SHIFT				8
+#define AXC_CONF_MASK				0x80
+#define AXC_SMPL_WDTH_MASK			0x00001f9f
 
 #define SET_CMD					0x1
 #define CLEAR_CMD				0X0
@@ -43,6 +50,7 @@
 #define Ki_INVALID				0xffff
 #define NO_AXC_SET				0xffffffff
 #define NUM_SUBSEG				3
+#define INVALIDE_MBLK_ADDR			0xffffffff
 
 #define SEG_NUM(word, byte, size) (((word * size) + byte) / SEG_SIZE)
 #define BYTE_POS(word, byte, size) (((word * size) + byte) % SEG_SIZE)

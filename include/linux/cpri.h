@@ -78,6 +78,7 @@ struct axc_mem_blk {
 	u32 base;
 	u32 size;
 	u32 next_free_addr;
+	u32 rxtx_busy_flag;
 };
 
 struct axc_buf_head {
@@ -107,7 +108,8 @@ struct cpri_dev {
 	unsigned int irq_gen3;
 	unsigned int irq_gen4;
 	unsigned int irq_err;
-	struct tasklet_struct *err_tasklet;
+	struct tasklet_struct *err_tasklet_frmr0;
+	struct tasklet_struct *err_tasklet_frmr1;
 	unsigned int framers;
 	u32 dev_flags;
 #define CPRI_MEDUSA_OCRAM			(1 << 5)
@@ -178,27 +180,27 @@ struct cpri_framer_regs {
 	u32 reserved5[4];
 	u32 cpri_serdescfg;	/* 0x80 - SerDes Interface Config */
 	u32 reserved6[15];
-	u32 cpri_mapcfg;	/* 0xC0 - Mapping Configuration */
+	u32 cpri_map_config;	/* 0xC0 - Mapping Configuration */
 	u32 reserved7[1];
-	u32 cpri_maptblcfg;	/* 0xC8 - Mapping Table Config */
+	u32 cpri_map_tbl_config;	/* 0xC8 - Mapping Table Config */
 	u32 reserved8[6];
-	u32 cpri_rmapoffset;	/* 0xE4 - RX AxC Container Map Block Off */
-	u32 cpri_tmapoffset;	/* 0xE8 - TX AxC Container Map Block Off */
+	u32 cpri_map_offset_rx;	/* 0xE4 - RX AxC Container Map Block Off */
+	u32 cpri_map_offset_tx;	/* 0xE8 - TX AxC Container Map Block Off */
 	u32 reserved9;
 	u32 cpri_tstartoffset;	/* 0xF0 - Off for TX Start Sync Output */
 	u32 reserved10[3];
-	u32 cpri_riqbufstatus[2]; /* 0x100 to 0x104 - Map Buf RX Status */
+	u32 cpri_iq_rx_buf_status[2]; /* 0x100 to 0x104 - Map Buf RX Status */
 	u32 reserved11[6];
-	u32 cpri_tiqbufstatus[2]; /* 0x120 tp 0x124 - Map Buf TX Status */
+	u32 cpri_iq_tx_buf_status[2]; /* 0x120 tp 0x124 - Map Buf TX Status */
 	u32 reserved12[38];
-	u32 cpri_rmapsmplcfg;	/* 0x1C0 - CPRI Rx AxC Sample Width Config */
-	u32 cpri_tmapsmplcfg;	/* 0x1C4 - CPRI Tx AxC Sample Width Config */
+	u32 cpri_map_smpl_cfg_rx;	/* 0x1C0 - CPRI Rx AxC SW Config */
+	u32 cpri_map_smpl_cfg_tx;	/* 0x1C4 - CPRI Tx AxC SW Config */
 	u32 reserved13[2];
-	u32 cpri_r1mapkselect;	/* 0x1D0 - CPRI Rx K Selection Reg1 */
-	u32 cpri_r2mapkselect;	/* 0x1D4 - CPRI Rx K Selection Reg2 */
+	u32 cpri_map_k_select_rx1;	/* 0x1D0 - CPRI Rx K Selection Reg1 */
+	u32 cpri_map_k_select_rx2;	/* 0x1D4 - CPRI Rx K Selection Reg2 */
 	u32 reserved14[2];
-	u32 cpri_t1mapkselect;	/* 0x1E0 - CPRI Tx K Selection Reg1 */
-	u32 cpri_t2mapkselect;	/* 0x1E4 - CPRI Tx K Selection Reg2 */
+	u32 cpri_map_k_select_tx1;	/* 0x1E0 - CPRI Tx K Selection Reg1 */
+	u32 cpri_map_k_select_tx2;	/* 0x1E4 - CPRI Tx K Selection Reg2 */
 	u32 reserved15[6];
 	u32 cpri_rethstatus;	/* 0x200 - Eth Receive Status */
 	u32 reserved16;
@@ -274,11 +276,11 @@ struct cpri_framer_regs {
 	u32 cpri_auxctrl;	/* 0x5F0 - CPRI Aux Control */
 	u32 reserved36[3];
 	/* Control registers */
-	u32 cpri_rctrl;		/* 0x600 - Rx Control */
-	u32 cpri_tctrl;		/* 0x604 - Tx Control */
-	u32 cpri_raxcctrl;	/* 0x608 - Rx AxC Control */
+	u32 cpri_rcr;		/* 0x600 - Rx Control */
+	u32 cpri_tcr;		/* 0x604 - Tx Control */
+	u32 cpri_raccr;	/* 0x608 - Rx AxC Control */
 	u32 reserved37;
-	u32 cpri_taxcctrl;	/* 0x610 - Tx AxC Control */
+	u32 cpri_taccr;	/* 0x610 - Tx AxC Control */
 	u32 reserved38[14];
 	u32 cpri_rvssthresh;	/* 0x64C - Tx VSS Threshold */
 	u32 cpri_tvssthresh;	/* 0x650 Tx Eth Coal Threshold */
@@ -307,20 +309,20 @@ struct cpri_framer_regs {
 	u32 cpri_tctrldata2;	/* 0x6C0 - Tx Ctrl Data Register 2 */
 	u32 cpri_tctrldata3;	/* 0x6C4 - Tx Ctrl Data Register 3 */
 	u32 reserved42[14];
-	u32 cpri_raxcparam[24];	/* 0x700 to 0x75C - Rx Ant Carrier Param */
+	u32 cpri_racpr[24];	/* 0x700 to 0x75C - Rx Ant Carrier Param */
 	u32 reserved43[8];
-	u32 cpri_raxcparammsb[24];	/* 0x780 to 0x7DC  - ,, MSB */
+	u32 cpri_racprmsb[24];	/* 0x780 to 0x7DC  - ,, MSB */
 	u32 reserved44[72];
-	u32 cpri_taxcparam[24];	/* 0x900 to 0x95C - Tx Ant Carrier Param */
+	u32 cpri_tacpr[24];	/* 0x900 to 0x95C - Tx Ant Carrier Param */
 	u32 reserved45[8];
-	u32 cpri_taxcparammsb[24]; /* 0x980 to 0x9DC - ,, Param MSB */
+	u32 cpri_tacprmsb[24]; /* 0x980 to 0x9DC - ,, Param MSB */
 	u32 reserved46[72];
 	u32 cpri_auxmask[8];	/* 0xB00 to 0xBFC - Aux Interface Mask */
 	u32 reserved47[56];
-	u32 cpri_tcfgmemaddr0;	/* 0xC00 - Tx Config Memory Address */
-	u32 cpri_tcfgmemaddr1;	/* 0xC04 - Tx Config Memory Address */
-	u32 cpri_rcfgmemaddr0;	/* 0xC08 - Rx Config Memory Data */
-	u32 cpri_rcfgmemaddr1;	/* 0xC0C - Rx Config Memory Data */
+	u32 cpri_tcmd0;	/* 0xC00 - Tx Config Memory Address */
+	u32 cpri_tcmd1;	/* 0xC04 - Tx Config Memory Address */
+	u32 cpri_rcmd0;	/* 0xC08 - Rx Config Memory Data */
+	u32 cpri_rcmd1;	/* 0xC0C - Rx Config Memory Data */
 	u32 cpri_raxierrstatus;	/* 0xC10 - Rx AXI Error Status */
 	u32 cpri_taxierrstatus;	/* 0xC14 - Tx AXI Error Status */
 	u32 cpri_raxierrinten;	/* 0xC18 - Rx AXI Error Int En */
@@ -329,8 +331,8 @@ struct cpri_framer_regs {
 	u32 cpri_taxciqthreshintstatus;	/* 0xC24 - Tx AxC IQ Thr Int Status */
 	u32 cpri_raxciqthreshinten; /* 0xC28 - Rx AxC IQ Threshold Int En */
 	u32 cpri_taxciqthreshinten; /* 0xC2C - Tx AxC IQ Threshold Int En */
-	u32 cpri_tcfgmemaddr;	/* 0xC30 - Tx Config Memory Address */
-	u32 cpri_rcfgmemaddr;	/* 0xC34 - Rx Config Memory Address */
+	u32 cpri_tcma;	/* 0xC30 - Tx Config Memory Address */
+	u32 cpri_rcma;	/* 0xC34 - Rx Config Memory Address */
 	u32 cpri_ethfwdctrl;	/* 0xc38 - CPRI Eth Forward Inter Ctrl */
 	u32 reserved48;
 	u32 cpri_auxcwdmask[8];	/* 0xC40-0xC5C - CPRI Aux Interface CWM */
@@ -382,6 +384,7 @@ struct cpri_framer {
 	struct cpri_dev *cpri_dev;
 	struct cdev cdev;
 	dev_t dev_t;
+	raw_spinlock_t regs_lock;
 	struct device_node *sfp_dev_node;
 	struct device_node *gcr_dev_node;
 	struct sfp_dev *sfp_dev;
@@ -585,7 +588,7 @@ enum cpri_linerate {
 #define IQ_EN_MASK				0x0001
 #define ETH_EN_MASK				0x0002
 #define HDLC_EN_MASK				0x0004
-#define VSS_EN_MASK				0x0008
+#define VSS_EN_MASK				0x0001
 #define IQ_SYNC_EN_MASK				0x8000
 
 /* CPRInRCIER & CPRInTCIER */
@@ -597,6 +600,8 @@ enum cpri_linerate {
 #define ETH_EVENT_EN_MASK			0x00000004
 #define HDLC_EVENT_EN_MASK			0x00000002
 #define VSS_EVENT_EN_MASK			0x00000001
+#define CPRI_INT_MASK				0xf00100f5
+#define FRAMER_TX_RX_INT_MASK			0x80038007
 
 /* CPRI ECC Error Indication Enable Register (CPRInECCEIER) */
 #define SINGLE_BIT_ECC_ERROR_OUTPUT_EN_MASK	0x1
@@ -607,20 +612,20 @@ enum cpri_linerate {
 #define CW130_EN_MASK				0x2
 
 /* CPRInEIER & CPRInEER */
-#define RX_IQ_OVERRUN				(1 << 1)
-#define TX_IQ_UNDERRUN				(1 << 2)
-#define RX_ETH_MEM_OVERRUN			(1 << 3)
-#define TX_ETH_UNDERRUN				(1 << 4)
-#define RX_ETH_BD_UNDERRUN			(1 << 5)
-#define RX_HDLC_OVERRUN				(1 << 6)
-#define TX_HDLC_UNDERRUN			(1 << 7)
-#define RX_HDLC_BD_UNDERRUN			(1 << 8)
-#define RX_VSS_OVERRUN				(1 << 9)
-#define TX_VSS_UNDERRUN				(1 << 10)
-#define ECC_CONFIG_MEM				(1 << 11)
-#define ECC_DATA_MEM				(1 << 12)
-#define RX_ETH_DMA_OVERRUN			(1 << 13)
-#define ETH_FORWARD_REM_FIFO_FULL		(1 << 14)
+#define RX_IQ_OVERRUN				(1 << 0)
+#define TX_IQ_UNDERRUN				(1 << 1)
+#define RX_ETH_MEM_OVERRUN			(1 << 2)
+#define TX_ETH_UNDERRUN				(1 << 3)
+#define RX_ETH_BD_UNDERRUN			(1 << 4)
+#define RX_HDLC_OVERRUN				(1 << 5)
+#define TX_HDLC_UNDERRUN			(1 << 6)
+#define RX_HDLC_BD_UNDERRUN			(1 << 7)
+#define RX_VSS_OVERRUN				(1 << 8)
+#define TX_VSS_UNDERRUN				(1 << 9)
+#define ECC_CONFIG_MEM				(1 << 10)
+#define ECC_DATA_MEM				(1 << 11)
+#define RX_ETH_DMA_OVERRUN			(1 << 12)
+#define ETH_FORWARD_REM_FIFO_FULL		(1 << 13)
 #define EXT_SYNC_LOSS				(1 << 15)
 #define RLOS					(1 << 16)
 #define RLOF					(1 << 17)
@@ -628,9 +633,9 @@ enum cpri_linerate {
 #define RSDI					(1 << 19)
 #define LLOS					(1 << 20)
 #define LLOF					(1 << 21)
-#define RRE					(1 << 23)
-#define FAE					(1 << 24)
-#define RRA					(1 << 25)
+#define RRE					(1 << 22)
+#define FAE					(1 << 23)
+#define RRA					(1 << 24)
 
 #define CPRI_ERR_EVT_ALL	(RX_IQ_OVERRUN \
 				| TX_IQ_UNDERRUN \
@@ -787,6 +792,20 @@ static inline void cpri_reg_set(void __iomem *addr,
 	cpri_write(val, addr);
 }
 
+static inline void cpri_reg_write(raw_spinlock_t *lock,
+		void __iomem *addr,  u32 mask, u32 val)
+{
+	u32 tmp = 0;
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(lock, flags);
+	tmp = cpri_read(addr);
+	tmp |= mask;
+	tmp &= (~mask | val);
+	cpri_write(tmp, addr);
+	raw_spin_unlock_irqrestore(lock, flags);
+}
+
 static inline void cpri_reg_set_val(void __iomem *addr,
 				u32 mask,
 				u32 val)
@@ -854,6 +873,7 @@ int set_txethrate(u8 eth_rate, struct cpri_framer *framer);
 int get_txethrate(struct cpri_framer *framer, u8 *eth_rate);
 int set_txprotver(enum cpri_prot_ver ver, struct cpri_framer *framer);
 void clear_control_tx_table(struct cpri_framer *framer);
+void clear_axc_map_tx_rx_table(struct cpri_framer *framer);
 int get_txprotver(struct cpri_framer *framer,
 			enum cpri_prot_ver *prot_ver);
 int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate);
@@ -869,6 +889,7 @@ extern void cpri_eth_enable(struct cpri_framer *framer);
 extern int cpri_eth_handle_rx(struct cpri_framer *framer);
 extern int cpri_eth_handle_tx(struct cpri_framer *framer);
 extern int cpri_eth_handle_error(struct cpri_framer *framer);
+void cpri_eth_parm_init(struct cpri_framer *framer);
 
 /* SFP exported functions */
 extern struct cpri_framer
@@ -892,4 +913,7 @@ void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state);
 int cpri_state_validation(enum cpri_state present_state,
 		enum cpri_state new_state);
 void linkrate_autoneg_reset(struct cpri_framer *framer);
+void update_bf_data(struct cpri_framer *framer);
+void framer_int_enable(struct cpri_framer *framer);
+void cpri_mask_irq_events(struct cpri_framer *framer);
 #endif /* __CPRI_H */

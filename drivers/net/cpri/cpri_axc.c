@@ -54,20 +54,49 @@ int init_framer_axc_param(struct cpri_framer *framer)
 		dev_dbg(dev, " Change device init param for axc val\n");
 		return -EINVAL;
 	}
-	framer->ul_axcs = kzalloc(max_axc_count * sizeof(struct axc *),
+	framer->ul_axcs = kzalloc((max_axc_count + 1) * sizeof(struct axc *),
 			GFP_KERNEL);
 	if (framer->ul_axcs == NULL) {
 		dev_err(dev, "System memory exhausted !! kzalloc fail\n");
 		return -ENOMEM;
 	}
-	framer->dl_axcs = kzalloc(max_axc_count * sizeof(struct axc *),
+	framer->dl_axcs = kzalloc((max_axc_count + 1) * sizeof(struct axc *),
 			GFP_KERNEL);
 	if (framer->dl_axcs == NULL) {
 		dev_err(dev, "System memory exhausted !! kzalloc fail\n");
 		return -ENOMEM;
 	}
-
 	return 0;
+}
+
+void clear_axc_map_tx_rx_table(struct cpri_framer *framer)
+{
+	int loop;
+	struct cpri_framer_regs __iomem *regs = framer->regs;
+	u32 val;
+
+	for (loop = 0; loop < 3072; loop++) {
+		cpri_reg_clear(&regs->cpri_tcma, MASK_ALL);
+		cpri_reg_clear(&regs->cpri_rcma, MASK_ALL);
+		cpri_reg_clear(&regs->cpri_tcmd0, MASK_ALL);
+		cpri_reg_clear(&regs->cpri_tcmd1, MASK_ALL);
+		cpri_reg_clear(&regs->cpri_rcmd0, MASK_ALL);
+		cpri_reg_clear(&regs->cpri_rcmd1, MASK_ALL);
+		val = (AXC_TBL_WRITE_MASK | loop);
+		cpri_reg_write(&framer->regs_lock, &regs->cpri_rcma,
+			(AXC_TBL_WRITE_MASK | AXC_TBL_SEG_ADDR_MASK),
+			val);
+		mdelay(1);
+		cpri_reg_clear(&regs->cpri_rcma, MASK_ALL);
+		cpri_reg_write(&framer->regs_lock, &regs->cpri_tcma,
+			(AXC_TBL_WRITE_MASK | AXC_TBL_SEG_ADDR_MASK),
+			val);
+		mdelay(1);
+	}
+	cpri_reg_clear(&regs->cpri_tcma, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_rcma, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_map_tbl_config, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_map_config, MASK_ALL);
 }
 
 void cleanup_segment_table_data(struct cpri_framer *framer)
@@ -110,7 +139,6 @@ int populate_segment_table_data(struct cpri_framer *framer)
 				k0_k1_max, cpri_bf_iq_datablock_size);
 		return -EINVAL;
 	}
-
 
 	framer->ul_map_table.segments = kzalloc(framer->max_segments *
 			sizeof(struct segment),
@@ -213,6 +241,10 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 	/* read dts entry */
 	ret = of_property_read_u32_array(child, "memblk-rx", property,
 				ARRAY_SIZE(property));
+	mblk_info.tx_mblk_addr[0] = INVALIDE_MBLK_ADDR;
+	mblk_info.tx_mblk_addr[1] = INVALIDE_MBLK_ADDR;
+	mblk_info.rx_mblk_addr[0] = INVALIDE_MBLK_ADDR;
+	mblk_info.rx_mblk_addr[1] = INVALIDE_MBLK_ADDR;
 	if (ret) {
 		dev_err(dev, "cpri_dev: dts memblk-rx error\n");
 		ret = -EFAULT;
@@ -264,35 +296,39 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 	rx_mblk->blk_bitmap = 0;
 	/* tx mem block initiallization */
 	/* tx mem blk 1 */
-	if (mblk_info.tx_mblk_addr[0] != 0) {
+	if (mblk_info.tx_mblk_addr[0] != INVALIDE_MBLK_ADDR) {
 		tx_mblk->blk_bitmap |= 1;
 		tx_mblk->max_bufs = framer->framer_param.max_axc_count;
 		tx_mblk->blocks[0].base = mblk_info.tx_mblk_addr[0];
 		tx_mblk->blocks[0].size = mblk_info.tx_mblk_size[0];
 		tx_mblk->blocks[0].next_free_addr = tx_mblk->blocks[0].base;
+		tx_mblk->blocks[0].rxtx_busy_flag = 0;
 	}
 	/* tx mem blk 2 */
-	if (mblk_info.tx_mblk_addr[1] != 0) {
+	if (mblk_info.tx_mblk_addr[1] != INVALIDE_MBLK_ADDR) {
 		tx_mblk->blk_bitmap |= 1 << 1;
 		tx_mblk->blocks[1].base = mblk_info.tx_mblk_addr[1];
 		tx_mblk->blocks[1].size = mblk_info.tx_mblk_size[1];
 		tx_mblk->blocks[1].next_free_addr = tx_mblk->blocks[1].base;
+		tx_mblk->blocks[0].rxtx_busy_flag = 0;
 	}
 	/* rx mem block initiallization */
 	/* rx mem blk 1 */
-	if (mblk_info.rx_mblk_addr[0] != 0) {
+	if (mblk_info.rx_mblk_addr[0] != INVALIDE_MBLK_ADDR) {
 		rx_mblk->blk_bitmap |= 1;
 		rx_mblk->max_bufs = framer->framer_param.max_axc_count;
 		rx_mblk->blocks[0].base = mblk_info.rx_mblk_addr[0];
 		rx_mblk->blocks[0].size = mblk_info.rx_mblk_size[0];
 		rx_mblk->blocks[0].next_free_addr = rx_mblk->blocks[0].base;
+		tx_mblk->blocks[0].rxtx_busy_flag = 0;
 	}
 	/* rx mem blk 2 */
-	if (mblk_info.rx_mblk_addr[1] != 0) {
+	if (mblk_info.rx_mblk_addr[1] != INVALIDE_MBLK_ADDR) {
 		rx_mblk->blk_bitmap |= 1 << 1;
 		rx_mblk->blocks[1].base = mblk_info.rx_mblk_addr[1];
 		rx_mblk->blocks[1].size = mblk_info.rx_mblk_size[1];
 		rx_mblk->blocks[1].next_free_addr = rx_mblk->blocks[1].base;
+		tx_mblk->blocks[0].rxtx_busy_flag = 0;
 	}
 
 	spin_lock_init(&tx_mblk->lock);
@@ -332,8 +368,8 @@ struct axc_buf *axc_alloc(struct axc *axc, u32 size)
 			return NULL;
 		}
 
-		blk_present0 = (mblk->blk_bitmap & 0x1);
-		blk_present1 = (mblk->blk_bitmap & (0x1 << 1));
+	blk_present0 = (mblk->blk_bitmap & 0x1);
+	blk_present1 = (mblk->blk_bitmap & (0x1 << 1));
 	spin_lock(&mblk->lock);
 	condition1 = ((mblk->blocks[0].base + mblk->blocks[0].size) <
 			(mblk->blocks[0].next_free_addr + size)) ? 0 : 1;
@@ -358,8 +394,13 @@ struct axc_buf *axc_alloc(struct axc *axc, u32 size)
 		axc_buf->size = size;
 		axc_buf->mem_blk = mem_blk;
 		axc_buf->axc = axc;
-		mblk->blocks[mem_blk].next_free_addr += size;
-		mblk->allocated_bufs++;
+		mblk->blocks[mem_blk].rxtx_busy_flag++;
+		if (mblk->blocks[mem_blk].rxtx_busy_flag ==
+				RX_TX_MEM_ALLOCATED) {
+			mblk->blocks[mem_blk].rxtx_busy_flag = 0;
+			mblk->blocks[mem_blk].next_free_addr += size;
+			mblk->allocated_bufs++;
+		}
 		goto out;
 	}
 	/* check if axc_buf size is available in free list
@@ -829,7 +870,6 @@ void map_table_struct_entry_ctrl(struct axc *axc, unsigned char cmd)
 	unsigned int seg_offset;
 	unsigned int loop;
 	struct cpri_framer *framer = axc->framer;
-	struct device *dev = framer->cpri_dev->dev;
 	unsigned int data_block_size =
 		framer->autoneg_output.cpri_bf_iq_datablock_size;
 	unsigned int word_size = data_block_size / (BF_WRDS - 1);
@@ -950,7 +990,6 @@ void map_table_struct_entry_ctrl(struct axc *axc, unsigned char cmd)
 				ki = (ki % Nc);
 				ki = ki * 2 * axc->sampling_width;
 			}
-			dev_info(dev, "stuffing bit position ki -  %d\n", ki);
 		}
 		seg_param.segment = segment;
 		seg_param.axc = axc;
@@ -971,29 +1010,34 @@ void program_axc_conf_reg(struct axc *axc)
 	struct cpri_framer_regs __iomem *regs = axc->framer->regs;
 	u32 *reg_acpr;
 	u32 *reg_acprmsb;
+	u32 *cpri_map_smpl_cfg;
+	u32 val;
 
-	/* disable rx tx axc id for configuration */
 	if (axc->flags & UL_AXCS) {
-		reg_acpr = &regs->cpri_taxcparam[axc->id];
-		reg_acprmsb = &regs->cpri_taxcparammsb[axc->id];
+		reg_acpr = &regs->cpri_tacpr[axc->id];
+		reg_acprmsb = &regs->cpri_tacprmsb[axc->id];
+		cpri_map_smpl_cfg = &regs->cpri_map_smpl_cfg_tx;
 
 	} else {
-		reg_acpr = &regs->cpri_raxcparam[axc->id];
-		reg_acprmsb = &regs->cpri_raxcparammsb[axc->id];
+		reg_acpr = &regs->cpri_racpr[axc->id];
+		reg_acprmsb = &regs->cpri_racprmsb[axc->id];
+		cpri_map_smpl_cfg = &regs->cpri_map_smpl_cfg_rx;
 	}
 
+	val = ((axc->id << AXC_CONF_SHIFT) | AXC_CONF_MASK |
+		axc->sampling_width);
 	/* axc parameter configuration */
-	cpri_reg_set_val(
-			reg_acpr,
+	cpri_reg_set_val(cpri_map_smpl_cfg,
+			AXC_SMPL_WDTH_MASK, val);
+
+	cpri_reg_set_val(reg_acpr,
 			AXC_SIZE_MASK,
 			(axc->axc_buf->size - 1));
 	if (axc->axc_buf->mem_blk == 0)
-		cpri_reg_clear(
-				&reg_acpr,
+		cpri_reg_clear(&reg_acpr,
 				AXC_MEM_BLK_MASK);
 	else
-		cpri_reg_set(
-				reg_acpr,
+		cpri_reg_set(reg_acpr,
 				AXC_MEM_BLK_MASK);
 
 	cpri_reg_set_val(
@@ -1214,7 +1258,6 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 			goto clean_axc_pos;
 		}
 		/* program axc conf register */
-		program_axc_conf_reg(axc);
 		map_table_struct_entry_ctrl(axc, SET_CMD);
 		axc_pos |= (0x1 << axc->id);
 		axcs[axc->id] = axc;
@@ -1222,6 +1265,7 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 	}
 	/* axc allocation done */
 	kfree(axc_param);
+	cpri_state_machine(framer, CPRI_STATE_AXC_CONFIG);
 	return 0;
 clean_axc_pos:
 	dev_err(dev, "axc set error free axc_pos\n");
@@ -1234,14 +1278,14 @@ mem_err:
 }
 
 int clear_segment_param(struct segment *segment, struct axc *axc,
-		u32 *reg_cfgmemaddr0)
+		u32 *reg_rcmd0)
 {
 	unsigned char subsegloop;
 	unsigned char shift;
 	unsigned int bit_mapped = 0;
 	struct subsegment *subsegment;
 	struct cpri_framer *framer;
-	u32 *reg_cfgmemaddr1 = (reg_cfgmemaddr0 + sizeof(u32));
+	u32 *reg_rcmd1 = (reg_rcmd0 + sizeof(u32));
 	u32 position;
 	u32 axc_num;
 	u32 tcm_enable;
@@ -1260,26 +1304,27 @@ int clear_segment_param(struct segment *segment, struct axc *axc,
 			position = AXC_POS_MASK << (6 +	(shift * BF_WRDS));
 			tcm_width = AXC_WIDTH_MASK << (11 + (shift * BF_WRDS));
 			axc_num = AXC_NUM_MASK << (1 + (shift * BF_WRDS));
-			tcm_enable = AXC_NUM_MASK << (0 + (shift * BF_WRDS));
+			tcm_enable = AXC_MEM_ENABLE_MASK << (0 +
+					(shift * BF_WRDS));
 
 			if (subsegloop == 2) {
 				cpri_reg_clear(
-						reg_cfgmemaddr1, tcm_enable);
+						reg_rcmd1, tcm_enable);
 				cpri_reg_set_val(
-						reg_cfgmemaddr1, position, 0);
+						reg_rcmd1, position, 0);
 				cpri_reg_set_val(
-						reg_cfgmemaddr1, tcm_width, 0);
+						reg_rcmd1, tcm_width, 0);
 				cpri_reg_set_val(
-						reg_cfgmemaddr1, axc_num, 0);
+						reg_rcmd1, axc_num, 0);
 			} else {
 				cpri_reg_clear(
-						reg_cfgmemaddr0, tcm_enable);
+						reg_rcmd0, tcm_enable);
 				cpri_reg_set_val(
-						reg_cfgmemaddr0, position, 0);
+						reg_rcmd0, position, 0);
 				cpri_reg_set_val(
-						reg_cfgmemaddr0, tcm_width, 0);
+						reg_rcmd0, tcm_width, 0);
 				cpri_reg_set_val(
-						reg_cfgmemaddr0, axc_num, 0);
+						reg_rcmd0, axc_num, 0);
 			}
 			bit_mapped += subsegment->map_size;
 		}
@@ -1295,12 +1340,12 @@ void clear_axc_param(struct axc *axc)
 
 	/* disable rx tx axc id for configuration */
 	if (axc->flags & UL_AXCS) {
-		reg_acpr = &regs->cpri_taxcparam[axc->id];
-		reg_acprmsb = &regs->cpri_taxcparammsb[axc->id];
+		reg_acpr = &regs->cpri_tacpr[axc->id];
+		reg_acprmsb = &regs->cpri_tacprmsb[axc->id];
 
 	} else {
-		reg_acpr = &regs->cpri_raxcparam[axc->id];
-		reg_acprmsb = &regs->cpri_raxcparammsb[axc->id];
+		reg_acpr = &regs->cpri_racpr[axc->id];
+		reg_acprmsb = &regs->cpri_racprmsb[axc->id];
 	}
 
 	/* axc parameter configuration */
@@ -1330,10 +1375,10 @@ void delete_axc(struct cpri_framer *framer, unsigned char axc_id,
 	unsigned int word_size =
 		framer->autoneg_output.cpri_bf_iq_datablock_size /
 		(BF_WRDS - 1);
-	u32 *reg_cfgmemaddr;
-	u32 *reg_cfgmemaddr0;
-	u32 *reg_cfgmemaddr1;
-	u32 *reg_ctrl;
+	u32 *reg_cma;
+	u32 *reg_rcmd0;
+	u32 *reg_rcmd1;
+	u32 *reg_cr;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 
 	seg_in_one_basic_frame = CEIL_FUNC(
@@ -1343,17 +1388,17 @@ void delete_axc(struct cpri_framer *framer, unsigned char axc_id,
 	if (direction & UL_AXCS) {
 		axc = framer->ul_axcs[axc_id];
 		map_table = &framer->ul_map_table;
-		reg_cfgmemaddr = &regs->cpri_tcfgmemaddr;
-		reg_cfgmemaddr0 = &regs->cpri_tcfgmemaddr0;
-		reg_cfgmemaddr1 = &regs->cpri_tcfgmemaddr1;
-		reg_ctrl = &regs->cpri_tctrl;
+		reg_cma = &regs->cpri_tcma;
+		reg_rcmd0 = &regs->cpri_tcmd0;
+		reg_rcmd1 = &regs->cpri_tcmd1;
+		reg_cr = &regs->cpri_tcr;
 	} else {
 		axc = framer->dl_axcs[axc_id];
 		map_table = &framer->dl_map_table;
-		reg_cfgmemaddr = &regs->cpri_rcfgmemaddr;
-		reg_cfgmemaddr0 = &regs->cpri_rcfgmemaddr0;
-		reg_cfgmemaddr1 = &regs->cpri_rcfgmemaddr1;
-		reg_ctrl = &regs->cpri_rctrl;
+		reg_cma = &regs->cpri_rcma;
+		reg_rcmd0 = &regs->cpri_rcmd0;
+		reg_rcmd1 = &regs->cpri_rcmd1;
+		reg_cr = &regs->cpri_rcr;
 	}
 	if (axc == NULL)
 		dev_err(dev, "axc delete failed 'axc %d not configured'\n",
@@ -1366,14 +1411,15 @@ void delete_axc(struct cpri_framer *framer, unsigned char axc_id,
 		seg = seg + (loop * seg_in_one_basic_frame);
 		while (axc_size) {
 			segment = (map_table->segments + seg);
-			cpri_reg_set_val(reg_cfgmemaddr,
-					AXC_TBL_SEG_ADDR_MASK, seg);
-			cpri_reg_set(reg_cfgmemaddr,
-					AXC_TBL_WRITE_MASK);
-			bit_mapped = clear_segment_param(segment, axc,
-					reg_cfgmemaddr0);
 			cpri_reg_clear(
-					reg_cfgmemaddr, AXC_TBL_WRITE_MASK);
+					reg_cma, AXC_TBL_WRITE_MASK);
+			bit_mapped = clear_segment_param(segment, axc,
+					reg_rcmd0);
+			cpri_reg_set_val(reg_cma,
+					AXC_TBL_SEG_ADDR_MASK, seg);
+			cpri_reg_set(reg_cma,
+					AXC_TBL_WRITE_MASK);
+
 			axc_size -= bit_mapped;
 			if ((axc_size) && (axc_size > SEG0_OFFSET))
 				seg++;
@@ -1396,7 +1442,7 @@ int cpri_axc_param_ctrl(struct cpri_framer *framer, unsigned long arg)
 {
 	struct cpri_axc_ctrl *ctrl;
 	unsigned int size;
-	u32 *reg_axcctrl;
+	u32 *reg_accr;
 
 	size = sizeof(struct cpri_axc_ctrl);
 	ctrl = kmalloc(size, GFP_KERNEL);
@@ -1405,22 +1451,22 @@ int cpri_axc_param_ctrl(struct cpri_framer *framer, unsigned long arg)
 		return -EFAULT;
 	}
 	if ((ctrl->direction & UL_AXCS))
-		reg_axcctrl = &framer->regs->cpri_taxcctrl;
+		reg_accr = &framer->regs->cpri_taccr;
 	else
-		reg_axcctrl = &framer->regs->cpri_raxcctrl;
+		reg_accr = &framer->regs->cpri_raccr;
 
 	switch (ctrl->op) {
 	case AXC_ENABLE:
-		cpri_reg_set(reg_axcctrl,
+		cpri_reg_set(reg_accr,
 				(AXC_ENABLE_MASK << ctrl->axc_id));
 
 		break;
 	case AXC_DISABLE:
-		cpri_reg_clear(reg_axcctrl,
+		cpri_reg_clear(reg_accr,
 				(AXC_ENABLE_MASK << ctrl->axc_id));
 		break;
 	case AXC_DELETE:
-		cpri_reg_clear(reg_axcctrl,
+		cpri_reg_clear(reg_accr,
 				(AXC_ENABLE_MASK << ctrl->axc_id));
 		delete_axc(framer, ctrl->axc_id, ctrl->direction);
 		break;
@@ -1429,7 +1475,7 @@ int cpri_axc_param_ctrl(struct cpri_framer *framer, unsigned long arg)
 }
 
 int segment_param_set(struct segment *segment, struct axc *axc,
-		u32 *reg_cfgmemaddr0)
+		u32 *reg_rcmd0)
 {
 	unsigned char subsegloop;
 	unsigned char shift;
@@ -1437,16 +1483,17 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 	unsigned int axc_size;
 	int map_width = 0;
 	struct subsegment *subsegment;
-	struct cpri_framer *framer;
+	struct cpri_framer *framer = axc->framer;
+	struct device *dev = framer->cpri_dev->dev;
 	u32 position;
 	u32 axc_num;
 	u32 tcm_enable;
 	u32 tcm_width;
-	u32 *reg_cfgmemaddr1 = (reg_cfgmemaddr0 + sizeof(u32));
+	u32 *reg_rcmd1 = (reg_rcmd0 + sizeof(u32));
 
 
 	axc_size = calculate_axc_size(axc);
-	framer = axc->framer;
+
 	for (subsegloop = 0; subsegloop < 3; subsegloop++) {
 		subsegment = &segment->subsegments[subsegloop];
 		if (subsegment->axc == NULL)
@@ -1462,41 +1509,41 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 		position = AXC_POS_MASK << (6 + (shift * BF_WRDS));
 		tcm_width = AXC_WIDTH_MASK << (11 + (shift * BF_WRDS));
 		axc_num = AXC_NUM_MASK << (1 + (shift * BF_WRDS));
-		tcm_enable = AXC_NUM_MASK << (shift * BF_WRDS);
+		tcm_enable = AXC_MEM_ENABLE_MASK << (shift * BF_WRDS);
 
 		bit_mapped += subsegment->map_size;
 		axc_size -= bit_mapped;
 		map_width = subsegment->map_size;
 
 		if (subsegloop == 2) {
-			cpri_reg_set(
-				reg_cfgmemaddr1, tcm_enable);
-			cpri_reg_set_val(
-				reg_cfgmemaddr1, position,
+			dev_dbg(dev, "rcmd1 -> subsegNum[%d],", subsegloop);
+			dev_dbg(dev, "tcm_enable: 0x%x, pos[0x%x] - 0x%x\n",
+					tcm_enable, position,
+					(subsegment->offset / 2));
+			dev_dbg(dev, "tcm_width[0x%x]- %d, axc_num[0x%x]- %d\n",
+					tcm_width, (map_width / 2),
+					axc_num, axc->id);
+			cpri_reg_set(reg_rcmd1, tcm_enable);
+			cpri_reg_set_val(reg_rcmd1, position,
 				(subsegment->offset / 2));
-			cpri_reg_set_val(
-				reg_cfgmemaddr1, tcm_width,
+			cpri_reg_set_val(reg_rcmd1, tcm_width,
 				(map_width / 2));
-			cpri_reg_set_val(
-				reg_cfgmemaddr1, axc_num,
-				axc->id);
+			cpri_reg_set_val(reg_rcmd1, axc_num, axc->id);
 		} else {
+			dev_dbg(dev, "rcmd0 -> subsegNum[%d], tcm_enable: 0x%x,"
+					subsegloop, tcm_enable);
+			dev_dbg(dev, "pos[0x%x] - 0x%x\n",
+					position, (subsegment->offset / 2));
+			dev_dbg(dev, "tcm_width[0x%x]- %d, axc_num[0x%x]- %d\n",
+					tcm_width, (map_width / 2),
+					axc_num, axc->id);
 
-			cpri_reg_set(
-				reg_cfgmemaddr0,
-				tcm_enable);
-			cpri_reg_set_val(
-				reg_cfgmemaddr0,
-				position,
+			cpri_reg_set(reg_rcmd0, tcm_enable);
+			cpri_reg_set_val(reg_rcmd0, position,
 				(subsegment->offset / 2));
-			cpri_reg_set_val(
-				reg_cfgmemaddr0,
-				tcm_width,
+			cpri_reg_set_val(reg_rcmd0, tcm_width,
 				(map_width / 2));
-			cpri_reg_set_val(
-				reg_cfgmemaddr0,
-				axc_num,
-				axc->id);
+			cpri_reg_set_val(reg_rcmd0, axc_num, axc->id);
 		}
 		continue;
 	}
@@ -1521,13 +1568,22 @@ int check_for_kval_overlap(struct cpri_framer *framer, unsigned int flag)
 	u32 cnt1 = 0;
 	u32 k0_map[2] = { 0 };
 	u32 k1_map[2] = { 0 };
+	u32 *cpri_map_k_select1;
+	u32 *cpri_map_k_select2;
 
-	if (flag & DL_AXCS)
+	if (flag & UL_AXCS) {
 		map_table = &framer->dl_map_table;
-	else
+		cpri_map_k_select1 = &framer->regs->cpri_map_k_select_rx1;
+		cpri_map_k_select2 = &framer->regs->cpri_map_k_select_rx2;
+	} else {
 		map_table = &framer->ul_map_table;
+		cpri_map_k_select1 = &framer->regs->cpri_map_k_select_tx1;
+		cpri_map_k_select2 = &framer->regs->cpri_map_k_select_tx2;
+	}
 
 	for (loop = 0; loop < framer->max_segments; loop++) {
+		memset(k0_map, 0, 2 * sizeof(u32));
+		memset(k1_map, 0, 2 * sizeof(u32));
 		k0_map[0] |= *((map_table->k0_bitmap[loop]) + 0);
 		k0_map[1] |= *((map_table->k0_bitmap[loop]) + 1);
 		k1_map[0] |= *((map_table->k1_bitmap[loop]) + 0);
@@ -1610,7 +1666,20 @@ int check_for_kval_overlap(struct cpri_framer *framer, unsigned int flag)
 					goto INVAL;
 			}
 		}
+		memset(k0_map, 0, 2 * sizeof(u32));
+		memset(k1_map, 0, 2 * sizeof(u32));
 	}
+
+	cpri_reg_clear(cpri_map_k_select1, MASK_ALL);
+	cpri_reg_clear(cpri_map_k_select2, MASK_ALL);
+
+	cpri_reg_set_val(cpri_map_k_select1,
+			MASK_ALL,
+			*((map_table->k1_bitmap[0]) + 0));
+	cpri_reg_set_val(cpri_map_k_select2,
+			MASK_ALL,
+			*((map_table->k1_bitmap[0]) + 1));
+
 		return 0;
 INVAL:
 	dev_info(dev, "k0[0]/k1[0]:0x%x/0x%x, k0[1].k1[1]:0x%x/0x%x, msk:0x%x",
@@ -1622,6 +1691,7 @@ INVAL:
 int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 {
 	struct device *dev = framer->cpri_dev->dev;
+	u32 *cpri_status;
 	unsigned int loop;
 	unsigned int k_loop;
 	unsigned int loop2;
@@ -1638,13 +1708,15 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	unsigned int num_bf_seg;
 	unsigned int seg_in_one_basic_frame;
+	unsigned int max_axc_count = framer->framer_param.max_axc_count;
 	unsigned int word_size =
 		framer->autoneg_output.cpri_bf_iq_datablock_size /
 		(BF_WRDS - 1);
-	u32 *reg_cfgmemaddr;
-	u32 *reg_cfgmemaddr0;
-	u32 *reg_cfgmemaddr1;
-	u32 *reg_ctrl;
+	u32 *reg_cma;
+	u32 *reg_rcmd0;
+	u32 *reg_rcmd1;
+	u32 *reg_accr;
+	u32 *reg_cr;
 
 	if (check_for_kval_overlap(framer, direction)) {
 		dev_err(dev, "k0/k1 overlaps! '- delete axcs and set again'\n");
@@ -1657,38 +1729,63 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 			framer->autoneg_output.cpri_bf_iq_datablock_size,
 			(SEG_SIZE - 1));
 	/* set k0 k1 register parameter & mode */
-	cpri_reg_set_val(
-			&regs->cpri_maptblcfg,
-			AXC_K0_MASK,
-			framer->framer_param.k0);
-	cpri_reg_set_val(
-			&regs->cpri_maptblcfg,
-			AXC_K1_MASK,
-			framer->framer_param.k1);
-	/* axc advance mapping mode */
-	cpri_reg_set_val(
-			&regs->cpri_mapcfg,
+	/* axc advance mapping mode reset */
+	cpri_reg_set_val(&regs->cpri_map_config,
 			AXC_MODE_MASK,
-			0x1);
+			0x0);
+
 
 	if (direction & UL_AXCS) {
-		reg_cfgmemaddr = &regs->cpri_tcfgmemaddr;
-		reg_cfgmemaddr0 = &regs->cpri_tcfgmemaddr0;
-		reg_cfgmemaddr1 = &regs->cpri_tcfgmemaddr1;
-		reg_ctrl = &regs->cpri_tctrl;
+		reg_cma = &regs->cpri_tcma;
+		reg_rcmd0 = &regs->cpri_tcmd0;
+		reg_rcmd1 = &regs->cpri_tcmd1;
+		cpri_status = &regs->cpri_tstatus;
+		reg_accr = &regs->cpri_taccr;
+		reg_cr = &regs->cpri_tcr;
 		axcs = framer->ul_axcs;
 		map_table = &framer->ul_map_table;
 	} else {
-		reg_cfgmemaddr = &regs->cpri_rcfgmemaddr;
-		reg_cfgmemaddr0 = &regs->cpri_rcfgmemaddr0;
-		reg_cfgmemaddr1 = &regs->cpri_rcfgmemaddr1;
-		reg_ctrl = &regs->cpri_rctrl;
+		reg_cma = &regs->cpri_rcma;
+		reg_rcmd0 = &regs->cpri_rcmd0;
+		reg_rcmd1 = &regs->cpri_rcmd1;
+		cpri_status = &regs->cpri_rstatus;
+		reg_accr = &regs->cpri_raccr;
+		reg_cr = &regs->cpri_rcr;
 		axcs = framer->dl_axcs;
 		map_table = &framer->dl_map_table;
 	}
 
+	/* clear map table data for configuration */
+	cpri_reg_clear(reg_cr, AXC_ENABLE_MASK);
+	loop = 1;
+	while ((loop & 0x1)) {
+		loop = cpri_reg_get_val(cpri_status, AXC_ENABLE_MASK);
+		mdelay(1);
+	}
+	cpri_reg_set_val(reg_accr, MASK_ALL, 0);
+	cpri_reg_set_val(&regs->cpri_map_tbl_config,
+			AXC_K0_MASK, 0);
+	cpri_reg_set_val(&regs->cpri_map_tbl_config,
+			AXC_K1_MASK, 0);
+
+
+	/* configure num axcs for UL/DL */
+	cpri_reg_set_val(&regs->cpri_rgenmode, AXC_MAX_MASK,
+			framer->framer_param.max_axc_count);
+	cpri_reg_set_val(&regs->cpri_tgenmode, AXC_MAX_MASK,
+			framer->framer_param.max_axc_count);
+	/* set k1, k2 value */
+	cpri_reg_set_val(&regs->cpri_map_tbl_config, AXC_K0_MASK,
+			framer->framer_param.k0);
+	cpri_reg_set_val(&regs->cpri_map_tbl_config, AXC_K1_MASK,
+			framer->framer_param.k1);
+
 	loop = 0;
-	while (axcs[loop] != NULL) {
+	while (loop < max_axc_count) {
+		if (axcs[loop] == NULL) {
+			loop++;
+			continue;
+		}
 		axc = axcs[loop];
 		loop++;
 		axc_pos = axc->pos;
@@ -1699,6 +1796,7 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 			k_max = map_table->k0_max;
 		else
 			k_max = map_table->k1_max;
+		program_axc_conf_reg(axc);
 
 		for (loop2 = 0; loop2 < k_max;) {
 			for (k_loop = 0; k_loop < k; k_loop++) {
@@ -1714,18 +1812,14 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 				while (axc_size) {
 					segment = (map_table->segments +
 						seg - (num_bf_seg * k_loop));
-					cpri_reg_set(
-							reg_cfgmemaddr,
+					cpri_reg_clear(reg_cma, MASK_ALL);
+					bit_mapped = segment_param_set(segment,
+								axc, reg_rcmd0);
+					cpri_reg_set(reg_cma,
 							AXC_TBL_WRITE_MASK);
-					cpri_reg_set_val(
-							reg_cfgmemaddr,
+					cpri_reg_set_val(reg_cma,
 							AXC_TBL_SEG_ADDR_MASK,
 							seg);
-					bit_mapped = segment_param_set(segment,
-							axc, reg_cfgmemaddr0);
-					cpri_reg_clear(
-							reg_cfgmemaddr,
-							AXC_TBL_WRITE_MASK);
 					axc_size -= bit_mapped;
 					if (axc_size)
 						seg++;
@@ -1738,8 +1832,9 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 			loop2 += k;
 		}
 	}
-	/* enable axc recieve and transmit control reg */
-	cpri_reg_set(reg_ctrl, AXC_ENABLE_MASK);
+	cpri_reg_clear(reg_cma, MASK_ALL);
+
+	cpri_state_machine(framer, CPRI_STATE_AXC_MAP_INIT);
 	return 0;
 }
 
@@ -1751,56 +1846,61 @@ int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction)
 	struct axc_map_table *map_table;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	unsigned int num_bf_seg;
-	u32 *reg_cfgmemaddr;
-	u32 *reg_cfgmemaddr0;
-	u32 *reg_cfgmemaddr1;
-	u32 *reg_ctrl;
-	u32 *reg_axcctrl;
+	u32 *reg_cma;
+	u32 *reg_rcmd0;
+	u32 *reg_rcmd1;
+	u32 *reg_cr;
+	u32 *reg_accr;
+	unsigned int max_axc_count = framer->framer_param.max_axc_count;
+
 
 	num_bf_seg = CEIL_FUNC(
 		framer->autoneg_output.cpri_bf_iq_datablock_size, SEG_SIZE);
 	/* set k0 k1 register parameter & mode */
 	cpri_reg_set_val(
-			&regs->cpri_maptblcfg,
+			&regs->cpri_map_tbl_config,
 			AXC_K0_MASK, 0);
 	cpri_reg_set_val(
-			&regs->cpri_maptblcfg,
+			&regs->cpri_map_tbl_config,
 			AXC_K1_MASK, 0);
-	cpri_reg_clear(&regs->cpri_mapcfg, (0x1 << 6));
-	cpri_reg_clear(&regs->cpri_mapcfg, (0x1 << 7));
-	cpri_reg_set_val(
-			&regs->cpri_mapcfg,
+	cpri_reg_clear(&regs->cpri_map_config, (0x1 << 6));
+	cpri_reg_clear(&regs->cpri_map_config, (0x1 << 7));
+	cpri_reg_set_val(&regs->cpri_map_config,
 			AXC_MODE_MASK, 0x0);
 
 	if (direction & UL_AXCS) {
-		reg_cfgmemaddr = &regs->cpri_tcfgmemaddr;
-		reg_cfgmemaddr0 = &regs->cpri_tcfgmemaddr0;
-		reg_cfgmemaddr1 = &regs->cpri_tcfgmemaddr1;
-		reg_axcctrl = &regs->cpri_taxcctrl;
-		reg_ctrl = &regs->cpri_tctrl;
+		reg_cma = &regs->cpri_tcma;
+		reg_rcmd0 = &regs->cpri_tcmd0;
+		reg_rcmd1 = &regs->cpri_tcmd1;
+		reg_accr = &regs->cpri_taccr;
+		reg_cr = &regs->cpri_tcr;
 		axcs = framer->ul_axcs;
 		map_table = &framer->ul_map_table;
 	} else {
-		reg_cfgmemaddr = &regs->cpri_rcfgmemaddr;
-		reg_cfgmemaddr0 = &regs->cpri_rcfgmemaddr0;
-		reg_cfgmemaddr1 = &regs->cpri_rcfgmemaddr1;
-		reg_ctrl = &regs->cpri_rctrl;
-		reg_axcctrl = &regs->cpri_raxcctrl;
+		reg_cma = &regs->cpri_rcma;
+		reg_rcmd0 = &regs->cpri_rcmd0;
+		reg_rcmd1 = &regs->cpri_rcmd1;
+		reg_cr = &regs->cpri_rcr;
+		reg_accr = &regs->cpri_raccr;
 		axcs = framer->dl_axcs;
 		map_table = &framer->dl_map_table;
 	}
 
 	loop = 0;
-	while (axcs[loop] != NULL) {
+	while (loop < max_axc_count) {
+		if (axcs[loop] == NULL) {
+			loop++;
+			continue;
+		}
 		axc = axcs[loop];
 		loop++;
 
-		cpri_reg_clear(reg_axcctrl,
+		cpri_reg_clear(reg_accr,
 				(AXC_ENABLE_MASK << axc->id));
 		delete_axc(framer, axc->id, direction);
 	}
 	/* enable axc recieve and transmit control reg */
-	cpri_reg_clear(reg_ctrl, AXC_ENABLE_MASK);
+	cpri_reg_clear(reg_cr, AXC_ENABLE_MASK);
 	return 0;
 }
 
@@ -1982,6 +2082,7 @@ int cpri_axc_ioctl(struct cpri_framer *framer, unsigned long arg,
 {
 	int err = 0;
 	struct device *dev = framer->cpri_dev->dev;
+	u32 dir;
 
 	switch (cmd) {
 	case CPRI_SET_AXC_PARAM:
@@ -2004,7 +2105,12 @@ int cpri_axc_ioctl(struct cpri_framer *framer, unsigned long arg,
 		break;
 	case CPRI_MAP_INIT_AXC:
 		dev_info(dev, "AxC map table init\n");
-		err = cpri_axc_map_tbl_init(framer, arg);
+		if (copy_from_user(&dir, (u32 *)arg,
+					sizeof(u32)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		err = cpri_axc_map_tbl_init(framer, dir);
 		if (err < 0)
 			goto out;
 		break;
@@ -2016,6 +2122,11 @@ int cpri_axc_ioctl(struct cpri_framer *framer, unsigned long arg,
 		break;
 	case CPRI_MAP_CLEAR_AXC:
 		dev_info(dev, "AxC map table clear\n");
+		if (copy_from_user(&dir, (u32 *)arg,
+					sizeof(u32)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
 		err = cpri_axc_map_tbl_flush(framer, arg);
 		if (err < 0)
 			goto out;

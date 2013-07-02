@@ -490,7 +490,7 @@ static int cpri_eth_tx_resume(struct net_device *ndev)
 	cpri_reg_set(&framer->regs->cpri_rethctrl,
 			CPRI_ETH_RX_CTRL_DISCARD_MASK);
 
-	cpri_reg_set(&framer->regs->cpri_tctrl,
+	cpri_reg_set(&framer->regs->cpri_tcr,
 			CPRI_ETH_TX_ENABLE_MASK);
 	return 0;
 }
@@ -500,7 +500,7 @@ static int cpri_eth_rx_resume(struct net_device *ndev)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_framer *framer = priv->framer;
 
-	cpri_reg_set(&framer->regs->cpri_rctrl,
+	cpri_reg_set(&framer->regs->cpri_rcr,
 			CPRI_ETH_RX_ENABLE_MASK);
 	return 0;
 }
@@ -517,7 +517,7 @@ static int cpri_eth_tx_halt(struct net_device *ndev)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_framer *framer = priv->framer;
 
-	cpri_reg_clear(&framer->regs->cpri_tctrl,
+	cpri_reg_clear(&framer->regs->cpri_tcr,
 			CPRI_ETH_TX_ENABLE_MASK);
 	return 0;
 }
@@ -527,7 +527,7 @@ static int cpri_eth_rx_halt(struct net_device *ndev)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_framer *framer = priv->framer;
 
-	cpri_reg_clear(&framer->regs->cpri_rctrl,
+	cpri_reg_clear(&framer->regs->cpri_rcr,
 			CPRI_ETH_RX_ENABLE_MASK);
 	return 0;
 }
@@ -1666,7 +1666,6 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 				NETIF_F_RXFCS);
 
 	cpri_eth_tx_rx_halt(ndev);
-
 	cpri_eth_config(ndev, CPRI_ETH_DEF_FLAGS);
 
 	err = register_netdev(ndev);
@@ -1687,6 +1686,12 @@ register_fail:
 	return err;
 }
 EXPORT_SYMBOL(cpri_eth_init);
+
+void cpri_eth_parm_init(struct cpri_framer *framer)
+{
+	cpri_eth_tx_rx_halt(framer->eth_priv->ndev);
+	cpri_eth_config(framer->eth_priv->ndev, CPRI_ETH_DEF_FLAGS);
+}
 
 void cpri_eth_deinit(struct platform_device *ofdev, struct cpri_framer *framer)
 {

@@ -355,8 +355,8 @@ struct axc_pos {
 struct axc_info {
 	unsigned int id;
 	__u32 flags;
-#define DL_AXCS					(1 << 1)
-#define UL_AXCS					(1 << 2)
+#define UL_AXCS					(1 << 1)
+#define DL_AXCS					(1 << 2)
 #define READ_ALL_AXCS				(1 << 3)
 #define AXC_DATA_TYPE_IQ			(1 << 4)
 #define AXC_DATA_TYPE_VSS			(1 << 5)

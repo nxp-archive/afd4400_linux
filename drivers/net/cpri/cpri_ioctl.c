@@ -33,6 +33,7 @@
 #include <linux/pid.h>
 
 #include <linux/cpri.h>
+#include <linux/cpri_axc.h>
 
 static void cpri_reg_write_bulk(void *base,
 		u32 offset, unsigned int length, u32 value)
@@ -384,19 +385,19 @@ static int cpri_init_framer(struct cpri_framer *framer)
 
 	/* Rx control param */
 	if (param->ctrl_flags & CPRI_RX_IQ_SYNC)
-		cpri_reg_set(&regs->cpri_rctrl,
+		cpri_reg_set(&regs->cpri_rcr,
 			IQ_SYNC_EN_MASK);
 	else
 		cpri_reg_clear(
-				&regs->cpri_rctrl,
+				&regs->cpri_rcr,
 				IQ_SYNC_EN_MASK);
 
 	/* Tx control param */
 	if (param->ctrl_flags & CPRI_TX_IQ_SYNC)
-		cpri_reg_set(&regs->cpri_tctrl,
+		cpri_reg_set(&regs->cpri_tcr,
 				IQ_SYNC_EN_MASK);
 	else
-		cpri_reg_clear(&regs->cpri_rctrl,
+		cpri_reg_clear(&regs->cpri_rcr,
 				IQ_SYNC_EN_MASK);
 
 	/* General Rx sync param */
@@ -454,21 +455,15 @@ static void cpri_set_test_mode(unsigned int mode, struct cpri_framer *framer)
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 
 	if (mode & UL_TRANSPARENT)
-		cpri_reg_set(
-				&regs->cpri_mapcfg,
-				RX_TRANSPARENT_MODE_MASK);
+		cpri_reg_set(&regs->cpri_map_config, RX_TRANSPARENT_MODE_MASK);
 	else
-		cpri_reg_clear(
-				&regs->cpri_mapcfg,
+		cpri_reg_clear(&regs->cpri_map_config,
 				RX_TRANSPARENT_MODE_MASK);
 
 	if (mode & DL_TRANSPARENT)
-		cpri_reg_set(
-				&regs->cpri_mapcfg,
-				TX_TRANSPARENT_MODE_MASK);
+		cpri_reg_set(&regs->cpri_map_config, TX_TRANSPARENT_MODE_MASK);
 	else
-		cpri_reg_clear(
-				&regs->cpri_mapcfg,
+		cpri_reg_clear(&regs->cpri_map_config,
 				TX_TRANSPARENT_MODE_MASK);
 }
 
@@ -476,6 +471,11 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_map_offsets map_sync_offset;
+	struct axc **axcs;
+	struct axc *axc;
+	unsigned int loop;
+	u32 mask;
+	u32 line_sync_acheived;
 
 	if ((ctrl->ctrl_mask & DEV_START_DL) ||
 		(ctrl->ctrl_mask & DEV_START_UL)) {
@@ -486,21 +486,13 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 			return -EFAULT;
 	}
 
-	if (ctrl->ctrl_mask & DEV_START_DL) {
-
-		/* Enable Tx */
-		cpri_reg_set(&regs->cpri_config,
-			CONF_TX_EN_MASK);
-
-		/* Set Tx control interrupt events */
-		cpri_reg_set(&regs->cpri_tctrl,
-			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
+	if (ctrl->ctrl_mask & DEV_START_UL) {
 
 		/* Set Tx map offset values */
-		cpri_reg_set_val(&regs->cpri_tmapoffset,
+		cpri_reg_set_val(&regs->cpri_map_offset_tx,
 			MAP_OFFSET_X_MASK, map_sync_offset.tx_map_offset_bf);
 
-		cpri_reg_set_val(&regs->cpri_tmapoffset,
+		cpri_reg_set_val(&regs->cpri_map_offset_tx,
 			MAP_OFFSET_Z_MASK, map_sync_offset.tx_map_offset_hf);
 
 		cpri_reg_set_val(&regs->cpri_tstartoffset,
@@ -508,31 +500,97 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 
 		cpri_reg_set_val(&regs->cpri_tstartoffset,
 			MAP_OFFSET_Z_MASK, map_sync_offset.tx_start_offset_hf);
+		cpri_reg_set_val(&regs->cpri_tstartoffset,
+			MAP_OFFSET_Z_MASK, map_sync_offset.tx_start_offset_hf);
+		cpri_reg_set_val(&regs->cpri_map_config, AXC_MODE_MASK, 0x1);
+		/* enable axc transmit control reg */
+		cpri_reg_set(&regs->cpri_tcr, AXC_ENABLE_MASK);
+		loop = 0;
+		axcs = framer->ul_axcs;
+		while (loop < framer->framer_param.max_axc_count) {
+			if (axcs[loop] == NULL) {
+				loop++;
+				continue;
+			}
+			axc = axcs[loop];
+			loop++;
+			cpri_reg_set(&regs->cpri_taccr,
+					(AXC_ENABLE_MASK << axc->id));
+#if 0 /* this is to debug if thresold events occuring or not */
+			cpri_reg_set(&regs->cpri_taxciqthreshinten,
+					(AXC_ENABLE_MASK << axc->id));
+#endif
+			cpri_reg_set(&regs->cpri_taxciqvspthreshinten,
+					(AXC_ENABLE_MASK << axc->id));
+		}
+		/* Enable Tx */
+		cpri_reg_set(&regs->cpri_config,
+			CONF_TX_EN_MASK);
 
-		cpri_state_machine(framer,
-					CPRI_STATE_OPERATIONAL);
+		/* Check hfn sync status */
+		mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK);
+		while (1) {
+			line_sync_acheived = cpri_reg_get_val(
+					&regs->cpri_status, mask);
+			if (line_sync_acheived)
+				break;
+
+			schedule_timeout_interruptible(msecs_to_jiffies(20));
+		}
+
+
+
+		/* Set Tx control interrupt events */
+		cpri_reg_set(&regs->cpri_tcr,
+			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
+
+
 		framer->dev_flags |= CPRI_DATA_MODE;
 
-	} else if (ctrl->ctrl_mask & DEV_START_UL) {
+	} else if (ctrl->ctrl_mask & DEV_START_DL) {
+		/* Set Rx map offset values */
+		cpri_reg_set_val(&regs->cpri_map_offset_rx,
+			MAP_OFFSET_X_MASK, map_sync_offset.rx_map_offset_bf);
+
+		cpri_reg_set_val(&regs->cpri_map_offset_rx,
+			MAP_OFFSET_Z_MASK, map_sync_offset.rx_map_offset_hf);
+
+		cpri_reg_set_val(&regs->cpri_map_config, AXC_MODE_MASK, 0x1);
+		/* enable axc transmit control reg */
+		cpri_reg_set(&regs->cpri_rcr, AXC_ENABLE_MASK);
+		loop = 0;
+		axcs = framer->dl_axcs;
+		while (loop < framer->framer_param.max_axc_count) {
+			if (axcs[loop] == NULL) {
+				loop++;
+				continue;
+			}
+			axc = axcs[loop];
+			loop++;
+			cpri_reg_set(&regs->cpri_raccr,
+					(AXC_ENABLE_MASK << axc->id));
+#if 0
+			cpri_reg_set(&regs->cpri_raxciqthreshinten,
+					(AXC_ENABLE_MASK << axc->id));
+#endif
+			cpri_reg_set(&regs->cpri_raxciqvspthreshinten,
+					(AXC_ENABLE_MASK << axc->id));
+		}
 
 		/* Enable Rx */
 		cpri_reg_set(&regs->cpri_config,
 			CONF_RX_EN_MASK);
-
+		mdelay(10);
 		/* Set Rx control interrupt events */
-		cpri_reg_set(&regs->cpri_rctrl,
+		cpri_reg_set(&regs->cpri_rcr,
 			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
 
-		/* Set Rx map offset values */
-		cpri_reg_set_val(&regs->cpri_rmapoffset,
-			MAP_OFFSET_X_MASK, map_sync_offset.rx_map_offset_bf);
 
-		cpri_reg_set_val(&regs->cpri_rmapoffset,
-			MAP_OFFSET_Z_MASK, map_sync_offset.rx_map_offset_hf);
 
+		framer->dev_flags |= CPRI_DATA_MODE;
 		cpri_state_machine(framer,
 					CPRI_STATE_OPERATIONAL);
-		framer->dev_flags |= CPRI_DATA_MODE;
+
 
 	} else if (ctrl->ctrl_mask & DEV_STANDBY) {
 
@@ -544,17 +602,17 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 			CONF_TX_EN_MASK|CONF_RX_EN_MASK);
 
 		/* Disable Tx and Rx AxCs */
-		cpri_reg_set_val(&regs->cpri_raxcctrl,
+		cpri_reg_set_val(&regs->cpri_raccr,
 			MASK_ALL, 0);
 
-		cpri_reg_set_val(&regs->cpri_taxcctrl,
+		cpri_reg_set_val(&regs->cpri_taccr,
 			MASK_ALL, 0);
 
 		/* Clear all control interrupt events */
-		cpri_reg_clear(&regs->cpri_rctrl,
+		cpri_reg_clear(&regs->cpri_rcr,
 			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
 
-		cpri_reg_clear(&regs->cpri_tctrl,
+		cpri_reg_clear(&regs->cpri_tcr,
 			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
 
 	} else
@@ -628,7 +686,6 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		dev_err(dev, "invalid case, CMD=%d\n", cmd);
 		return -EINVAL;
 	}
-
 	if (validate_cpri_state(framer, cmd)) {
 		dev_err(dev, "cpri cmd discarded 'check cpri_state': %d\n",
 				framer->framer_state);

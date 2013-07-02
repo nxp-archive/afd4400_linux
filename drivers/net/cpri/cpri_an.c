@@ -28,12 +28,11 @@
 
 #include <linux/cpri.h>
 
-
 void linkrate_autoneg_reset(struct cpri_framer *framer)
 {
-	u32 *gcr_regs;
-	u32 *serdes_regs;
+	u32  __iomem *gcr_regs;
 	u32 value;
+	u32 __iomem *serdes_regs;
 
 	/*XXX: This code is temporary, GCR driver will export function for
 	 * Auto neg reset and PHY link rate config.
@@ -64,25 +63,47 @@ void linkrate_autoneg_reset(struct cpri_framer *framer)
 	schedule_timeout_interruptible(msecs_to_jiffies(500));
 	value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
 	iounmap(serdes_regs);
-	mdelay(10);
 
-#define GCR_BASE4	0x012C0010
-#define GCR_REG_SIZE	0x10
+	mdelay(10);
+#define GCR_BASE0	0x012C0000
+#define GCR_REG_SIZE	512
+#define SYNC_SELECT	0x1fffffff
+	gcr_regs = ioremap_nocache(GCR_BASE0, GCR_REG_SIZE);
+
 #define LINK_RATE_VAL 		0x20
 #define AUTONEG_RESET_VAL 0x21
-	gcr_regs = ioremap_nocache(GCR_BASE4, GCR_REG_SIZE);
-	value = readl(gcr_regs);
+	value = readl(&gcr_regs[4]);
 	value = LINK_RATE_VAL;
-	writel(value, gcr_regs);
+	writel(value, &gcr_regs[4]);
 	schedule_timeout_interruptible(msecs_to_jiffies(100));
 
 	value = AUTONEG_RESET_VAL;
-	writel(value, gcr_regs);
+	writel(value, &gcr_regs[4]);
 	schedule_timeout_interruptible(msecs_to_jiffies(100));
-	value = readl(gcr_regs);
-	iounmap(gcr_regs);
-	mdelay(10);
+	value = readl(&gcr_regs[4]);
 	/* end here */
+/* for VSPA data path */
+	/* mux cpri 1 framer1 19 */
+	writel(0, &gcr_regs[20]);
+	writel(0xffffffff, &gcr_regs[21]);
+	writel(0, &gcr_regs[29]);
+	writel(0xffffffff, &gcr_regs[30]);
+#define CPRI_19_RX1	0x2
+	value = readl(&gcr_regs[23]);
+	value = CPRI_19_RX1;
+	writel(value, &gcr_regs[23]);
+	schedule_timeout_interruptible(msecs_to_jiffies(100));
+	value = readl(&gcr_regs[23]);
+	mdelay(10);
+
+#define CPRI_19_TX1	0x300000
+	value = readl(&gcr_regs[48]);
+	value |= CPRI_19_TX1;
+	writel(value, &gcr_regs[48]);
+	schedule_timeout_interruptible(msecs_to_jiffies(100));
+	value = readl(&gcr_regs[48]);
+	mdelay(10);
+
 }
 
 static void set_delay_config(struct cpri_framer *framer)
@@ -107,14 +128,14 @@ static void interface_reconfig(struct cpri_framer *framer)
 			CONF_TX_EN_MASK|CONF_RX_EN_MASK);
 
 	/* Reset CPRIn_RACCR, CPRIn_TACCR, CPRIn_RCR & CPRIn_TCR */
-	cpri_reg_clear(&regs->cpri_raxcctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_taxcctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_rctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_tctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_raccr, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_taccr, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_rcr, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_tcr, 0xFFFFFFFF);
 
 	/* Reset CPRIn_MAP_CONFIG and CPRIn_MAP_TBL_CONFIG */
-	cpri_reg_clear(&regs->cpri_mapcfg, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_maptblcfg, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_map_config, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_map_tbl_config, 0xFFFFFFFF);
 }
 
 static void link_reconfig(struct cpri_framer *framer)
@@ -125,13 +146,13 @@ static void link_reconfig(struct cpri_framer *framer)
 	int i;
 
 	/* Disable Tx and Rx*/
-	cpri_reg_clear(&regs->cpri_config,
-			CONF_TX_EN_MASK|CONF_RX_EN_MASK);
+	cpri_reg_clear(&regs->cpri_config, CONF_RX_EN_MASK);
+	cpri_reg_clear(&regs->cpri_config, CONF_TX_EN_MASK);
 	/* Reset CPRIn_RACCR, CPRIn_TACCR, CPRIn_RCR & CPRIn_TCR */
-	cpri_reg_clear(&regs->cpri_raxcctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_taxcctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_rctrl, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_tctrl, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_raccr, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_taccr, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_rcr, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_tcr, 0xFFFFFFFF);
 	/* max 1 sec wait for CPRInRSR and CPRInTSR registers to clear */
 	for (i = 0; i < 10; i++) {
 		rsr = cpri_read(&regs->cpri_rstatus);
@@ -258,33 +279,7 @@ static void set_autoneg_param(struct cpri_framer *framer,
 			CPRI_STATE_CONFIGURED);
 }
 
-static void update_delay(struct cpri_framer *framer)
-{
-	struct cpri_delays_raw *delay_out = &framer->delay_out;
-	struct cpri_framer_regs  __iomem *regs = framer->regs;
-
-	delay_out->rx_ext_buf_delay_valid = cpri_reg_get_val(
-			&regs->cpri_exdelaystatus, RX_EX_BUF_DELAY_VALID_MASK);
-
-	delay_out->rx_ext_buf_delay = cpri_reg_get_val(
-			&regs->cpri_exdelaystatus, RX_EX_BUF_DELAY_MASK);
-
-
-	delay_out->rx_byte_delay = cpri_reg_get_val(
-			&regs->cpri_rdelay, RX_BYTE_DELAY_MASK);
-
-	delay_out->rx_buf_delay = cpri_reg_get_val(
-			&regs->cpri_rdelay, RX_BUF_DELAY_MASK);
-
-	delay_out->rx_align_delay = cpri_reg_get_val(
-			&regs->cpri_rdelay, RX_ALIGN_DELAY_MASK);
-
-
-	delay_out->rx_roundtrip_delay = cpri_reg_get_val(
-			&regs->cpri_exdelaystatus, RX_ROUND_TRIP_DELAY_MASK);
-}
-
-static void update_bf_data(struct cpri_framer *framer)
+void update_bf_data(struct cpri_framer *framer)
 {
 	struct cpri_autoneg_output *output = &(framer->autoneg_output);
 	struct device *dev = framer->cpri_dev->dev;
@@ -479,6 +474,7 @@ out_pass:
 			CPRI_STATE_ETH_RATE_AUTONEG);
 	cpri_setup_vendor_autoneg(framer);
 	/* Set framer state */
+	cpri_reg_clear(&regs->cpri_config, CONF_TX_EN_MASK);
 }
 
 static void proto_setup_timer_expiry_hndlr(unsigned long ptr)
@@ -572,9 +568,11 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 		framer->stats.proto_auto_neg_failures++;
 		cpri_state_machine(framer,
 				CPRI_STATE_LINK_ERROR);
-	} else
+	} else {
 		cpri_state_machine(framer,
 				CPRI_STATE_PROT_VER_AUTONEG);
+		cpri_reg_clear(&regs->cpri_config, CONF_TX_EN_MASK);
+	}
 
 }
 
@@ -726,17 +724,8 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	linerate_timer.function = linerate_setup_timer_expiry_hndlr;
 	linerate_timer.data = (unsigned long) framer;
 
-	clear_control_tx_table(framer);
-
 	for (rate = high; rate >= low; rate--) {
 		dev_dbg(dev, "trying new link rate\n");
-		/* Disable framer clock */
-		if (framer->id == 2)
-			cpri_reg_clear(
-				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
-		else
-			cpri_reg_clear(
-				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
 #if 0
 		/* Init and set highest possible line rate for serdes only when
 		 *  the previous state is STANDBY & the framer config in
@@ -747,7 +736,6 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 				/* TBD: serdes_init needs to be called */
 		}
 #endif
-		linkrate_autoneg_reset(framer);
 
 		/* TBD: wait for serdes PLL to be locked if not come out
 		 * if timeout happen
@@ -763,6 +751,9 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 
 		mdelay(1);
 
+		linkrate_autoneg_reset(framer);
+		mdelay(10);
+		clear_control_tx_table(framer);
 		/* Start timer */
 		timer_dur = jiffies + (param->linerate_timeout) * HZ;
 		linerate_timer.expires = timer_dur;
@@ -780,7 +771,6 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		framer->timer_expiry_events = 0;
 	}
 	del_timer_sync(&linerate_timer);
-	update_bf_data(framer);
 
 	if (err != 0) {
 		framer->stats.l1_auto_neg_failures++;
@@ -788,8 +778,12 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		cpri_state_machine(framer,
 				CPRI_STATE_LINK_ERROR);
 	} else {
-		cpri_state_machine(framer,
-				CPRI_STATE_LINE_RATE_AUTONEG);
+		cpri_eth_parm_init(framer);
+		update_bf_data(framer);
+		clear_axc_map_tx_rx_table(framer);
+		mdelay(1);
+		framer_int_enable(framer);
+		cpri_state_machine(framer, CPRI_STATE_LINE_RATE_AUTONEG);
 	}
 }
 
