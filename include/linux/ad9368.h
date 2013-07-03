@@ -18,10 +18,12 @@
 
 
 /* For creating instruction word/command */
-#define OPCODE_WRITE		0x8000
-#define OPCODE_READ		0x0000
-#define BYTES_TRANSFER_MASK	0x7000
-#define SHIFT_BYTES_TRANSFER	12
+#define OPCODE_WRITE		0x80
+#define OPCODE_READ		0x00
+#define BYTES_TRANSFER_MASK	0x70
+#define BYTES_CLK_TRANS_MASK	0x60
+#define SHIFT_BYTES_TRANSFER	4
+#define SHIFT_CLK_BYTES_TRANS	5
 #define REG_ADDRESS_MASK	0x03FF
 #define REG_AD9525_ADDRESS_MASK	0x07FF
 #define COMMAND_MASK		0xFFFF0000
@@ -37,8 +39,10 @@
 #define AD9525_PUSH_WRITE2_REG	0x32
 
 #define TRANSACTION_BYTES		3
+#define MAX_CLK_READ_TRANS_SIZE		3
 #define MAX_READ_TRANSACTION_SIZE	8
 #define RXBUF_SIZE			10
+#define RXBUF_CLK_SIZE			5
 #define NUM_GPIOS			2
 #define MAX_GPIO_CONFIGS		(1 << NUM_GPIOS)
 #define GPIO_INVAL			(~0)
@@ -137,7 +141,7 @@ enum band_config_mode {
 
 struct ad_dev_info {
 	struct spi_device *ad_spi;
-	u8	rx_buf[13];
+	u8	rx_buf[10];
 	int	device_id;
 	u8 prev_ensm_state;
 	int ensm_pin_ctl_en;

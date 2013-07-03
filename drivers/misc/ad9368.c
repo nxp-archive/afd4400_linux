@@ -262,6 +262,7 @@ int ad9368_read(struct rf_phy_dev *phy_dev, u32 start,
 {
 	u32 data;
 	u16 read_addr;
+	int trans_size;
 	int i = 0, j = 0, rc;
 	struct ad_dev_info *phy_info = phy_dev->priv;
 	struct device *dev;
@@ -270,7 +271,7 @@ int ad9368_read(struct rf_phy_dev *phy_dev, u32 start,
 	struct spi_ioc_transfer tr = {
 		.tx_buf = (unsigned long)tx,
 		.rx_buf = (unsigned long)rx,
-		.len = TRANSACTION_BYTES,
+		.len = COMMAND_LEN + count,
 		.delay_usecs = 0,
 		.speed_hz = 20000000,
 		.bits_per_word = 8,
@@ -283,13 +284,53 @@ int ad9368_read(struct rf_phy_dev *phy_dev, u32 start,
 	dev = &phy_info->ad_spi->dev;
 	read_addr =  (u16)(start + count - 1);
 	j = count - 1;
+
 	if (phy_info->device_id == DEVICE_ID_AD9525)
-		tx[0] = OPCODE_READ_AD9525;
+		trans_size = MAX_CLK_READ_TRANS_SIZE;
 	else
-		tx[0] = OPCODE_READ;
+		trans_size = MAX_READ_TRANSACTION_SIZE;
+
+	while (count > trans_size) {
+		if (phy_info->device_id == DEVICE_ID_AD9525) {
+			tx[0] = OPCODE_READ_AD9525
+				|(((trans_size - 1)
+				<< SHIFT_CLK_BYTES_TRANS)
+				& (BYTES_CLK_TRANS_MASK));
+			tr.len = RXBUF_CLK_SIZE;
+		} else {
+			tx[0] = OPCODE_READ
+				|(((trans_size - 1)
+					<< SHIFT_BYTES_TRANSFER)
+					& (BYTES_TRANSFER_MASK));
+			tr.len = RXBUF_SIZE;
+		}
+
+		tx[0] |=	(read_addr>>8);
+		tx[1] = (u8)read_addr;
+		rc = rfdev_message(phy_dev, &tr, 1);
+		if (rc < 0)
+			goto out;
+
+		for (i = COMMAND_LEN; i < tr.len ; i++) {
+			data = phy_info->rx_buf[i];
+			buff[j--] = data;
+		}
+
+		count -= trans_size;
+		read_addr = read_addr - trans_size;
+	}
+	if (phy_info->device_id == DEVICE_ID_AD9525)
+		tx[0] = OPCODE_READ_AD9525
+			|(((count - 1) << SHIFT_CLK_BYTES_TRANS)
+				& (BYTES_CLK_TRANS_MASK));
+	else
+		tx[0] = OPCODE_READ
+			|(((count - 1) << SHIFT_BYTES_TRANSFER)
+				& (BYTES_TRANSFER_MASK));
 
 	tx[0] |=	(read_addr>>8);
 	tx[1] = (u8)read_addr;
+	tr.len = COMMAND_LEN + count;
 	rc = rfdev_message(phy_dev, &tr, 1);
 	if (rc < 0)
 		goto out;
