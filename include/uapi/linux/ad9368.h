@@ -42,6 +42,9 @@
 
 #include <linux/types.h>
 
+#define DEVICE_ID_AD93681 0
+#define DEVICE_ID_AD9525  1
+#define DEVICE_ID_AD93682 2
 #define RF_NAME_SIZE		20
 #define NUM_SYNTH_PARAMS	20
 #define NUM_SYNTH_REGS		20
@@ -174,5 +177,6 @@ struct spi_ioc_transfer {
 
 #define RF_SET_GAIN_CTRL_MODE	_IOW(RF_MAGIC, 21, struct rf_gain_ctrl *)
 #define RF_SPI_IOC_TRANSFER	_IOW(RF_MAGIC, 22, struct spi_ioc_transfer *)
+#define RF_SET_SPI_STREAM_ID	_IOW(RF_MAGIC, 23, int *)
 
 #endif

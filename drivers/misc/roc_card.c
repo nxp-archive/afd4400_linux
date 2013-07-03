@@ -171,6 +171,7 @@ static long roc_ioctl(struct file *filep, unsigned int cmd,
 	struct rf_gain_ctrl gain_ctrl;
 	struct spi_ioc_transfer ioc_transfer;
 	u32	*buf;
+	int device_id;
 	int rc = -ENOSYS, size;
 	if (_IOC_DIR(cmd) & _IOC_READ)
 		err = !access_ok(VERIFY_WRITE,
@@ -338,6 +339,16 @@ static long roc_ioctl(struct file *filep, unsigned int cmd,
 			rc = -EFAULT;
 		}
 		break;
+	case RF_SET_SPI_STREAM_ID:
+		if (!copy_from_user(&device_id, (int *)arg,
+			sizeof(int))) {
+			roc_dev->device_id = device_id;
+			phy_dev = roc_dev->phy_dev[roc_dev->device_id];
+			rc = 0;
+		} else {
+			rc = -EFAULT;
+		}
+		break;
 	case RF_SPI_IOC_TRANSFER:
 		if (!copy_from_user(&ioc_transfer,
 			(struct spi_ioc_transfer *)arg,
@@ -376,7 +387,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 	struct device *dev = roc_dev->dev;
 	int i, elapsed_time;
 	u32 val;
-	phy_dev = roc_dev->phy_dev[0];
+	phy_dev = roc_dev->phy_dev[roc_dev->device_id];
 	for (i = 0; i < count; i++) {
 		if (phy_dev == NULL && cmds[i].cmd != SPI_SET_CHANNEL)
 			continue;
@@ -516,8 +527,8 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			msleep_interruptible(cmds[i].param3);
 			break;
 		case SPI_SET_CHANNEL:
-			roc_dev->device_id = cmds[i].param3;
-			phy_dev = roc_dev->phy_dev[roc_dev->device_id];
+			/*roc_dev->device_id = cmds[i].param3;
+			phy_dev = roc_dev->phy_dev[roc_dev->device_id];*/
 			dev_dbg(dev, "SPI_SET_CHANNEL RECEIVED %u.\n",
 			 cmds[i].param3);
 			break;
