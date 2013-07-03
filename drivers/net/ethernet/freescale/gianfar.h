@@ -402,19 +402,19 @@ extern const char gfar_driver_version[];
 #define BD_LFLAG_LSHIFT(len) (len)
 #define BD_LENGTH_MASK		0x0000ffff
 #else
-#define BD_LFLAG_LSHIFT(len) ((len) << 16)
 #define BD_LFLAG_FSHIFT(flags) (flags)
+#define BD_LFLAG_LSHIFT(len) ((len) << 16)
 #define BD_LENGTH_MASK		0xffff0000
 #endif /* (__BIG_ENDIAN) */
 
 /* For RX BD, 16b word size accesses are made from TSEC for len and status*/
 #if defined(__BIG_ENDIAN)
 #define BD_LSTATUS_LSHIFT(len) (len) /* needed for read ops */
-#define BD_LSTATUS_SSHIFT(status) ((status) >> 16)
+#define BD_LSTATUS_FSHIFT(flags) ((flags) >> 16)
 #else
 /* needed for read ops */
 #define BD_LSTATUS_LSHIFT(len) (((len) & BD_LENGTH_MASK) >> 16)
-#define BD_LSTATUS_SSHIFT(flags) (flags)
+#define BD_LSTATUS_FSHIFT(flags) (flags)
 #endif /* (__BIG_ENDIAN) */
 
 #define FPR_FILER_MASK	0xFFFFFFFF

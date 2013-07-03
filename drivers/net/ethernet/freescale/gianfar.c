@@ -2179,7 +2179,7 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 			length = skb_shinfo(skb)->frags[i].size;
 
-			lstatus = txbdp->lstatus | BD_LFLAG_FSHIFT(length) |
+			lstatus = txbdp->lstatus | BD_LFLAG_LSHIFT(length) |
 				  BD_LFLAG_FSHIFT(TXBD_READY);
 
 			/* Handle the last BD specially */
@@ -2799,7 +2799,7 @@ int gfar_clean_rx_ring(struct gfar_priv_rx_q *rx_queue, int rx_work_limit)
 
 	amount_pull = (gfar_uses_fcb(priv) ? GMAC_FCB_LEN : 0);
 
-	while (!((BD_LSTATUS_SSHIFT(bdp->lstatus) & RXBD_EMPTY)
+	while (!((BD_LSTATUS_FSHIFT(bdp->lstatus) & RXBD_EMPTY)
 				|| (--rx_work_limit < 0))) {
 		struct sk_buff *newskb;
 
@@ -2812,18 +2812,18 @@ int gfar_clean_rx_ring(struct gfar_priv_rx_q *rx_queue, int rx_work_limit)
 
 		rmb();
 		len = (int)BD_LSTATUS_LSHIFT(bdp->lstatus);
-		status = (int)BD_LSTATUS_SSHIFT(bdp->lstatus);
+		status = (int)BD_LSTATUS_FSHIFT(bdp->lstatus);
 		dma_unmap_single(&priv->ofdev->dev, bdp->bufPtr,
 				 priv->rx_buffer_size, DMA_FROM_DEVICE);
 
 		if (unlikely(!(status & RXBD_ERR) &&
 			     len > priv->rx_buffer_size))
-			bdp->lstatus = BD_LSTATUS_SSHIFT(RXBD_LARGE);
+			bdp->lstatus = BD_LSTATUS_FSHIFT(RXBD_LARGE);
 
 		/* We drop the frame if we failed to allocate a new buffer */
 		if (unlikely(!newskb || !(status & RXBD_LAST) ||
 					status & RXBD_ERR)) {
-			count_errors(BD_LSTATUS_SSHIFT(bdp->lstatus), dev);
+			count_errors(BD_LSTATUS_FSHIFT(bdp->lstatus), dev);
 
 			if (unlikely(!newskb))
 				newskb = skb;
