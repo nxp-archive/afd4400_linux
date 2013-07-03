@@ -251,22 +251,22 @@ static int cpri_register_framer_irqs(struct cpri_framer *framer)
 /* mask all the interrupt */
 
 	err = request_irq(framer->irq_rx_c, cpri_rxcontrol, 0,
-			"rxcontrol interrupt", framer);
+			"cpri rxcontrol interrupt", framer);
 	if (err < 0)
 		goto out;
 
 	err = request_irq(framer->irq_tx_c , cpri_txcontrol, 0,
-			"txcontrol interrupt", framer);
+			"cpri txcontrol interrupt", framer);
 	if (err < 0)
 		goto irq_rxcontrol;
 
 	err = request_irq(framer->irq_rx_t, cpri_rxtiming, 0,
-			"rxtiming interrupt", framer);
+			"cpri rxtiming interrupt", framer);
 	if (err < 0)
 		goto irq_txcontrol;
 
 	err = request_irq(framer->irq_tx_t, cpri_txtiming, 0,
-			"txtiming interrupt", framer);
+			"cpri txtiming interrupt", framer);
 	if (err < 0)
 		goto irq_rxtiming;
 
@@ -577,7 +577,7 @@ static int cpri_register_irq(struct cpri_dev *cpdev)
 	}
 
 	err = request_irq(cpdev->irq_err, cpri_err_handler, 0,
-				"error interrupt", cpdev);
+				"cpri error interrupt", cpdev);
 	/* Handling only the error interrupt (111) */
 	if (err < 0)
 		dev_err(cpdev->dev, "can't get IRQ\n");

@@ -28,43 +28,283 @@
 
 #include <linux/cpri.h>
 
+#define SERDES3_BASE	0x04088000
+#define SERDES_SIZE	0x4000
+
+#ifdef USE_PLL2
+#define PLL_RSTCTL	0x020
+#define PLL_CR0		0x024
+#define PLL_CR1		0x028
+#define PLL_CR4		0x034
+#else
+#define PLL_RSTCTL	0x000
+#define PLL_CR0		0x004
+#define PLL_CR1		0x008
+#define PLL_CR4		0x014
+#endif
+
+#define PCCR3		0x0ec
+#define LN_CGCR0	0x8c0
+#define LN_CGCR1	0x8C4
+#define LN_RECR0	0x8d0
+#define LN_RECR1	0x8d4
+#define LN_TECR0	0x8d8
+#define LN_TTLCR0	0x8e0
+#define LN_TTLCR1	0x8e4
+#define LN_TCSR3	0x8fc
+
+/* RSTCTL */
+#define SDEN		(1 << 5)
+#define SDRST_B		(1 << 6)
+#define PLLRST_B	(1 << 7)
+#define RSTDONE		(1 << 30)
+#define RSTREQ		(1 << 31)
+
+/* CR0 */
+#define REFCLK_SEL_MASK		0x7
+#define REFCLK_SEL_SHIFT	28
+#define REFCLK_100		0x0
+#define REFCLK_122_88		0x1
+#define REFCLK_153_6		0x2
+#define FRATE_MASK		0xf
+#define FRATE_SHIFT		16
+#define FRATE_5_0_GHZ		0x0
+#define FRATE_4_9152_GHZ	0x3
+#define FRAME_3_072_GHZ		0xc
+
+#define REFCLK_EN		(1 << 27)
+#define PLL_LOCKED		(1 << 23)
+
+/* PCCR3 */
+#define LANE_CFG_MASK		0xf
+#define LANE_SINGLE_CHANNEL	0x2
+#define LANE0_CFG_SHIFT		16
+
+/* LN_GCR0 */
+#define TRST_B			(1 << 21)
+#define RRST_B			(1 << 22)
+#define IF20BIT_EN		(1 << 18)
+#define FIRST_LANE		(1 << 16)
+#define TPLL_LES		(1 << 27)
+#define RPLL_LES		(1 << 31)
+
+#define PROTS_SHIFT		0x7
+#define PROTS_MASK		0x1f
+#define PROT_JESD204		0xc
+
+#define RRAT_SEL_SHIFT		28
+#define TRAT_SEL_SHIFT		24
+#define RAT_SEL_MASK		0x3
+#define RRAT_QUATER		0x2
+#define LOOPBACK_EN		0x01
+#define LOOPBACK_EN_SHIFT	28
+
+#define SERDES_PLL_TIMEOUT_MS	100
+
+static void serdes_disable_lanes(u32 base_reg)
+{
+	u32 *reg,  mask;
+
+	reg = (u32 *) (base_reg + PLL_RSTCTL);
+	/* Disable all lanes */
+	mask = SDRST_B;
+	cpri_reg_clear(reg, mask);
+	udelay(1);
+
+	mask = SDEN;
+	cpri_reg_set(reg, mask);
+	udelay(1);
+}
+
+static void serdes_enable_lanes(u32 base_reg)
+{
+	u32 *reg, val;
+
+	reg = (u32 *) (base_reg + PLL_RSTCTL);
+	val = ioread32(reg);
+	/* enable all lanes */
+	val |= (SDRST_B | SDEN | PLLRST_B);
+	iowrite32(val, reg);
+}
+
+static int init_serdes_pll(struct cpri_framer *framer,
+	u32 base_reg)
+{
+	u32 *reg, val = 0, mask = 0;
+	int rc = 0;
+	unsigned long timeout;
+
+
+	serdes_disable_lanes(base_reg);
+	/* program pll*/
+	reg = (u32 *) (base_reg + PLL_CR0);
+	val = REFCLK_122_88;
+	mask = REFCLK_SEL_MASK << REFCLK_SEL_SHIFT;
+	cpri_reg_set_val(reg, mask, val);
+
+	val = FRATE_4_9152_GHZ;
+	mask = FRATE_MASK << FRATE_SHIFT;
+	cpri_reg_set_val(reg, mask, val);
+
+
+	mask = REFCLK_EN;
+	cpri_reg_set(reg, mask);
+	val = ioread32(reg);
+
+	timeout = jiffies + msecs_to_jiffies(SERDES_PLL_TIMEOUT_MS);
+
+	reg = (u32 *) (base_reg + PLL_RSTCTL);
+	val = ioread32(reg);
+	mask = RSTREQ;
+	cpri_reg_set(reg, mask);
+
+	val = ioread32(reg);
+	while (!(val & RSTDONE)) {
+		if (jiffies > timeout) {
+			dev_err(framer->cpri_dev->dev, "%s: SERDES PLL reset failed [%x]\n",
+				__func__, val);
+			rc = -EBUSY;
+			goto out;
+		}
+		val = ioread32(reg);
+	}
+
+	reg = (u32 *) (base_reg + PLL_CR0);
+	val = ioread32(reg);
+	while (!(val & PLL_LOCKED)) {
+		if (jiffies > timeout) {
+			dev_err(framer->cpri_dev->dev, "%s: SERDES PLL lock failed [%x]\n",
+				__func__, val);
+			rc = -EBUSY;
+			goto out;
+		}
+		val = ioread32(reg);
+	}
+	dev_info(framer->cpri_dev->dev, "%s: SERDES PLL reset locked, cr0 0x%x\n",
+		__func__, val);
+
+	serdes_enable_lanes(base_reg);
+out:
+	return rc;
+}
+
+static int init_serdes_lane(struct cpri_framer *framer,
+	u32 base_reg)
+{
+	u32 *reg, val, mask;
+	int rc = 0;
+
+	reg = (u32 *) (base_reg + PCCR3);
+	val = ioread32(reg);
+	val = LANE_SINGLE_CHANNEL;
+	mask = LANE_CFG_MASK << LANE0_CFG_SHIFT;
+	cpri_reg_set_val(reg, mask, val);
+	/*Reset and disable lane */
+	reg = (u32 *) (base_reg + LN_CGCR0);
+	val = ioread32(reg);
+	val |= (~(TRST_B | RRST_B));
+	iowrite32(val, reg);
+	udelay(1);
+	/*configure lane*/
+	reg = (u32 *) (base_reg + LN_CGCR0);
+	val = ioread32(reg);
+	val |= RRAT_QUATER << RRAT_SEL_SHIFT;
+	val |= RRAT_QUATER << TRAT_SEL_SHIFT;
+	val |= TPLL_LES;
+	val |= RPLL_LES;
+
+	val |= IF20BIT_EN;
+	val |= (PROT_JESD204 & PROTS_MASK) << PROTS_SHIFT;
+	val |= FIRST_LANE;
+	iowrite32(val, reg);
+
+
+	udelay(1);
+
+	/*Enable lane */
+	reg = (u32 *) (base_reg + LN_CGCR0);
+	val = ioread32(reg);
+	val |= (TRST_B | RRST_B);
+	iowrite32(val, reg);
+	udelay(10);
+	return rc;
+}
+
+static int cpri_init_serdes(struct cpri_framer *framer)
+{
+	int rc = 0;
+	u32 base_reg = 0;
+
+	struct device *dev = framer->cpri_dev->dev;
+
+	base_reg = (u32) ioremap_nocache(SERDES3_BASE, SERDES_SIZE);
+	if (!base_reg) {
+		dev_err(dev, "%s: Failed serdes ioremap\n", __func__);
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	dev_info(dev, "serdes base %x, size %x, virt %x\n",
+			SERDES3_BASE, SERDES_SIZE, base_reg);
+	rc = init_serdes_pll(framer, base_reg);
+	if (rc) {
+		dev_err(dev, "%s: serdes pll init failed\n", __func__);
+		goto out;
+	}
+
+	rc = init_serdes_lane(framer, base_reg);
+	if (rc) {
+		dev_err(dev, "%s: serdes lane init failed\n", __func__);
+		goto out;
+	}
+out:
+	if (!base_reg)
+		iounmap((void *) base_reg);
+	return rc;
+}
+
 void linkrate_autoneg_reset(struct cpri_framer *framer)
 {
 	u32  __iomem *gcr_regs;
 	u32 value;
-	u32 __iomem *serdes_regs;
+	u32 *serdes_regs;
 
 	/*XXX: This code is temporary, GCR driver will export function for
 	 * Auto neg reset and PHY link rate config.
 	 */
 	/* temporary code added to check with GCR0 register values
 	 */
+	if (framer->autoneg_param.flags & CPRI_SERDES_LOOPBACK) {
 #define SERDES3_BASE 	0x04088000
 #define LOOP_BACK_REG	0x040888BC
 #define LOOP_BACK_VAL 	0x10000000
 #define SERDES_REG_SIZE 0x8
 #define SERDES_PLL_REG	0x0
 #define SERDES_PLL_VAL	0x80000000
-	serdes_regs = ioremap_nocache(LOOP_BACK_REG, SERDES_REG_SIZE);
-	value = readl(serdes_regs);
-	value |= LOOP_BACK_VAL;
-	writel(value, serdes_regs);
-	value = readl(serdes_regs);
-	schedule_timeout_interruptible(msecs_to_jiffies(100));
-	iounmap(serdes_regs);
+		serdes_regs = ioremap_nocache(LOOP_BACK_REG,
+				SERDES_REG_SIZE);
+		value = readl(serdes_regs);
+		value |= LOOP_BACK_VAL;
+		writel(value, serdes_regs);
+		value = readl(serdes_regs);
+		schedule_timeout_interruptible(
+				msecs_to_jiffies(100));
+		iounmap(serdes_regs);
 
 
-	serdes_regs = ioremap_nocache(SERDES3_BASE, SERDES_REG_SIZE);
-	value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
-	value |= (SERDES_PLL_VAL | 0x30000);
-	value &= 0xfffff0ff;
-	value |= 0x500;
-	writel(value, (u32 *)(serdes_regs + SERDES_PLL_REG));
-	schedule_timeout_interruptible(msecs_to_jiffies(500));
-	value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
-	iounmap(serdes_regs);
-
-	mdelay(10);
+		serdes_regs = ioremap_nocache(SERDES3_BASE, SERDES_REG_SIZE);
+		value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
+		value |= (SERDES_PLL_VAL | 0x30000);
+		value &= 0xfffff0ff;
+		value |= 0x500;
+		writel(value, (u32 *)(serdes_regs + SERDES_PLL_REG));
+		schedule_timeout_interruptible(msecs_to_jiffies(500));
+		value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
+		iounmap(serdes_regs);
+	} else {
+		cpri_init_serdes(framer);
+		mdelay(10);
+	}
 #define GCR_BASE0	0x012C0000
 #define GCR_REG_SIZE	512
 #define SYNC_SELECT	0x1fffffff
@@ -105,6 +345,177 @@ void linkrate_autoneg_reset(struct cpri_framer *framer)
 	mdelay(10);
 
 }
+
+static void cpri_configure_irq_events(struct cpri_framer *framer)
+{
+	struct cpri_framer_regs __iomem *regs = framer->regs;
+
+	/* Enable timing interrupt events here - control events are enabled
+	 * after their respective initialisation
+	 */
+	cpri_reg_set(&regs->cpri_rctrltiminginten,
+			BFN_TIMING_EVENT_EN_MASK
+			| HFN_TIMING_EVENT_EN_MASK);
+
+	cpri_reg_set(&regs->cpri_tctrltiminginten,
+			BFN_TIMING_EVENT_EN_MASK
+			| HFN_TIMING_EVENT_EN_MASK);
+
+	/* TBD: CPRIICR is not set in this driver. It is not clear
+	 * why we have this physical interrupt line and the similar
+	 * configuration like the above
+	 */
+	/* Enable all error events by default */
+#if 0 /* temporarily commented on medusa bcz of clock error hang issue */
+	cpri_reg_set(&regs->cpri_errinten,
+			CPRI_ERR_EVT_ALL);
+#endif
+	framer_int_enable(framer);
+}
+
+
+static void cpri_init_framer(struct cpri_framer *framer)
+{
+	struct cpri_dev_init_params *param = &framer->framer_param;
+	struct cpri_framer_regs __iomem *regs = framer->regs;
+
+	/* Rx scrambler setting */
+	if (framer->autoneg_param.flags & CPRI_RX_SCRAMBLER_EN)
+		cpri_reg_set(&regs->cpri_rscrseed,
+				RX_SCR_EN_MASK);
+
+	/* Disable Tx and Rx AxCs */
+	cpri_reg_set_val(&regs->cpri_raccr,
+		MASK_ALL, 0);
+
+	cpri_reg_set_val(&regs->cpri_taccr,
+			MASK_ALL, 0);
+
+	/* Clear all control interrupt events */
+	cpri_reg_clear(&regs->cpri_rcr,
+		ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
+
+	cpri_reg_clear(&regs->cpri_tcr,
+		ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
+
+	if (param->ctrl_flags & CPRI_DAISY_CHAINED)
+		cpri_reg_set(&regs->cpri_auxctrl,
+				AUX_MODE_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_auxctrl,
+			AUX_MODE_MASK);
+
+	if (param->ctrl_flags & CPRI_DEV_SLAVE)
+		cpri_reg_set(&regs->cpri_config,
+			SLAVE_MODE_MASK);
+
+	if (param->ctrl_flags & CPRI_DEV_MASTER)
+		cpri_reg_clear(&regs->cpri_config,
+				SLAVE_MODE_MASK);
+
+	/* CPRI config params */
+	if (param->ctrl_flags & CPRI_SET_10_ACKS)
+		cpri_reg_set(&regs->cpri_config,
+			CONF_SET_10_ACKS_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_config,
+			CONF_SET_10_ACKS_MASK);
+
+	if (param->ctrl_flags & CPRI_CNT_6_RESET)
+		cpri_reg_set(&regs->cpri_config,
+			CONF_CNT_6_RESET_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_config,
+			CONF_CNT_6_RESET_MASK);
+
+	if (param->ctrl_flags & CPRI_SYNC_PULSE_MODE)
+		cpri_reg_set(&regs->cpri_config,
+			CONF_SYNC_PULSE_MODE_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_config,
+			CONF_SYNC_PULSE_MODE_MASK);
+
+	if (param->ctrl_flags & CPRI_TX_CW_INSERT)
+		cpri_reg_set(&regs->cpri_config,
+			TX_CW_INSERT_EN_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_config,
+				TX_CW_INSERT_EN_MASK);
+
+	/* Control word params */
+	if (param->ctrl_flags & CPRI_CW)
+		cpri_reg_set(&regs->cpri_auxcwdmasken,
+			CW_EN_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_auxcwdmasken,
+			CW_EN_MASK);
+
+	if (param->ctrl_flags & CPRI_CW130)
+		cpri_reg_set(&regs->cpri_auxcwdmasken,
+			CW130_EN_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_auxcwdmasken,
+				CW130_EN_MASK);
+
+#if 0
+	/* SRC config param */
+	if (param->ctrl_flags & RST_REQ_BYP)
+		src_reset_request_bypass(framer->src_bypass_status,
+				framer->src_bypass_dur_sec);
+#endif
+
+	/* Rx control param */
+	if (param->ctrl_flags & CPRI_RX_IQ_SYNC)
+		cpri_reg_set(&regs->cpri_rcr,
+			IQ_SYNC_EN_MASK);
+	else
+		cpri_reg_clear(
+				&regs->cpri_rcr,
+				IQ_SYNC_EN_MASK);
+
+	/* Tx control param */
+	if (param->ctrl_flags & CPRI_TX_IQ_SYNC)
+		cpri_reg_set(&regs->cpri_tcr,
+				IQ_SYNC_EN_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_rcr,
+				IQ_SYNC_EN_MASK);
+
+	/* ECC error indication config param */
+	if (param->ctrl_flags & CPRI_SINGLE_BIT_ECC_ERROR_OUTPUT)
+		cpri_reg_set(&regs->cpri_eccerrindicateen,
+				SINGLE_BIT_ECC_ERROR_OUTPUT_EN_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_eccerrindicateen,
+				SINGLE_BIT_ECC_ERROR_OUTPUT_EN_MASK);
+
+	if (param->ctrl_flags & CPRI_MULTI_BIT_ECC_ERROR_OUTPUT)
+		cpri_reg_set(&regs->cpri_eccerrindicateen,
+			MULTI_BIT_ECC_ERROR_OUTPUT_EN_MASK);
+	else
+		cpri_reg_clear(&regs->cpri_eccerrindicateen,
+				MULTI_BIT_ECC_ERROR_OUTPUT_EN_MASK);
+
+	/* Tx framer size setting */
+	cpri_reg_set_val(&regs->cpri_tbufsize,
+			FR_BUF_SIZE_MASK,
+			param->tx_framer_buffer_size);
+
+	/* VSS AXI transaction size setting */
+	cpri_reg_set_val(&regs->cpri_rvssaxisize,
+			AXI_TRANSAC_SIZE_MASK,
+			param->axi_vss_rx_trans_size);
+	cpri_reg_set_val(&regs->cpri_tvssaxisize,
+			AXI_TRANSAC_SIZE_MASK,
+			param->axi_vss_tx_trans_size);
+
+	clear_control_tx_table(framer);
+	/* Configure framer events */
+	cpri_configure_irq_events(framer);
+
+	return;
+}
+
 
 static void set_delay_config(struct cpri_framer *framer)
 {
@@ -283,9 +694,7 @@ void update_bf_data(struct cpri_framer *framer)
 {
 	struct cpri_autoneg_output *output = &(framer->autoneg_output);
 	struct device *dev = framer->cpri_dev->dev;
-	int ret;
 
-	cleanup_segment_table_data(framer);
 	switch (output->common_link_rate) {
 	case RATE2_1228_8M:
 		output->cpri_bf_word_size = BF_W_SIZE_16;
@@ -316,9 +725,7 @@ void update_bf_data(struct cpri_framer *framer)
 				output->common_link_rate);
 	break;
 	}
-	ret = populate_segment_table_data(framer);
-	if (ret)
-		dev_err(dev, "Segment table population failed\n");
+
 }
 
 void cpri_setup_vendor_autoneg(struct cpri_framer *framer)
@@ -351,7 +758,7 @@ static int check_ethrate(struct cpri_framer *framer)
 	struct cpri_framer_regs *regs = framer->regs;
 	struct cpri_autoneg_output *result = &(framer->autoneg_output);
 	struct device *dev = framer->cpri_dev->dev;
-	u8 tx_eth_rate, rx_eth_rate;
+	u32 tx_eth_rate, rx_eth_rate;
 	int status, err = 0;
 	u8 hf_cnt;
 	static u8 txhfcnt;
@@ -385,11 +792,12 @@ static int check_ethrate(struct cpri_framer *framer)
 
 
 	if (status) {
-		tx_eth_rate = (u8) cpri_reg_get_val(
+		tx_eth_rate = cpri_reg_get_val(
 					&regs->cpri_cmconfig,
 					TX_FAST_CM_PTR_MASK);
+		mdelay(2);
 
-		rx_eth_rate = (u8) cpri_reg_get_val(
+		rx_eth_rate = cpri_reg_get_val(
 					&regs->cpri_cmstatus,
 					RX_FAST_CM_PTR_MASK);
 
@@ -399,8 +807,8 @@ static int check_ethrate(struct cpri_framer *framer)
 			err = 0;
 		} else {
 			err = -ENOLINK;
-			dev_info(dev, "eth autoneg fail: eth_rate: %d\n",
-				tx_eth_rate);
+			dev_info(dev, "eth autoneg fail:txPtr: %d, txPtr: %d\n",
+				tx_eth_rate, rx_eth_rate);
 		}
 	}
 
@@ -474,7 +882,6 @@ out_pass:
 			CPRI_STATE_ETH_RATE_AUTONEG);
 	cpri_setup_vendor_autoneg(framer);
 	/* Set framer state */
-	cpri_reg_clear(&regs->cpri_config, CONF_TX_EN_MASK);
 }
 
 static void proto_setup_timer_expiry_hndlr(unsigned long ptr)
@@ -571,7 +978,6 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 	} else {
 		cpri_state_machine(framer,
 				CPRI_STATE_PROT_VER_AUTONEG);
-		cpri_reg_clear(&regs->cpri_config, CONF_TX_EN_MASK);
 	}
 
 }
@@ -614,8 +1020,6 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 		dev_info(dev, "waiting for 1 HF to sent out\n");
 		schedule_timeout_interruptible(msecs_to_jiffies(1));
 	}
-	/* Turn OFF Tx */
-	cpri_reg_clear(&regs->cpri_config, CONF_TX_EN_MASK);
 
 	dev_info(dev, "line rate autoneg successful\n");
 
@@ -726,6 +1130,13 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 
 	for (rate = high; rate >= low; rate--) {
 		dev_dbg(dev, "trying new link rate\n");
+		/* Disable framer clock */
+		if (framer->id == 2)
+			cpri_reg_clear(
+				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
+		else
+			cpri_reg_clear(
+				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
 #if 0
 		/* Init and set highest possible line rate for serdes only when
 		 *  the previous state is STANDBY & the framer config in
@@ -741,6 +1152,8 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		 * if timeout happen
 		 */
 
+		linkrate_autoneg_reset(framer);
+		mdelay(10);
 		/* Enable framer clock */
 		if (framer->id == 2)
 			cpri_reg_set(
@@ -751,9 +1164,7 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 
 		mdelay(1);
 
-		linkrate_autoneg_reset(framer);
-		mdelay(10);
-		clear_control_tx_table(framer);
+		cpri_init_framer(framer);
 		/* Start timer */
 		timer_dur = jiffies + (param->linerate_timeout) * HZ;
 		linerate_timer.expires = timer_dur;
@@ -780,9 +1191,9 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	} else {
 		cpri_eth_parm_init(framer);
 		update_bf_data(framer);
-		clear_axc_map_tx_rx_table(framer);
-		mdelay(1);
-		framer_int_enable(framer);
+		err = init_framer_axc_param(framer);
+		if (err != 0)
+			dev_err(dev, "init axc param failed !!\n");
 		cpri_state_machine(framer, CPRI_STATE_LINE_RATE_AUTONEG);
 	}
 }

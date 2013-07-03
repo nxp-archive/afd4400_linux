@@ -294,6 +294,7 @@ struct cpri_autoneg_params {
 #define CPRI_UPDATE_PROTO_AUTONEG_PARAMS	(1 << 2)
 #define CPRI_UPDATE_CnM_AUTONEG_PARAMS		(1 << 3)
 #define CPRI_RX_SCRAMBLER_EN			(1 << 4)
+#define CPRI_SERDES_LOOPBACK			(1 << 5)
 	unsigned int l1_setup_timeout;
 	/* Line rate auto neg parameters */
 	unsigned int tx_on_time;

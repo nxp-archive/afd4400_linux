@@ -251,108 +251,11 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 		sizeof(struct cpri_dev_init_params));
 }
 
-static void cpri_configure_irq_events(struct cpri_framer *framer)
+static void cpri_init_param(struct cpri_framer *framer)
 {
-	struct cpri_framer_regs __iomem *regs = framer->regs;
-
-	/* Enable timing interrupt events here - control events are enabled
-	 * after their respective initialisation
-	 */
-	cpri_reg_set(&regs->cpri_rctrltiminginten,
-			BFN_TIMING_EVENT_EN_MASK
-			| HFN_TIMING_EVENT_EN_MASK);
-
-	cpri_reg_set(&regs->cpri_tctrltiminginten,
-			BFN_TIMING_EVENT_EN_MASK
-			| HFN_TIMING_EVENT_EN_MASK);
-
-	/* TBD: CPRIICR is not set in this driver. It is not clear
-	 * why we have this physical interrupt line and the similar
-	 * configuration like the above
-	 */
-	/* Enable all error events by default */
-#if 0 /* temporarily commented on medusa bcz of clock error hang issue */
-	cpri_reg_set(&regs->cpri_errinten,
-			CPRI_ERR_EVT_ALL);
-#endif
-}
-
-static int cpri_init_framer(struct cpri_framer *framer)
-{
-	int ret;
 	struct cpri_dev_init_params *param = &framer->framer_param;
-	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_common_regs __iomem *cregs = framer->cpri_dev->regs;
 
-
-	ret = init_framer_axc_param(framer);
-	if (ret != 0)
-		return ret;
-	if (param->ctrl_flags & CPRI_DAISY_CHAINED)
-		cpri_reg_set(&regs->cpri_auxctrl,
-				AUX_MODE_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_auxctrl,
-			AUX_MODE_MASK);
-
-	if (param->ctrl_flags & CPRI_DEV_SLAVE)
-		cpri_reg_set(&regs->cpri_config,
-			SLAVE_MODE_MASK);
-
-	if (param->ctrl_flags & CPRI_DEV_MASTER)
-		cpri_reg_clear(&regs->cpri_config,
-				SLAVE_MODE_MASK);
-
-	/* CPRI config params */
-	if (param->ctrl_flags & CPRI_SET_10_ACKS)
-		cpri_reg_set(&regs->cpri_config,
-			CONF_SET_10_ACKS_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_config,
-			CONF_SET_10_ACKS_MASK);
-
-	if (param->ctrl_flags & CPRI_CNT_6_RESET)
-		cpri_reg_set(&regs->cpri_config,
-			CONF_CNT_6_RESET_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_config,
-			CONF_CNT_6_RESET_MASK);
-
-	if (param->ctrl_flags & CPRI_SYNC_PULSE_MODE)
-		cpri_reg_set(&regs->cpri_config,
-			CONF_SYNC_PULSE_MODE_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_config,
-			CONF_SYNC_PULSE_MODE_MASK);
-
-	if (param->ctrl_flags & CPRI_TX_CW_INSERT)
-		cpri_reg_set(&regs->cpri_config,
-			TX_CW_INSERT_EN_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_config,
-				TX_CW_INSERT_EN_MASK);
-
-	/* Control word params */
-	if (param->ctrl_flags & CPRI_CW)
-		cpri_reg_set(&regs->cpri_auxcwdmasken,
-			CW_EN_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_auxcwdmasken,
-			CW_EN_MASK);
-
-	if (param->ctrl_flags & CPRI_CW130)
-		cpri_reg_set(&regs->cpri_auxcwdmasken,
-			CW130_EN_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_auxcwdmasken,
-				CW130_EN_MASK);
-
-#if 0
-	/* SRC config param */
-	if (param->ctrl_flags & RST_REQ_BYP)
-		src_reset_request_bypass(framer->src_bypass_status,
-				framer->src_bypass_dur_sec);
-#endif
 
 	/* Remote reset params */
 	if (param->ctrl_flags & CPRI_C1_REM_RES_OP)
@@ -383,23 +286,6 @@ static int cpri_init_framer(struct cpri_framer *framer)
 		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
 				C2_REM_RES_ACK_OP_EN_MASK);
 
-	/* Rx control param */
-	if (param->ctrl_flags & CPRI_RX_IQ_SYNC)
-		cpri_reg_set(&regs->cpri_rcr,
-			IQ_SYNC_EN_MASK);
-	else
-		cpri_reg_clear(
-				&regs->cpri_rcr,
-				IQ_SYNC_EN_MASK);
-
-	/* Tx control param */
-	if (param->ctrl_flags & CPRI_TX_IQ_SYNC)
-		cpri_reg_set(&regs->cpri_tcr,
-				IQ_SYNC_EN_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_rcr,
-				IQ_SYNC_EN_MASK);
-
 	/* General Rx sync param */
 	if (param->ctrl_flags & CPRI_GEN_RX_IQ_SYNC)
 		cpri_reg_set(&cregs->cpri_rgensync,
@@ -416,38 +302,8 @@ static int cpri_init_framer(struct cpri_framer *framer)
 		cpri_reg_clear(&cregs->cpri_tgensync,
 				IQ_SYNC_EN_MASK);
 
-	/* ECC error indication config param */
-	if (param->ctrl_flags & CPRI_SINGLE_BIT_ECC_ERROR_OUTPUT)
-		cpri_reg_set(&regs->cpri_eccerrindicateen,
-				SINGLE_BIT_ECC_ERROR_OUTPUT_EN_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_eccerrindicateen,
-				SINGLE_BIT_ECC_ERROR_OUTPUT_EN_MASK);
 
-	if (param->ctrl_flags & CPRI_MULTI_BIT_ECC_ERROR_OUTPUT)
-		cpri_reg_set(&regs->cpri_eccerrindicateen,
-			MULTI_BIT_ECC_ERROR_OUTPUT_EN_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_eccerrindicateen,
-				MULTI_BIT_ECC_ERROR_OUTPUT_EN_MASK);
-
-	/* Tx framer size setting */
-	cpri_reg_set_val(&regs->cpri_tbufsize,
-			FR_BUF_SIZE_MASK,
-			param->tx_framer_buffer_size);
-
-	/* VSS AXI transaction size setting */
-	cpri_reg_set_val(&regs->cpri_rvssaxisize,
-			AXI_TRANSAC_SIZE_MASK,
-			param->axi_vss_rx_trans_size);
-	cpri_reg_set_val(&regs->cpri_tvssaxisize,
-			AXI_TRANSAC_SIZE_MASK,
-			param->axi_vss_tx_trans_size);
-
-	/* Configure framer events */
-	cpri_configure_irq_events(framer);
-
-	return 0;
+	return;
 }
 
 static void cpri_set_test_mode(unsigned int mode, struct cpri_framer *framer)
@@ -700,11 +556,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			goto out;
 		}
-
-		err = cpri_init_framer(framer);
-		if (err < 0)
-			goto out;
-
+		cpri_init_param(framer);
 		break;
 
 	case CPRI_CTRL_DEV:

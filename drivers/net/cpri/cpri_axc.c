@@ -42,33 +42,6 @@ static inline void OPR_BITMAP(u32 *addr, unsigned val, unsigned cmd)
 		*addr &= ~val;
 }
 
-
-int init_framer_axc_param(struct cpri_framer *framer)
-{
-	struct device *dev = framer->cpri_dev->dev;
-	unsigned int max_axc_count = framer->framer_param.max_axc_count;
-
-	if (max_axc_count > framer->max_axcs) {
-		dev_err(dev, "Axc count is not supported : max val %d\n",
-				framer->max_axcs);
-		dev_dbg(dev, " Change device init param for axc val\n");
-		return -EINVAL;
-	}
-	framer->ul_axcs = kzalloc((max_axc_count + 1) * sizeof(struct axc *),
-			GFP_KERNEL);
-	if (framer->ul_axcs == NULL) {
-		dev_err(dev, "System memory exhausted !! kzalloc fail\n");
-		return -ENOMEM;
-	}
-	framer->dl_axcs = kzalloc((max_axc_count + 1) * sizeof(struct axc *),
-			GFP_KERNEL);
-	if (framer->dl_axcs == NULL) {
-		dev_err(dev, "System memory exhausted !! kzalloc fail\n");
-		return -ENOMEM;
-	}
-	return 0;
-}
-
 void clear_axc_map_tx_rx_table(struct cpri_framer *framer)
 {
 	int loop;
@@ -342,6 +315,45 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 mem_err:
 	return ret;
 }
+
+int init_framer_axc_param(struct cpri_framer *framer)
+{
+	struct device *dev = framer->cpri_dev->dev;
+	unsigned int max_axc_count = framer->framer_param.max_axc_count;
+	int ret = 0;
+
+	cleanup_segment_table_data(framer);
+	if (max_axc_count > framer->max_axcs) {
+		dev_err(dev, "Axc count is not supported : max val %d\n",
+				framer->max_axcs);
+		dev_dbg(dev, " Change device init param for axc val\n");
+		return -EINVAL;
+	}
+	if (framer->ul_axcs != NULL) /* this is to care reinit command */
+		kfree(framer->ul_axcs);
+	framer->ul_axcs = kzalloc((max_axc_count + 1) * sizeof(struct axc *),
+			GFP_KERNEL);
+	if (framer->ul_axcs == NULL) {
+		dev_err(dev, "System memory exhausted !! kzalloc fail\n");
+		return -ENOMEM;
+	}
+	if (framer->dl_axcs != NULL) /* this is to care reinit command */
+		kfree(framer->dl_axcs);
+	framer->dl_axcs = kzalloc((max_axc_count + 1) * sizeof(struct axc *),
+			GFP_KERNEL);
+	if (framer->dl_axcs == NULL) {
+		dev_err(dev, "System memory exhausted !! kzalloc fail\n");
+		return -ENOMEM;
+	}
+
+	clear_axc_map_tx_rx_table(framer);
+
+	ret = populate_segment_table_data(framer);
+	if (ret)
+		dev_err(dev, "Segment table population failed\n");
+	return ret;
+}
+
 
 struct axc_buf *axc_alloc(struct axc *axc, u32 size)
 {
