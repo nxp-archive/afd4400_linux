@@ -27,7 +27,8 @@
 				compatible = "adi,roc-card";
 				interrupt-parent = <&gpioA>;
 				interrupts = <16 0x04>;
-				cs-gpios = <&gpioC 18 0>,
+				cs-gpios = <&gpioC 16 0>,
+					<&gpioC 18 0>,
 					<&gpioC 19 0>;
 				9368-1-handle = <&adrx>;
 				9368-2-handle = <&adtx>;
@@ -49,17 +50,17 @@
 
 				adrx: ad9368-1@2 {
 					compatible = "adi,ad9368-1";
-					spi-max-frequency = <500000>;
+					spi-max-frequency = <20000000>;
 					reg = <0>;
 				};
 				adtx: ad9368-2@2 {
 					compatible = "adi,ad9368-2";
-					spi-max-frequency = <500000>;
+					spi-max-frequency = <20000000>;
 					reg = <2>;
 				};
 				clkgen: ad9525@5 {
 					compatible = "adi,ad9525";
-					spi-max-frequency = <500000>;
+					spi-max-frequency = <20000000>;
 					reg = <1>;
 				};
 			};
