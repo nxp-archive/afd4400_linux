@@ -343,8 +343,11 @@ static long roc_ioctl(struct file *filep, unsigned int cmd,
 		if (!copy_from_user(&device_id, (int *)arg,
 			sizeof(int))) {
 			roc_dev->device_id = device_id;
-			phy_dev = roc_dev->phy_dev[roc_dev->device_id];
-			rc = 0;
+			if (roc_dev->device_id >=0 && roc_dev->device_id < 3) {
+				phy_dev = roc_dev->phy_dev[roc_dev->device_id];
+				rc = 0;
+			} else
+				rc = -EFAULT;
 		} else {
 			rc = -EFAULT;
 		}
@@ -386,7 +389,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 	struct rf_phy_dev *phy_dev;
 	struct device *dev = roc_dev->dev;
 	int i, elapsed_time;
-	u32 val;
+	u32 val, rc = 0;
 	phy_dev = roc_dev->phy_dev[roc_dev->device_id];
 	for (i = 0; i < count; i++) {
 		if (phy_dev == NULL && cmds[i].cmd != SPI_SET_CHANNEL)
@@ -438,21 +441,21 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
-				if (check_cal_done(phy_dev, REG_CH1_OVERFLOW,
+			/*	if (check_cal_done(phy_dev, REG_CH1_OVERFLOW,
 							MASK_BBPLL_LOCK, 1))
-					break;
+					break;*/
 			}
 			break;
 
 		case SPI_WAIT_RXCP_CAL:
-			dev_dbg(dev, "SPI_WAIT_RXCMP_CALL %u\n",
+			dev_dbg(dev, "SPI_WAIT_RXCP_CALL %u\n",
 			cmds[i].param1);
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
-				if (check_cal_done(phy_dev, REG_RX_CAL_STATUS,
+			/*	if (check_cal_done(phy_dev, REG_RX_CAL_STATUS,
 						MASK_RX_CP_CAL_VALID, 1))
-					break;
+					break;*/
 			}
 			break;
 
@@ -460,10 +463,10 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
-				if (check_cal_done(phy_dev,
+			/*	if (check_cal_done(phy_dev,
 						REG_TX_CAL_STATUS,
 						MASK_TX_CP_CAL_VALID, 1))
-					break;
+					break;*/
 			}
 			break;
 
@@ -471,43 +474,55 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
-				if (check_cal_done(phy_dev,
+		/*		if (check_cal_done(phy_dev,
 						REG_CALIBRATION_CONTROL,
 						MASK_RX_BB_TUNE, 0))
-					break;
+					break;*/
 			}
 			break;
 
 		case SPI_WAIT_TXFILTER_CAL:
+			dev_dbg(dev, "SPI_WAIT_TXFILTER_CAL\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
 				if (check_cal_done(phy_dev,
 						REG_CALIBRATION_CONTROL,
-						MASK_TX_BB_TUNE, 0))
+						MASK_TX_BB_TUNE, 0)) {
+					rc = 0;
 					break;
+				} else
+					rc = 1;
 			}
 			break;
 
 		case SPI_WAIT_BBDC_CAL:
+			dev_dbg(dev, "SPI_WAIT_BBDC_CALL\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
 				if (check_cal_done(phy_dev,
 						REG_CALIBRATION_CONTROL,
-						MASK_DC_CAL_BBSTART, 0))
+						MASK_DC_CAL_BBSTART, 0)) {
+					rc = 0;
 					break;
+				} else
+					rc = 1;
 			}
 			break;
 
 		case SPI_WAIT_RFDC_CAL:
+			dev_dbg(dev, "SPI_WAIT_RFDC_CALL\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
 				if (check_cal_done(phy_dev,
 						REG_CALIBRATION_CONTROL,
-						MASK_DC_CAL_RFSTART, 0))
+						MASK_DC_CAL_RFSTART, 0)) {
+					rc = 0;
 					break;
+				} else
+					rc = 1;
 			}
 			break;
 
@@ -534,24 +549,92 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			break;
 		case SPI_WAIT_CLKPLL_CAL:
 			dev_dbg(dev, "SPI_WAIT_CLKPLL_CAL RECEIVED.\n");
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_CLKPLL_LOCK,
+						MASK_CLKPLL_SET, 1)) {
+					rc = 0;
+					break;
+				} else
+					rc = 1;
+			}
 			break;
 		case SPI_WAIT_INITARM_CAL:
 			dev_dbg(dev, "SPI_WAIT_INITARM_CAL RECEIVED.\n");
+			msleep_interruptible(cmds[i].param3);
 			break;
 		case SPI_WAIT_RFPLLLOCK_CAL:
 			dev_dbg(dev, "SPI_WAIT_RFPLLLOCK_CAL RECEIVED.\n");
+			for (elapsed_time = 1; elapsed_time < 11;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_CP_OVERRANGE_VCO_LOCK,
+						MASK_RFPLLLOCK_SET, 1)) {
+					rc = 0;
+					break;
+				} else
+					rc = 1;
+			}
 			break;
 		case SPI_WAIT_RFPLLCP_CAL:
 			dev_dbg(dev, "SPI_WAIT_RFPLLCP_CAL RECEIVED.\n");
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_RF_CP_CONFIG,
+						MASK_RFPLLCP_CAL, 1)) {
+					dev_info(dev, "RFPLLCP CAL DONE.\n");
+					rc = 0;
+					break;
+				} else
+					rc = 1;
+			}
 			break;
 		case SPI_WAIT_ADCTUNER_CAL:
 			dev_dbg(dev, "SPI_WAIT_ADCTUNER_CAL RECEIVED.\n");
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_CALIBRATION_CONTROL,
+						MASK_ADC_TUNE_CAL_START, 0)) {
+					rc = 0;
+					break;
+				} else
+					rc = 1;
+			}
 			break;
 		case SPI_WAIT_RXTIA_CAL:
 			dev_dbg(dev, "SPI_WAIT_RXTIA_CAL RECEIVED.\n");
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_CALIBRATION_CONTROL,
+						MASK_RXTIA_CAL_START, 0)) {
+					rc = 0;
+					break;
+				} else
+					rc = 1;
+			}
 			break;
 		case SPI_WAIT_RCAL_CAL:
 			dev_dbg(dev, "SPI_WAIT_RCAL_CAL RECEIVED.\n");
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_CALIBRATION_CONTROL,
+						MASK_RCAL_START, 0)) {
+					rc = 0;
+					break;
+				} else
+					rc = 1;
+			}
 			break;
 		default:
 			dev_dbg(dev, "Not a valid AD_PHY command\n");
@@ -559,7 +642,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 		}
 	}
 
-	return 0;
+	return rc;
 }
 
 int rf_init(struct roc_dev *roc_dev,
@@ -787,6 +870,8 @@ static int roc_probe(struct platform_device *pdev)
 out:
 	kfree(roc_dev->phy_dev);
 	kfree(roc_dev);
+	while (--index >= 0)
+		gpio_free(cs[index]);
 	return ret;
 }
 
