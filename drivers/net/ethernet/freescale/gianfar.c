@@ -561,7 +561,7 @@ static void enable_napi(struct gfar_private *priv)
 static int gfar_parse_group(struct device_node *np,
 			    struct gfar_private *priv, const char *model)
 {
-	u32 *queue_mask;
+	u32 queue_mask;
 
 	priv->gfargrp[priv->num_grps].regs = of_iomap(np, 0);
 	if (!priv->gfargrp[priv->num_grps].regs)
@@ -586,12 +586,13 @@ static int gfar_parse_group(struct device_node *np,
 	priv->gfargrp[priv->num_grps].priv = priv;
 	spin_lock_init(&priv->gfargrp[priv->num_grps].grplock);
 	if (priv->mode == MQ_MG_MODE) {
-		queue_mask = (u32 *)of_get_property(np, "fsl,rx-bit-map", NULL);
+		of_property_read_u32(np, "fsl,rx-bit-map", &queue_mask);
 		priv->gfargrp[priv->num_grps].rx_bit_map = queue_mask ?
-			*queue_mask : (DEFAULT_MAPPING >> priv->num_grps);
-		queue_mask = (u32 *)of_get_property(np, "fsl,tx-bit-map", NULL);
+			queue_mask : (DEFAULT_MAPPING >> priv->num_grps);
+
+		of_property_read_u32(np, "fsl,tx-bit-map", &queue_mask);
 		priv->gfargrp[priv->num_grps].tx_bit_map = queue_mask ?
-			*queue_mask : (DEFAULT_MAPPING >> priv->num_grps);
+			queue_mask : (DEFAULT_MAPPING >> priv->num_grps);
 	} else {
 		priv->gfargrp[priv->num_grps].rx_bit_map = 0xFF;
 		priv->gfargrp[priv->num_grps].tx_bit_map = 0xFF;
@@ -612,30 +613,17 @@ static int gfar_of_init(struct platform_device *ofdev, struct net_device **pdev)
 	struct device_node *np = ofdev->dev.of_node;
 	struct device_node *child = NULL;
 	const u32 *stash;
-	const u32 *stash_len;
-	const u32 *stash_idx;
-#if defined CONFIG_ARM && defined CONFIG_SOC_D4400
+	u32 stash_len;
+	u32 stash_idx;
 	unsigned int num_tx_qs, num_rx_qs;
-#else
-	unsigned int num_tx_qs, num_rx_qs;
-	u32 *tx_queues, *rx_queues;
-#endif
 
 	if (!np || !of_device_is_available(np))
 		return -ENODEV;
 
 	/* parse the num of tx and rx queues */
-#ifdef CONFIG_ARM
 	of_property_read_u32(np, "fsl,num_tx_queues", &num_tx_qs);
 
 	of_property_read_u32(np, "fsl,num_rx_queues", &num_rx_qs);
-#else
-	tx_queues = (u32 *)of_get_property(np, "fsl,num_tx_queues", NULL);
-	num_tx_qs = tx_queues ? *tx_queues : 1;
-
-	rx_queues = (u32 *)of_get_property(np, "fsl,num_rx_queues", NULL);
-	num_rx_qs = rx_queues ? *rx_queues : 1;
-#endif
 
 	if (num_tx_qs > MAX_TX_QS) {
 		pr_err("num_tx_qs(=%d) greater than MAX_TX_QS(=%d)\n",
@@ -728,15 +716,9 @@ static int gfar_of_init(struct platform_device *ofdev, struct net_device **pdev)
 		priv->bd_stash_en = 1;
 	}
 
-	stash_len = of_get_property(np, "rx-stash-len", NULL);
+	of_property_read_u32(np, "rx-stash-len", &stash_len);
 
-	if (stash_len)
-		priv->rx_stash_size = *stash_len;
-
-	stash_idx = of_get_property(np, "rx-stash-idx", NULL);
-
-	if (stash_idx)
-		priv->rx_stash_index = *stash_idx;
+	of_property_read_u32(np, "rx-stash-idx", &stash_idx);
 
 	if (stash_len || stash_idx)
 		priv->device_flags |= FSL_GIANFAR_DEV_HAS_BUF_STASHING;
