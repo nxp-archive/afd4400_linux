@@ -173,6 +173,9 @@ struct roc_dev {
 	struct cdev		cdev;
 	int			*cs_gpios;
 	unsigned int		irq_gen1;
+	int gpio_tx_enable;
+	int gpio_srx_enable;
+	int gpio_rx_enable;
 	atomic_t		ref;
 };
 

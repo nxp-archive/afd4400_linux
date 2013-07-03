@@ -250,21 +250,11 @@ EXPORT_SYMBOL(ad9368_stop);
 
 int ad9368_start(struct rf_phy_dev *phy_dev)
 {
-	struct ad_dev_info *phy_info = phy_dev->priv;
-	struct device *dev;
-	if (phy_info == NULL)
-		return -EINVAL;
-	dev = &phy_info->ad_spi->dev;
-	dev_dbg(dev, "Reading BBPLL locked status.\n");
 
-	if (check_cal_done(phy_dev, REG_CH1_OVERFLOW,
-			MASK_BBPLL_LOCK, 1))
-		return 0;
-	else {
-		dev_err(dev, "BBPLL not locked.\n");
-		return -EBUSY;
-	}
+	/*XXX: Nothing to do as of now*/
+	return 0;
 }
+
 EXPORT_SYMBOL(ad9368_start);
 
 int ad9368_read(struct rf_phy_dev *phy_dev, u32 start,
@@ -282,7 +272,7 @@ int ad9368_read(struct rf_phy_dev *phy_dev, u32 start,
 		.rx_buf = (unsigned long)rx,
 		.len = TRANSACTION_BYTES,
 		.delay_usecs = 0,
-		.speed_hz = 500000,
+		.speed_hz = 20000000,
 		.bits_per_word = 8,
 	};
 	/* RFdev f/w provides start address as u32, but
@@ -315,7 +305,6 @@ out:
 }
 EXPORT_SYMBOL(ad9368_read);
 
-
 int ad9368_write(struct rf_phy_dev *phy_dev, u32 reg,
 		u32 data, u8 probe)
 {
@@ -326,8 +315,6 @@ int ad9368_write(struct rf_phy_dev *phy_dev, u32 reg,
 	if (phy_info == NULL)
 		return -EINVAL;
 	dev = &phy_info->ad_spi->dev;
-	dev_dbg(dev, "AD's register write call.\n");
-
 	if (phy_info->device_id == DEVICE_ID_AD9525) {
 		if (probe == 1) {
 			cntrwd[0] = OPCODE_WRITE_AD9525;

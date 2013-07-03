@@ -45,6 +45,7 @@
 #include <linux/gpio.h>
 #include <linux/string.h>
 #include <linux/ad9368.h>
+#include <linux/gpio.h>
 
 #define DEV_NAME "ROC"
 
@@ -568,11 +569,26 @@ int roc_stop(struct roc_dev *roc_dev)
 
 int roc_start(struct roc_dev *roc_dev)
 {
+	int rc = 0;
 	struct rf_phy_dev *phy_dev;
+
 	phy_dev = roc_dev->phy_dev[roc_dev->device_id];
-	if (phy_dev != NULL)
-		ad9368_start(phy_dev);
-	return 0;
+
+	gpio_set_value(roc_dev->gpio_rx_enable, 1);
+	gpio_set_value(roc_dev->gpio_tx_enable, 1);
+	gpio_set_value(roc_dev->gpio_srx_enable, 1);
+	rc = ad9368_start(phy_dev);
+	if (rc) {
+		dev_err(roc_dev->dev, "Failed to start ad9368, err %d\n", rc);
+		goto out;
+	}
+
+	return rc;
+out:
+	gpio_set_value(roc_dev->gpio_rx_enable, 0);
+	gpio_set_value(roc_dev->gpio_tx_enable, 0);
+	gpio_set_value(roc_dev->gpio_srx_enable, 0);
+	return rc;
 }
 
 int roc_read(struct roc_dev *roc_dev, u32 start, u32 count, u32 *buff)
@@ -627,15 +643,37 @@ return roc_dev;
 }
 EXPORT_SYMBOL(get_attached_roc_dev);
 
+static int roc_setup_gpio(struct roc_dev *roc_dev, int gpio)
+{
+	int rc = 0;
+
+	dev_info(roc_dev->dev, "Setting up gpio %d\n", gpio);
+
+	rc = gpio_request(gpio, dev_name(roc_dev->dev));
+	if (rc) {
+		dev_dbg(roc_dev->dev, "gpio_request failed, gpio [%d]", gpio);
+		goto out;
+	}
+
+	rc = gpio_direction_output(gpio, 0);
+	if (rc) {
+		dev_dbg(roc_dev->dev,
+			"gpio_direction_output failed, gpio [%d]", gpio);
+		goto out;
+	}
+
+out:
+	return rc;
+}
+
 static int roc_probe(struct platform_device *pdev)
 {
-	u16	nb;
 	struct roc_dev *roc_dev;
 	struct device *dev = &pdev->dev;
 	struct device_node *np = pdev->dev.of_node;
 	struct rf_phy_dev	*phy_dev;
 	struct device_node *rf_dev_node;
-	int ret = 0, size, index, *cs;
+	int ret = 0, size;
 	const struct of_device_id *id;
 
 	if (!np || !of_device_is_available(np)) {
@@ -679,17 +717,29 @@ static int roc_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	nb = of_gpio_named_count(np, "cs-gpios");
 
-	cs = devm_kzalloc(roc_dev->dev,
-			sizeof(int) * nb,
-				GFP_KERNEL);
-	roc_dev->cs_gpios = cs;
-	if (!roc_dev->cs_gpios)
-		return -ENOMEM;
-	memset(cs, -EINVAL, nb);
-	for (index = 0; index < nb; index++)
-		cs[index] = of_get_named_gpio(np, "cs-gpios", index);
+	roc_dev->gpio_rx_enable = of_get_named_gpio(np, "cs-gpios", 0);
+	roc_dev->gpio_tx_enable = of_get_named_gpio(np, "cs-gpios", 1);
+	roc_dev->gpio_srx_enable = of_get_named_gpio(np, "cs-gpios", 2);
+
+	ret = roc_setup_gpio(roc_dev, roc_dev->gpio_rx_enable);
+	if (ret) {
+		dev_err(dev, "Failed to setup rx_enable gpio\n");
+		goto out;
+	}
+
+
+	ret = roc_setup_gpio(roc_dev, roc_dev->gpio_tx_enable);
+	if (ret) {
+		dev_err(dev, "Failed to setup tx_enable gpio\n");
+		goto out;
+	}
+
+	ret = roc_setup_gpio(roc_dev, roc_dev->gpio_srx_enable);
+	if (ret) {
+		dev_err(dev, "Failed to setup srx_enable gpio\n");
+		goto out;
+	}
 
 	rf_dev_node = of_parse_phandle(np, "9368-1-handle", 0);
 	roc_dev->rf_dev_node[roc_dev->phy_devs] = rf_dev_node;
