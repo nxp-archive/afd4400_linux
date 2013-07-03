@@ -709,6 +709,9 @@ static int roc_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct roc_dev *roc_dev = dev_get_drvdata(&pdev->dev);
 
+	gpio_free(roc_dev->gpio_rx_enable);
+	gpio_free(roc_dev->gpio_tx_enable);
+	gpio_free(roc_dev->gpio_srx_enable);
 	dev_dbg(dev, "ROC PHY module uninstalled\n");
 
 	cdev_del(&roc_dev->cdev);
@@ -870,8 +873,9 @@ static int roc_probe(struct platform_device *pdev)
 out:
 	kfree(roc_dev->phy_dev);
 	kfree(roc_dev);
-	while (--index >= 0)
-		gpio_free(cs[index]);
+	gpio_free(roc_dev->gpio_tx_enable);
+	gpio_free(roc_dev->gpio_srx_enable);
+	gpio_free(roc_dev->gpio_rx_enable);
 	return ret;
 }
 
