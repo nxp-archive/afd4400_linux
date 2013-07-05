@@ -20,3 +20,12 @@ config SOC_D4400
 
 endmenu
 
+config SERDES_D4400
+       tristate "SerDes driver"
+       depends on SOC_D4400
+       help
+       SerDes driver for Freescale D4400 processor
+	The SerDes module implements link serialization/deserialization
+	functions for high speed serial interfaces from 1.2288 Gbaud to
+	9.8304 Gbaud
+

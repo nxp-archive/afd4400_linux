@@ -89,6 +89,26 @@
                                 interrupts = <0 45 0x04>;
                         };
 
+			serdes1: serdes1@84000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				#serdes-cells = <1>;
+				compatible = "fsl,serdes-d4400";
+				serdes-id = <1>;
+				max-lane = <8>;
+				reg = <0x00084000 0x4000>;
+			};
+
+			serdes2: serdes2@88000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				#serdes-cells = <1>;
+				compatible = "fsl,serdes-d4400";
+				serdes-id = <2>;
+				max-lane = <8>;
+				reg = <0x00088000 0x4000>;
+			};
+
                         clks: ccm@094000 {
                                 compatible = "fsl,d4400-ccm";
                                 reg = <0x00094000 0x4000>;
@@ -535,6 +555,16 @@
                         #size-cells = <1>;
                         reg = <0x4000000 0x2000000>;
                         ranges = <0x0 0x4000000 0x2000000>;
+
+			serdes3: serdes3@88000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				#serdes-cells = <1>;
+				compatible = "fsl,serdes-d4400";
+				serdes-id = <3>;
+				max-lane = <8>;
+				reg = <0x00088000 0x4000>;
+			};
 
                         iomuxc@8c000 {
                                 compatible = "fsl,d4400-iomuxc";
