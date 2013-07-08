@@ -1,18 +1,3 @@
-config ARCH_D4400
-	bool "Freescale D4400 family"
-	select ARCH_REQUIRE_GPIOLIB
-	select ARM_PATCH_PHYS_VIRT
-	select AUTO_ZRELADDR if !ZBOOT_ROM
-	select CLKDEV_LOOKUP
-	select CLKSRC_MMIO
-	select GENERIC_CLOCKEVENTS
-	select GENERIC_IRQ_CHIP
-	select MULTI_IRQ_HANDLER
-	select SPARSE_IRQ
-	select USE_OF
-	help
-	  Support for Freescale D4400 processor
-
 menu "Freescale D4400 support"
 	depends on ARCH_D4400
 
@@ -29,6 +14,7 @@ config SOC_D4400
 	select PINCTRL_D4400
 	select HAVE_D4400_GPC
 	select GCR_DEV
+	select CPU_V7
 	help
 	  This enables support for Freescale D4400 processor.
 

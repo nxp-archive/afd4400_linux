@@ -967,6 +967,26 @@ config ARCH_VT8500_SINGLE
 	help
 	  Support for VIA/WonderMedia VT8500/WM85xx System-on-Chip.
 
+config ARCH_D4400
+        bool "Freescale D4400 family"
+        select ARCH_REQUIRE_GPIOLIB
+        select ARM_PATCH_PHYS_VIRT
+        select AUTO_ZRELADDR if !ZBOOT_ROM
+        select CLKDEV_LOOKUP
+        select CLKSRC_MMIO
+        select GENERIC_CLOCKEVENTS
+        select GENERIC_IRQ_CHIP
+        select MULTI_IRQ_HANDLER
+        select SPARSE_IRQ
+        select USE_OF
+        select CACHE_L2X0
+        select ARM_ERRATA_720789
+        select PL310_ERRATA_753970 if CACHE_PL310
+        select NO_IOPORT
+        select ARM_AMBA
+        help
+          Support for Freescale D4400 processor
+
 endchoice
 
 menu "Multiple platform selection"
