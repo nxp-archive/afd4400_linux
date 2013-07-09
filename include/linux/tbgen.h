@@ -251,4 +251,5 @@ int tbgen_timer_set_sysref_capture(struct tbgen_timer *timer, int enabled);
 int tbgen_attach_timer(struct tbgen_timer *timer, void *jesd_dev_handle);
 int tbgen_timer_disable(struct tbgen_timer *timer);
 int tbgen_set_sync_loopback(struct tbgen_timer *timer, int enable);
+int rfg_recapture_frame_sync(struct tbgen_dev *tbg);
 #endif

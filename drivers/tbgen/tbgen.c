@@ -155,6 +155,7 @@ static int tbgen_handle_rfg_irq(struct tbgen_dev *tbg)
 		break;
 	case SYNC_SYSREF_IN_CONFIGURE:
 	case SYNC_SYSREF_IN_CONFIGURED:
+		dev_info(tbg->dev, "Configuring tbgen for SYSREF\n");
 		tbgen_update_last_10ms_counter(tbg);
 		disable_fs_irq = 1;
 		tbg->sync_state = SYNC_SYSREF_IN_CONFIGURED;
@@ -353,12 +354,6 @@ int rfg_enable(struct tbgen_dev *tbg, u8 enable)
 
 	if (enable) {
 		tbg->sync_state = SYNC_CPRI_RX_RFP;
-		/* Enable Frame sync IRQ */
-		reg = &tbgregs->cntrl_1;
-		val = IRQ_FS;
-		mask = val;
-		tbgen_update_reg(reg, val, mask);
-
 		reg = &tbgregs->rfg_cr;
 		val = RFGEN;
 		if (tbg->dev_flags & FLG_SYNC_INTERNAL_10ms)

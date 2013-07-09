@@ -353,7 +353,7 @@ void jesd_enable_sysref_capture(struct jesd_transport_dev *tdev)
 		ctrl_reg = &tdev->rx_regs->rx_transcontrol;
 	}
 	/*Clear sysref rose */
-	val = ~IRQ_SYSREF_ROSE;
+	val = IRQ_SYSREF_ROSE;
 	mask = IRQ_SYSREF_ROSE;
 	jesd_update_reg(irq_status_reg, val, mask);
 
@@ -1497,6 +1497,11 @@ static int jesd_tx_stop(struct jesd_transport_dev *tdev)
 	struct config_registers_tx *tx_regs = tdev->tx_regs;
 
 	/* Stop timers */
+	reg = &tx_regs->tx_transcontrol;
+	val = ~SW_DMA_ENABLE;
+	mask = SW_DMA_ENABLE;
+	jesd_update_reg(reg, val, mask);
+
 	tbgen_timer_disable(tdev->timer_handle);
 	tbgen_timer_disable(tdev->txalign_timer_handle);
 
