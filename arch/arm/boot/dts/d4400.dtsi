@@ -123,10 +123,7 @@
 				reg = <0x000a0000 0x4000>;
                                 compatible = "fsl,d4400-wdt";
 				interrupts = <0 47 0x04>;
-			       /* FIXME-D4400: update this when clocks
-				*   enum is defined in ccm.
-				*/
-				clocks = <&clks 0>;
+				clocks = <&clks 31>;
 			};
 
 			ecspi1: ecspi@A4000 {
