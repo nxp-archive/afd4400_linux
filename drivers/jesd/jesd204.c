@@ -327,7 +327,7 @@ static int jesd_set_delays(struct jesd_transport_dev *tdev)
 					tdev->ils.octect_per_frame_f == 2)
 			delay = 10;
 		else
-			rc = -EFAULT;
+			delay = 0;
 
 		if (rc < 0)
 			return rc;
@@ -423,7 +423,7 @@ static int jesd_update_ils_csum(struct jesd_transport_dev *tdev)
 	val &= LID_MASK;
 	csum = (sum + val) & CSUM_MASK;
 
-	dev_dbg(tdev->dev, "%s: Lane0 csum 0x%x\n", tdev->name, csum);
+	dev_info(tdev->dev, "%s: Lane0 csum 0x%x\n", tdev->name, csum);
 	iowrite32(csum, lane0_csum_reg);
 
 	if (tdev->type == JESD_DEV_TX && tdev->active_lanes == 2) {
@@ -582,6 +582,9 @@ static int jesd_setup_transport(struct jesd_transport_dev *tdev)
 #define REFCLK_EN		(1 << 27)
 #define PLL_LOCKED		(1 << 23)
 
+/* CR1 */
+#define VCO_EN			(1 << 21)
+
 /* PCCR5 */
 #define LANE_CFG_MASK		0xf
 #define LANE_SINGLE_CHANNEL	0x1
@@ -656,6 +659,11 @@ static int init_serdes_pll(struct jesd_transport_dev *tdev,
 	val |= REFCLK_EN;
 	mask |= REFCLK_EN;
 
+	jesd_update_reg(reg, val, mask);
+
+	reg = (u32 *) (base_reg + PLL_CR1);
+	val = VCO_EN;
+	mask = VCO_EN;
 	jesd_update_reg(reg, val, mask);
 
 	timeout = jiffies + msecs_to_jiffies(SERDES_PLL_TIMEOUT_MS);
@@ -874,6 +882,10 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 
 	/* Makrk jesd link ready for sysref capture*/
 	jesd_marks_syref_capture_ready(tdev, 1);
+
+	if (tdev->type != JESD_DEV_TX)
+		enable_irq(tdev->irq);
+
 	return rc;
 out:
 	jesd_restore_state(tdev);
@@ -1180,6 +1192,12 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 		goto out;
 	}
 
+	/* XXX: JESD RX gives spurious IRQs. Disable the line
+	 * after we are done with SYSREF IRQ
+	 */
+	if (tdev->type != JESD_DEV_TX)
+		disable_irq_nosync(tdev->irq);
+
 	return rc;
 out:
 	for (i = 0; i < tdev->active_lanes; i++)
@@ -1229,10 +1247,10 @@ static int config_frames_per_mf(struct jesd_transport_dev *tdev)
 		/*Do not fail if application sets it different than
 		 * RM recommended value, but print info for this setting
 		 */
-		dev_info(tdev->dev, "%s: lanes %d, Setting Frms/multifrm to %d",
+		dev_dbg(tdev->dev, "%s: lanes %d, Setting Frms/multifrm to %d",
 				tdev->name, tdev->ils.lanes_per_converter_l,
 				tdev->ils.frame_per_mf_k);
-		dev_info(tdev->dev, "%s: recommend Frms/multifrm is %d",
+		dev_dbg(tdev->dev, "%s: recommend Frms/multifrm is %d",
 				tdev->name, frames_per_mf);
 		frames_per_mf = tdev->ils.frame_per_mf_k;
 	}
@@ -2016,6 +2034,12 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 	mask = SYSREF_MASK;
 	jesd_update_reg(ctrl_reg, val, mask);
 
+	/* XXX: JESD RX gives spurious IRQs. Disable the line
+	 * after we are done with SYSREF IRQ
+	 */
+	if (tdev->type != JESD_DEV_TX)
+		disable_irq_nosync(tdev->irq);
+
 	val = ~IRQ_SYSREF_ROSE;
 	mask = IRQ_SYSREF_ROSE;
 	jesd_update_reg(irq_en_reg, val, mask);
@@ -2108,23 +2132,39 @@ static void jesd_rx_tasklet(unsigned long data)
 void jesd_deframer_isr(struct jesd_transport_dev *tdev)
 {
 	struct config_registers_rx *rx_regs = tdev->rx_regs;
-	u32 irq_status;
+	u32 irq_mask;
 
-	irq_status = ioread32(&rx_regs->rx_irq_ve_msk);
-	dev_info(tdev->dev, "%s: deframer irq %x\n", tdev->name, irq_status);
+	irq_mask = ioread32(&rx_regs->rx_irq_ve_msk);
+	dev_info(tdev->dev, "%s: deframer irq %x\n", tdev->name, irq_mask);
 
-	if (irq_status & DFRMR_IRQ_FS) {
+	if (ioread32(&rx_regs->rx_cgs)) {
+		dev_info(tdev->dev, "%s: code grp sync %x\n", tdev->name,
+			ioread32(&rx_regs->rx_cgs));
+		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_cgs);
+	}
+
+	if (ioread32(&rx_regs->rx_fsf)) {
 		dev_info(tdev->dev, "%s: Frame sync %x\n", tdev->name,
 			ioread32(&rx_regs->rx_fsf));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_fsf);
 	}
 
-	if (irq_status & DFRMR_IRQ_ILS) {
+	if (ioread32(&rx_regs->rx_ilsf)) {
 		dev_info(tdev->dev, "%s: ILS flag %x\n", tdev->name,
 			ioread32(&rx_regs->rx_ilsf));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_ilsf);
 	}
 
+	if (ioread32(&rx_regs->rx_g_csum)) {
+		dev_info(tdev->dev, "%s: Good checksum %x\n", tdev->name,
+			ioread32(&rx_regs->rx_g_csum));
+		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_g_csum);
+	}
+	/* XXX: Deframer IRQs are spurious, trying our best to stop them!
+	 * Disabling here again in hope that some day these interrupts will
+	 * stop!
+	 */
+	iowrite32(0, &rx_regs->rx_irq_ve_msk);
 }
 
 static irqreturn_t jesd_rx_isr(int irq, void *param)
