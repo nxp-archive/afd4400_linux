@@ -72,6 +72,9 @@ struct d4400_pinctrl_soc_info {
 	unsigned int nfunctions;
 };
 
+#define REG_INDEX_DDR  0
+#define REG_INDEX_MAIN 1
+
 #define NO_MUX		0xFFFF
 #define NO_PAD		0xFFFF
 

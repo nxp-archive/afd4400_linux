@@ -13,6 +13,7 @@
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/module.h>
+#include <linux/of_address.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/pinctrl/machine.h>
@@ -3762,7 +3763,6 @@ static struct d4400_pinctrl_soc_info d4400_pinctrl_info = {
 static int d4400_pinctrl_probe(struct platform_device *pdev)
 {
 	struct d4400_pinctrl *ipctl;
-	struct resource *res;
 	int ret;
 	struct d4400_pinctrl_soc_info *info = &d4400_pinctrl_info;
 
@@ -3778,23 +3778,17 @@ static int d4400_pinctrl_probe(struct platform_device *pdev)
 	if (!ipctl)
 		return -ENOMEM;
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
-			IOMUXC_MAIN_REGS_ADDR_RES_NAME);
-	if (!res)
-		return -ENOENT;
+	ipctl->ddr_base = of_iomap(pdev->dev.of_node, REG_INDEX_DDR);
+	if (!ipctl->ddr_base) {
+		pr_err("Failed to remap pinctrl DDR base address");
+		return -ENXIO;
+	}
 
-	ipctl->main_base = devm_request_and_ioremap(&pdev->dev, res);
-	if (!ipctl->main_base)
-		return -EBUSY;
-
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
-			IOMUXC_DDR_REGS_ADDR_RES_NAME);
-	if (!res)
-		return -ENOENT;
-
-	ipctl->ddr_base = devm_request_and_ioremap(&pdev->dev, res);
-	if (!ipctl->ddr_base)
-		return -EBUSY;
+	ipctl->main_base = of_iomap(pdev->dev.of_node, REG_INDEX_MAIN);
+	if (!ipctl->main_base) {
+		pr_err("Failed to remap pinctrl base address");
+		return -ENXIO;
+	}
 
 	d4400_pinctrl_desc.name = dev_name(&pdev->dev);
 	d4400_pinctrl_desc.pins = info->pins;

@@ -571,7 +571,6 @@
                                 compatible = "fsl,d4400-iomuxc";
                                 reg = <0x0008c000 0x4000>, < 0x0009c000 0x4000>;
 				reg-names = "iomuxc-ddr", "iomuxc-main";
-			/* FIXME-D4400: update pad setting if SW  modifies PAD config */
                                 uart4 {
                                         pinctrl_uart4_1: uart4grp-1 {
                                                 fsl,pins = <

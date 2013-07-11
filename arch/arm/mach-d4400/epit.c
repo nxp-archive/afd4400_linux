@@ -3,8 +3,6 @@
  *
  * Copyright (C) 2013 Freescale Semiconductor, Inc.
  *
- * Author: Arnab Basu <arnab.basu@freescale.com>
- *
  * Based on the code of Sascha Hauer <s.hauer@pengutronix.de>
  * for I.MX
  *

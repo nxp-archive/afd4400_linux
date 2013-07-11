@@ -69,9 +69,16 @@ void d4400_restart(char mode, const char *cmd)
 	void __iomem *wdog_base;
 
 	np = of_find_compatible_node(NULL, NULL, "fsl,d4400-wdt");
-	wdog_base = of_iomap(np, 0);
-	if (!wdog_base)
+	if (!np) {
+		pr_warn("Failed to find compatible DT node, using soft reset");
 		goto soft;
+	}
+
+	wdog_base = of_iomap(np, 0);
+	if (!wdog_base) {
+		pr_warn("Unable to remap watchdog address, using soft reset");
+		goto soft;
+	}
 
 	/* enable wdog */
 	writew_relaxed(1 << 2, wdog_base);

@@ -1,4 +1,4 @@
-/* arch/arm/mach-imx/include/mach/debug-macro.S
+/* arch/arm/include/debug/imx.S
  *
  * Debugging macro include header
  *
