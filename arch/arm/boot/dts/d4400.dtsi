@@ -290,7 +290,7 @@
                         epit@e8000 {
 				compatible = "fsl,d4400-epit";
                                 reg = <0x000e8000 0x4000>;
-                                interrupts = <0 22 0x01>;
+                                interrupts = <0 22 0x04>;
                         };
 
                         uart1: serial@ec000 {
@@ -323,7 +323,7 @@
                         uart4: serial@f8000 {
                                  compatible = "fsl,d4400-uart";
                                  reg = <0x000f8000 0x4000>;
-                                 interrupts = <0 3 0x01>;
+                                 interrupts = <0 3 0x04>;
                                  clocks = <&clks 63>, <&clks 24>;
                                  clock-names = "ipg", "per";
                                  status = "disabled";
