@@ -93,6 +93,73 @@ u32 gcr_set_pll_parent(enum gcr_set_pll_parent_param_t gcr_param,
 	return 0;
 }
 
+static inline void scm_reg_write(u32 data, u32 gcr_id)
+{
+	struct gcr_reg_map *gcr = NULL;
+	gcr = priv->gcr_reg;
+	if (gcr_id > 36) {
+		/* 7 is added to skip GSR registers */
+		gcr_id = gcr_id + CFG_NUM_GSR_REG;
+	}
+	writel(data, &gcr->gcr[gcr_id]);
+	return;
+}
+
+static inline u32 scm_reg_read(u32 gcr_id)
+{
+	struct gcr_reg_map *gcr = NULL;
+	u32 data = 0;
+
+	gcr = priv->gcr_reg;
+	if (gcr_id > 36) {
+		/* 7 is added to skip GSR registers */
+		gcr_id = gcr_id + CFG_NUM_GSR_REG;
+	}
+	data = readl(&gcr->gcr[gcr_id]);
+	return data;
+}
+
+void gcr_set_cpri_line_rate(unsigned char cpri_id, enum cpri_link_rate linerate)
+{
+	struct gcr_reg_map *gcr;
+	u32 value = 0;
+	unsigned char gcr_id;
+	char line_rate[8] = {0, 2, 4, 5, 8, 10, 16};
+	u32 rate;
+
+	if (cpri_id == 1)
+		gcr_id = GCR4_CPRI_CTRL;
+	else
+		gcr_id = GCR6_CPRI_CTRL;
+
+	gcr = priv->gcr_reg;
+	rate = line_rate[linerate];
+
+	value = scm_reg_read(gcr_id);
+	value |= rate << 1;
+	scm_reg_write(value, gcr_id);
+	value = scm_reg_read(gcr_id);
+}
+EXPORT_SYMBOL_GPL(gcr_set_cpri_line_rate);
+
+void gcr_linkrate_autoneg_reset(unsigned char cpri_id)
+{
+	struct gcr_reg_map *gcr;
+	u32 value = 0;
+	unsigned char gcr_id;
+
+	if (cpri_id == 1)
+		gcr_id = GCR4_CPRI_CTRL;
+	else
+		gcr_id = GCR6_CPRI_CTRL;
+
+	gcr = priv->gcr_reg;
+	value = scm_reg_read(gcr_id);
+	value |= 1;
+	scm_reg_write(value, gcr_id);
+}
+EXPORT_SYMBOL_GPL(gcr_linkrate_autoneg_reset);
+
 static int jesd_conf_val_set1(unsigned char jesd_chan)
 {
 	int val = 0;
@@ -231,6 +298,19 @@ static int jesd_conf_val_set3(unsigned char jesd_chan)
 	}
 	return val;
 }
+
+void gcr_jesd_init(void)
+{
+	u32 val;
+
+	val = TPD_BGR_EN;
+	scm_reg_write(val, 72);
+
+	val = OHM_TERM_EN;
+	scm_reg_write(val, 75);
+	return;
+}
+EXPORT_SYMBOL_GPL(gcr_jesd_init);
 
 static int cpri_conf_val_set1(enum cpri_core_info cpri_framert_id,
 		unsigned char cpri_chan)
@@ -607,8 +687,7 @@ static inline int get_tx_module(enum vsp_id_t vsp)
 }
 
 static u32 vsp_intf_gcr_reg_cfg(unsigned char gcr_id,
-		struct dma_intf_switch_parm_t *chan_parm,
-		struct gcr_reg_map *gcr)
+		struct dma_intf_switch_parm_t *chan_parm)
 {
 	unsigned int ret = 0;
 	int val = 0;
@@ -620,8 +699,8 @@ static u32 vsp_intf_gcr_reg_cfg(unsigned char gcr_id,
 	unsigned char jesd_chan = chan_parm->dma_request_id;
 	u32 reg;
 
-	reg = readl(&gcr->gcr[gcr_id]);
-	if ((gcr_id >= 46) || (gcr_id <= 50)) {
+	reg = scm_reg_read(gcr_id);
+	if ((gcr_id >= 46) && (gcr_id <= 50)) {
 		if (dev_type == DEV_CPRI)
 			val = cpri_conf_val_set1(cpri_framert_id, cpri_chan);
 		else
@@ -687,7 +766,7 @@ static u32 vsp_intf_gcr_reg_cfg(unsigned char gcr_id,
 			ret = 0;
 			break;
 		}
-	} else if ((gcr_id >= 35) || (gcr_id <= 40)) {
+	} else if ((gcr_id >= 35) && (gcr_id <= 40)) {
 		if (dev_type == DEV_CPRI)
 			val = cpri_conf_val_set3(cpri_framert_id, cpri_chan);
 		if (!val)
@@ -739,169 +818,82 @@ static u32 vsp_intf_gcr_reg_cfg(unsigned char gcr_id,
 }
 
 static u32 vsp_intf_gcr_reg_cfg_2bit(unsigned char gcr_id,
-		struct dma_intf_switch_parm_t *chan_parm,
-		struct gcr_reg_map *gcr)
+		struct dma_intf_switch_parm_t *chan_parm)
 {
 	enum cpri_core_info cpri_framert_id = chan_parm->cpri_framert_id;
 	unsigned char cpri_chan = chan_parm->dma_request_id;
 	enum dma_channel_id_t chan_id = chan_parm->chan_id;
+	enum vsp_id_t vsp_id = chan_parm->vsp_id;
+	u8 mask_bits = 0x00;
+	u8 shift_mask_value = 0x00;
 	int val = 0;
 	u32 reg;
 
-	reg = readl(&gcr->gcr[gcr_id]);
-	if (cpri_framert_id == CPRI_FRAMER_1) {
-		switch (cpri_chan) {
-		case 1:
-			val = CPRI_RX1_DMA_REQ_2BIT(1);
-			break;
-		case 2:
-			val = CPRI_RX1_DMA_REQ_2BIT(2);
-			break;
-		case 3:
-			val = CPRI_RX1_DMA_REQ_2BIT(3);
-			break;
-		case 4:
-			val = CPRI_RX1_DMA_REQ_2BIT(4);
-			break;
-		case 5:
-			val = CPRI_RX1_DMA_REQ_2BIT(5);
-			break;
-		case 6:
-			val = CPRI_RX1_DMA_REQ_2BIT(6);
-			break;
-		case 7:
-			val = CPRI_RX1_DMA_REQ_2BIT(7);
-			break;
-		case 8:
-			val = CPRI_RX1_DMA_REQ_2BIT(8);
-			break;
-		case 9:
-			val = CPRI_RX1_DMA_REQ_2BIT(9);
-			break;
-		case 10:
-			val = CPRI_RX1_DMA_REQ_2BIT(10);
-			break;
-		case 11:
-			val = CPRI_RX1_DMA_REQ_2BIT(11);
-			break;
-		case 12:
-			val = CPRI_RX1_DMA_REQ_2BIT(12);
-			break;
-		case 13:
-			val = CPRI_RX1_DMA_REQ_2BIT(13);
-			break;
-		case 14:
-			val = CPRI_RX1_DMA_REQ_2BIT(14);
-			break;
-		case 15:
-			val = CPRI_RX1_DMA_REQ_2BIT(15);
-			break;
-		case 16:
-			val = CPRI_RX1_DMA_REQ_2BIT(16);
-			break;
-		case 17:
-			val = CPRI_RX1_DMA_REQ_2BIT(17);
-			break;
-		case 18:
-			val = CPRI_RX1_DMA_REQ_2BIT(18);
-			break;
-		case 19:
-			val = CPRI_RX1_DMA_REQ_2BIT(19);
-			break;
-		case 20:
-			val = CPRI_RX1_DMA_REQ_2BIT(20);
-			break;
-		case 21:
-			val = CPRI_RX1_DMA_REQ_2BIT(21);
-			break;
-		case 22:
-			val = CPRI_RX1_DMA_REQ_2BIT(22);
-			break;
-		case 23:
-			val = CPRI_RX1_DMA_REQ_2BIT(23);
-			break;
-		case 24:
-			val = CPRI_RX1_DMA_REQ_2BIT(24);
-			break;
+	reg = scm_reg_read(gcr_id);
+
+	/* for RX */
+	if ((vsp_id >= M1VSP_MIN && vsp_id <= M1VSP_MAX) ||
+			(vsp_id >= M2VSP_MIN && vsp_id <= M2VSP_MAX)) {
+		mask_bits = GCR_MSK1;
+		shift_mask_value = (chan_id - 16) * 2;
+
+		if (cpri_framert_id == CPRI_FRAMER_1) {
+			if (cpri_chan >= 1 && cpri_chan <= 16)
+				val = CPRI_RX1_DMA_REQ_2BIT(1);
+			else
+				val = CPRI_RX1_DMA_REQ_2BIT(2);
+		} else if (cpri_framert_id == CPRI_FRAMER_2) {
+			if (cpri_chan >= 1 && cpri_chan <= 16)
+				val = CPRI_RX2_DMA_REQ_2BIT(1);
+			else
+				val = CPRI_RX2_DMA_REQ_2BIT(2);
 		}
 	} else {
-		switch (cpri_chan) {
-		case 1:
-			val = CPRI_RX2_DMA_REQ_2BIT(1);
+		/* for TX*/
+		mask_bits = GCR_MSK;
+
+		if (cpri_framert_id == CPRI_FRAMER_1) {
+			if (cpri_chan >= 1 && cpri_chan <= 16)
+				val = CPRI_TX1_DMA_REQ_2BIT(1);
+			else
+				val = CPRI_TX1_DMA_REQ_2BIT(2);
+		} else if (cpri_framert_id == CPRI_FRAMER_2) {
+			if (cpri_chan >= 1 && cpri_chan <= 16)
+				val = CPRI_TX2_DMA_REQ_2BIT(1);
+			else
+				val = CPRI_TX2_DMA_REQ_2BIT(2);
+		}
+		/* calculate shift_mask_value */
+		switch (chan_id) {
+		case DMA_CHAN_18:
+		case DMA_CHAN_21:
+		case DMA_CHAN_24:
+		case DMA_CHAN_27:
+		case DMA_CHAN_30:
+			shift_mask_value = (vsp_id * 4) - (vsp_id - 5);
 			break;
-		case 2:
-			val = CPRI_RX2_DMA_REQ_2BIT(2);
+		case DMA_CHAN_17:
+		case DMA_CHAN_20:
+		case DMA_CHAN_23:
+		case DMA_CHAN_26:
+		case DMA_CHAN_29:
+			shift_mask_value = (vsp_id * 3) - 5;
 			break;
-		case 3:
-			val = CPRI_RX2_DMA_REQ_2BIT(3);
+		case DMA_CHAN_16:
+		case DMA_CHAN_19:
+		case DMA_CHAN_22:
+		case DMA_CHAN_25:
+		case DMA_CHAN_28:
+		case DMA_CHAN_31:
+			shift_mask_value = (vsp_id - 5) * 3;
 			break;
-		case 4:
-			val = CPRI_RX2_DMA_REQ_2BIT(4);
-			break;
-		case 5:
-			val = CPRI_RX2_DMA_REQ_2BIT(5);
-			break;
-		case 6:
-			val = CPRI_RX2_DMA_REQ_2BIT(6);
-			break;
-		case 7:
-			val = CPRI_RX2_DMA_REQ_2BIT(7);
-			break;
-		case 8:
-			val = CPRI_RX2_DMA_REQ_2BIT(8);
-			break;
-		case 9:
-			val = CPRI_RX2_DMA_REQ_2BIT(9);
-			break;
-		case 10:
-			val = CPRI_RX2_DMA_REQ_2BIT(10);
-			break;
-		case 11:
-			val = CPRI_RX2_DMA_REQ_2BIT(11);
-			break;
-		case 12:
-			val = CPRI_RX2_DMA_REQ_2BIT(12);
-			break;
-		case 13:
-			val = CPRI_RX2_DMA_REQ_2BIT(13);
-			break;
-		case 14:
-			val = CPRI_RX2_DMA_REQ_2BIT(14);
-			break;
-		case 15:
-			val = CPRI_RX2_DMA_REQ_2BIT(15);
-			break;
-		case 16:
-			val = CPRI_RX2_DMA_REQ_2BIT(16);
-			break;
-		case 17:
-			val = CPRI_RX2_DMA_REQ_2BIT(17);
-			break;
-		case 18:
-			val = CPRI_RX2_DMA_REQ_2BIT(18);
-			break;
-		case 19:
-			val = CPRI_RX2_DMA_REQ_2BIT(19);
-			break;
-		case 20:
-			val = CPRI_RX2_DMA_REQ_2BIT(20);
-			break;
-		case 21:
-			val = CPRI_RX2_DMA_REQ_2BIT(21);
-			break;
-		case 22:
-			val = CPRI_RX2_DMA_REQ_2BIT(22);
-			break;
-		case 23:
-			val = CPRI_RX2_DMA_REQ_2BIT(23);
-			break;
-		case 24:
-			val = CPRI_RX2_DMA_REQ_2BIT(24);
-			break;
+		default:
+			return 0;
 		}
 	}
-	return ((reg & (~(GCR_MSK1 << ((chan_id - 16) * 2))))
-			| (val << ((chan_id - 16) * 2)));
+
+	return ((reg & (~(mask_bits << shift_mask_value)))
+			| (val << shift_mask_value));
 }
 
 static unsigned int get_up_link_gcr_reg(enum vsp_id_t vsp,
@@ -912,22 +904,22 @@ static unsigned int get_up_link_gcr_reg(enum vsp_id_t vsp,
 		if ((vsp > 7) || (vsp < 5))
 			goto out;
 		if (chan < 16) {
-			if ((chan >= 8) || (chan <= 10))
+			if ((chan >= 8) && (chan <= 10))
 				gcr_id = 41;
-			else if ((chan >= 11) || (chan <= 13))
+			else if ((chan >= 11) && (chan <= 13))
 				gcr_id = 42;
-			else if ((chan >= 15) || (chan <= 15))
+			else if ((chan >= 14) && (chan <= 15))
 				gcr_id = 5;
 		} else if (chan >= 16) {
-			if ((chan >= 16) || (chan <= 18))
+			if ((chan >= 16) && (chan <= 18))
 				gcr_id = 35;
-			else if ((chan >= 19) || (chan <= 21))
+			else if ((chan >= 19) && (chan <= 21))
 				gcr_id = 36;
-			else if ((chan >= 22) || (chan <= 24))
+			else if ((chan >= 22) && (chan <= 24))
 				gcr_id = 37;
-			else if ((chan >= 25) || (chan <= 27))
+			else if ((chan >= 25) && (chan <= 27))
 				gcr_id = 38;
-			else if ((chan >= 28) || (chan <= 30))
+			else if ((chan >= 28) && (chan <= 30))
 				gcr_id = 39;
 			else if (chan == 31)
 				gcr_id = 40;
@@ -937,7 +929,7 @@ out:
 }
 
 static unsigned char get_down_link_gcr_reg(enum vsp_id_t vsp,
-		enum dma_comm_type_t chan)
+		enum dma_channel_id_t chan)
 {
 	unsigned char gcr_id = 0; /*invalid id*/
 
@@ -986,7 +978,7 @@ static unsigned char get_down_link_gcr_reg(enum vsp_id_t vsp,
 
 
 int gcr_vsp_intf_dma_cfg(struct dma_intf_switch_parm_t *chan_parm,
-		unsigned char count, struct gcr_reg_map *gcr)
+		unsigned char count)
 {
 	unsigned int tmp = 0;
 	unsigned char gcr_id = 0; /*invalid id*/
@@ -1003,6 +995,7 @@ int gcr_vsp_intf_dma_cfg(struct dma_intf_switch_parm_t *chan_parm,
 		switch (cmd) {
 		case SETUP_DL:
 			gcr_id = get_down_link_gcr_reg(vsp, chan);
+			break;
 		case SETUP_UL:
 			gcr_id = get_up_link_gcr_reg(vsp, chan);
 			break;
@@ -1010,27 +1003,29 @@ int gcr_vsp_intf_dma_cfg(struct dma_intf_switch_parm_t *chan_parm,
 		if (gcr_id != 0) {
 			if (chan < 16)
 				value = vsp_intf_gcr_reg_cfg(gcr_id,
-						(chan_parm + tmp), gcr);
+						(chan_parm + tmp));
 			else
 				value = vsp_intf_gcr_reg_cfg_2bit(gcr_id,
-						(chan_parm + tmp), gcr);
-			break;
+						(chan_parm + tmp));
+			if (value != 0)
+				scm_reg_write(value, gcr_id);
+			else
+				return -EINVAL;
+		} else {
+			return -EINVAL;
 		}
 	}
-	if (value != 0) {
-		writel(value, &gcr->gcr[gcr_id]);
-		return 0;
-	}
-	return -EINVAL;
+	return 0;
 }
 
 
 int gcr_cpri_dma_mux(struct cpri_dma_mux_config *cpri_mux_parm,
-		unsigned count, struct gcr_reg_map *gcr)
+		unsigned count)
 {
 	int tmp = 0;
 	unsigned char gcr_id = 0; /*invalid id*/
 	unsigned char cpri_dma_out = 0;
+	unsigned char cpri_core_id = 0;
 	u32 value = 0;
 	enum cpri_rxtx_id rxtx_id;
 
@@ -1052,26 +1047,36 @@ int gcr_cpri_dma_mux(struct cpri_dma_mux_config *cpri_mux_parm,
 
 
 		}
-		value = readl(&gcr->gcr[gcr_id]);
+		value = scm_reg_read(gcr_id);
 		cpri_dma_out = (cpri_mux_parm + tmp)->cpri_dma_req_out;
-		value = ((value & (~(GCR_MSK2<<cpri_dma_out)))|
-				((((rxtx_id == CPRI_TX1) ||
-				   (rxtx_id == CPRI_RX1))
-				  ? 0 : 1)<<cpri_dma_out));
-		writel(value, &gcr->gcr[gcr_id]);
+		cpri_core_id = (cpri_mux_parm + tmp)->src_cpri_complex;
+
+		if (cpri_core_id == CPRI_CORE_CMPLX_1) {
+			value = ((value & (~(GCR_MSK2<<cpri_dma_out)))|
+					((((rxtx_id == CPRI_TX1) ||
+					(rxtx_id == CPRI_RX1))
+					? 0 : 1)<<cpri_dma_out));
+		} else {
+			value = ((value & (~(GCR_MSK2<<cpri_dma_out)))|
+					((((rxtx_id == CPRI_TX1) ||
+					(rxtx_id == CPRI_RX1))
+					? 1 : 0)<<cpri_dma_out));
+		}
+		scm_reg_write(value, gcr_id);
 	}
 	return 0;
 }
 
 
-static inline u32 ivsp_gcr_reg_cfg(unsigned int reg, enum vsp_id_t vsp1,
-		enum dma_channel_id_t chan, enum vsp_id_t vsp2)
+static inline int ivsp_gcr_reg_cfg(unsigned int reg_val,
+			enum dma_channel_id_t chan,
+			enum vsp_id_t vsp1, enum vsp_id_t vsp2)
 {
 	if ((vsp1 % 2) == 0)
-		return ((reg&(~(GCR_MSK3 << (chan * 4)))) | ((vsp2 - 1) <<
+		return ((reg_val&(~(GCR_MSK3 << (chan * 4)))) | ((vsp2 - 1) <<
 					(chan*4)));
 	else
-		return ((reg&(~(GCR_MSK3 << ((chan-4) * 4))))|
+		return ((reg_val&(~(GCR_MSK3 << ((chan-4) * 4))))|
 				((vsp2 - 1) << ((chan - 4) * 4)));
 }
 
@@ -1083,30 +1088,39 @@ static inline int ivsp_parm_validate(enum vsp_id_t vsp1, enum vsp_id_t vsp2,
 }
 
 
-static inline int ivsp_get_gcr_id(enum vsp_id_t srcvsp)
+static inline int ivsp_get_gcr_id(enum vsp_id_t src_vsp)
 {
-
-	if (srcvsp <= 2)
-		return 8; /* gcr id returned */
-	else if (srcvsp <= 4)
+	switch (src_vsp) {
+	case 1:
+	case 2:
+		return 8;
+	case 3:
+	case 4:
 		return 9;
-	else if (srcvsp <= 6)
+	case 5:
+	case 6:
 		return 10;
-	else if (srcvsp <= 8)
+	case 7:
+	case 8:
 		return 11;
-	else if (srcvsp <= 10)
+	case 9:
+	case 10:
 		return 12;
-	else
+	case 11:
 		return 13;
+	default:
+		return 0;
+	}
+	return 0;
 }
 
 
 int gcr_inter_vsp_dma_cfg(struct inter_vsp_dma_config_t *vsp_parm,
-		unsigned char count, struct gcr_reg_map *gcr)
+		unsigned char count)
 {
 	int tmp = 0;
 	int ret = 1;
-	u32 reg = 0;
+	u32 val = 0;
 	unsigned char gcr_id = 0; /*invalid id*/
 
 	for (tmp = 0; tmp < count; tmp++) {
@@ -1117,59 +1131,44 @@ int gcr_inter_vsp_dma_cfg(struct inter_vsp_dma_config_t *vsp_parm,
 			return -EINVAL;
 
 		gcr_id = ivsp_get_gcr_id((vsp_parm + tmp)->src_vsp_id);
-		reg = ivsp_gcr_reg_cfg(
-				gcr->gcr[gcr_id],
-				(vsp_parm + tmp)->chan_id,
-				(vsp_parm + tmp)->src_vsp_id,
-				(vsp_parm + tmp)->dst_vsp_id);
-		writel(reg, &gcr->gcr[gcr_id]);
+		ret = 0;
+		ret = scm_reg_read(gcr_id);
+		val = ivsp_gcr_reg_cfg(ret,
+			 (vsp_parm + tmp)->chan_id,
+			 (vsp_parm + tmp)->src_vsp_id,
+			 (vsp_parm + tmp)->dst_vsp_id);
+
+		scm_reg_write(val, gcr_id);
 	}
 	return 0;
 }
 
 int gcr_jesd_dma_ptr_rst_req(struct jesd_dma_ptr_rst_parm *ptr_rst_parm,
-		unsigned count, struct gcr_reg_map *gcr)
+		unsigned count)
 {
 	return 0;
 }
 
-int gcr_write_set(struct gcr_ctl_parm *param,
-		unsigned char count, struct gcr_reg_map *gcr)
+void gcr_write_set(struct gcr_ctl_parm *param,
+		unsigned char count)
 {
-	unsigned int maddr, effective_addr;
+	unsigned int m_addr;
 	int tmp = 0;
-	u32 reg;
+	u32 reg = 0;
 
 	for (tmp = 0; tmp < count; tmp++) {
-		maddr = (param + tmp)->reg_offset;
-		/* Patch offset into base param->address. */
-		effective_addr = (unsigned int)gcr + maddr;
-		/* Read the param->param. */
+		m_addr = (param + tmp)->reg_offset;
 		reg = (param+tmp)->param;
-		writel(reg, (unsigned int *)effective_addr);
+		scm_reg_write(reg, m_addr);
 	}
-	return 0;
+	return;
 }
 
-u32 *gcr_read_reg(struct gcr_ctl_parm *param, struct device *gcr_dev,
-		unsigned char count, struct gcr_reg_map *gcr)
+u32 gcr_read_set(u32 gcr_id)
 {
-	unsigned int maddr, effective_addr;
-	int tmp = 0;
-	u32 *reg;
-
-	reg = kzalloc((count * sizeof(u32)), GFP_KERNEL);
-	dev_dbg(gcr_dev, "gcr register read dump:\n");
-	for (tmp = 0; tmp < count; tmp++) {
-
-
-		maddr = param->reg_offset + tmp;
-		/* Patch offset into base param->address. */
-		effective_addr = (unsigned int)gcr + maddr;
-		/* Read the param->param. */
-		*(reg + tmp) = readl((unsigned int *)effective_addr);
-	}
-	return reg;
+	u32 data = 0;
+	data = scm_reg_read(gcr_id);
+	return data;
 }
 
 void *get_scm_priv(void)
@@ -1181,22 +1180,17 @@ int __init d4400_scm_init(void)
 {
 	int ret = 0;
 	struct device_node *of_np;
-	struct device *dev;
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
-	if (!priv) {
-		pr_err("Failed to allocate gcr private data\n");
+	if (!priv)
 		ret = -ENOMEM;
-	}
+
 	of_np = of_find_compatible_node(NULL, NULL, "fsl,d4400-scm");
 	priv->gcr_reg = of_iomap(of_np, 0);
 	WARN_ON(!priv->gcr_reg);
 	if (!priv->gcr_reg)
 		goto err_out;
 
-	dev = (struct device *)((char *)of_np -
-			offsetof(struct device, of_node));
-	priv->gcr_dev = dev;
 	return ret;
 err_out:
 	kfree(priv);

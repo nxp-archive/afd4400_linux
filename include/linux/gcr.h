@@ -9,12 +9,17 @@
 #define MOD_INC_USE_COUNT
 #define MOD_DEC_USE_COUNT
 
-/* gcr 10 devices are max for user app */
-#define GCR_DEV_MAX    10
+/* GCR value to init JESD */
+#define OHM_TERM_EN		0xFFFFFFFF
+#define TPD_BGR_EN		0x00140000
+/* gcr 1 device is max for user app */
+#define GCR_DEV_MAX    1
 
 /* GCR addresses and size */
 #define CFG_GCR_BASE             0x012C0000
 #define CFG_GCR_SIZE             0x16C
+
+#define CFG_NUM_GSR_REG		7
 
 /* limit defines for varrious IP's */
 #define DMA_CHAN_MIN_ID 0
@@ -55,55 +60,15 @@
 
 
 /* prepheral gcr dma channel config bit mask */
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_1  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_1  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_2  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_2  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_3  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_3  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_4  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_4  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_5  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_5  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_6  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_6  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_7  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_7  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_8  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_8  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_9  0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_9  0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_10 0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_10 0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_11 0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_11 0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_12 0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_12 0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_13 0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_13 0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_14 0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_14 0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_15 0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_15 0x2
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_16 0x0
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_16 0x2
+#define GCR_CPRI_RX1_DMA_REQ_2BIT_1  0x0
+#define GCR_CPRI_RX1_DMA_REQ_2BIT_2  0x1
+#define GCR_CPRI_RX2_DMA_REQ_2BIT_1  0x2
+#define GCR_CPRI_RX2_DMA_REQ_2BIT_2  0x3
 
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_17 0x1
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_17 0x3
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_18 0x1
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_18 0x3
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_19 0x1
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_19 0x3
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_20 0x1
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_20 0x3
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_21 0x1
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_21 0x3
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_22 0x1
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_22 0x3
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_23 0x1
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_23 0x3
-#define GCR_CPRI_FRMR1_DMA_REQ_2BIT_24 0x1
-#define GCR_CPRI_FRMR2_DMA_REQ_2BIT_24 0x3
+#define GCR_CPRI_TX1_DMA_REQ_2BIT_1  0x1
+#define GCR_CPRI_TX1_DMA_REQ_2BIT_2  0x2
+#define GCR_CPRI_TX2_DMA_REQ_2BIT_1  0x3
+#define GCR_CPRI_TX2_DMA_REQ_2BIT_2  0x4
 
 /* 3 bit mask for gcr reg  bits key mapped DMA request */
 #define GCR_CPRI_FRMR1_DMA_REQ_18 0x2
@@ -254,8 +219,12 @@
 #define GCR_MSK 0x7
 
 
-#define CPRI_RX1_DMA_REQ_2BIT(x) GCR_CPRI_FRMR1_DMA_REQ_2BIT_##x
-#define CPRI_RX2_DMA_REQ_2BIT(x) GCR_CPRI_FRMR2_DMA_REQ_2BIT_##x
+#define CPRI_RX1_DMA_REQ_2BIT(x) GCR_CPRI_RX1_DMA_REQ_2BIT_##x
+#define CPRI_RX2_DMA_REQ_2BIT(x) GCR_CPRI_RX2_DMA_REQ_2BIT_##x
+
+#define CPRI_TX1_DMA_REQ_2BIT(x) GCR_CPRI_TX1_DMA_REQ_2BIT_##x
+#define CPRI_TX2_DMA_REQ_2BIT(x) GCR_CPRI_TX2_DMA_REQ_2BIT_##x
+
 #define GCR_MSK1 0x3
 #define GCR_MSK2 0x1
 
@@ -293,7 +262,7 @@ enum parent_src_clk_t {
 
 struct gcr_reg_map {
 
-	u32 gcr[83];	/* 0x0000 to 0x0168*/
+	u32 gcr[90];	/* 0x0000 to 0x0168*/
 };
 
 struct gcr_priv {
@@ -302,27 +271,25 @@ struct gcr_priv {
 	struct mutex gcr_lock;
 	struct device *gcr_dev;
 	struct cdev gcr_cdev;
+	struct class *gcr_class;
 	dev_t dev_t;
 };
 
-extern struct gcr_priv *get_attached_gcr_dev(struct device_node *gcr_dev_node);
-extern void gcr_set_cpri_line_rate(enum cpri_link_rate linerate,
-		unsigned char cpri_id, struct gcr_priv *priv);
-extern void gcr_linkrate_autoneg_reset(unsigned char cpri_id,
-		struct gcr_priv *priv);
+extern void gcr_set_cpri_line_rate(unsigned char cpri_id,
+		enum cpri_link_rate linerate);
+extern void gcr_linkrate_autoneg_reset(unsigned char cpri_id);
 void *get_scm_priv(void);
-extern u32 *gcr_read_reg(struct gcr_ctl_parm *param, struct device *gcr_dev,
-		unsigned char count, struct gcr_reg_map *gcr);
-extern int gcr_write_set(struct gcr_ctl_parm *param,
-		unsigned char count, struct gcr_reg_map *gcr);
+extern u32 gcr_read_set(u32 gcr_id);
+extern void gcr_write_set(struct gcr_ctl_parm *param,
+		unsigned char count);
 extern int gcr_jesd_dma_ptr_rst_req(struct jesd_dma_ptr_rst_parm *ptr_rst_parm,
-		unsigned count, struct gcr_reg_map *gcr);
+		unsigned count);
 extern int gcr_inter_vsp_dma_cfg(struct inter_vsp_dma_config_t *vsp_parm,
-		unsigned char count, struct gcr_reg_map *gcr);
+		unsigned char count);
 extern int gcr_cpri_dma_mux(struct cpri_dma_mux_config *cpri_mux_parm,
-		unsigned count, struct gcr_reg_map *gcr);
+		unsigned count);
 extern int gcr_vsp_intf_dma_cfg(struct dma_intf_switch_parm_t *chan_parm,
-		unsigned char count, struct gcr_reg_map *gcr);
+		unsigned char count);
 extern u32 gcr_set_pll_parent(enum gcr_set_pll_parent_param_t gcr_param,
 		enum parent_src_clk_t parent_src_clk);
 extern u32 gcr_get_pll_parent(enum gcr_get_pll_parent_param_t gcr_param);
