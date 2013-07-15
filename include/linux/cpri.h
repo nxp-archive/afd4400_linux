@@ -386,9 +386,9 @@ struct cpri_framer {
 	dev_t dev_t;
 	raw_spinlock_t regs_lock;
 	struct device_node *sfp_dev_node;
-	struct device_node *gcr_dev_node;
 	struct sfp_dev *sfp_dev;
-	struct gcr_priv *gcr_dev;
+	struct of_phandle_args serdesspec;
+	void *serdes_handle;
 	/* ISR events and bottom half */
 	unsigned int irq_rx_t;
 	unsigned int irq_tx_t;
@@ -450,6 +450,8 @@ struct cpri_framer {
 	struct timer_list l1_timer;
 	/* misc */
 	unsigned char notification_state;
+	u32 rx_mblk_hardware_addr;
+	u32 tx_mblk_hardware_addr;
 };
 
 enum cpri_linerate {
@@ -912,7 +914,8 @@ void cleanup_segment_table_data(struct cpri_framer *framer);
 void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state);
 int cpri_state_validation(enum cpri_state present_state,
 		enum cpri_state new_state);
-void linkrate_autoneg_reset(struct cpri_framer *framer);
+int linkrate_autoneg_reset(struct cpri_framer *framer,
+		enum cpri_link_rate linerate);
 void update_bf_data(struct cpri_framer *framer);
 void framer_int_enable(struct cpri_framer *framer);
 void cpri_mask_irq_events(struct cpri_framer *framer);

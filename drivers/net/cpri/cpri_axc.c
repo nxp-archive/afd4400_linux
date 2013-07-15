@@ -223,8 +223,11 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 		ret = -EFAULT;
 		goto mem_err;
 	}
-	mblk_info.rx_mblk_addr[0] = property[0];
-	mblk_info.rx_mblk_addr[1] = property[2];
+	framer->rx_mblk_hardware_addr = property[0];
+	mblk_info.rx_mblk_addr[0] = property[0] -
+			framer->rx_mblk_hardware_addr;
+	mblk_info.rx_mblk_addr[1] = property[2] -
+			framer->rx_mblk_hardware_addr;
 	mblk_info.rx_mblk_size[0] = property[1];
 	mblk_info.rx_mblk_size[1] = property[3];
 	memset(property, 0, sizeof(property));
@@ -235,8 +238,11 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 		ret = -EFAULT;
 		goto mem_err;
 	}
-	mblk_info.tx_mblk_addr[0] = property[0];
-	mblk_info.tx_mblk_addr[1] = property[2];
+	framer->tx_mblk_hardware_addr = property[0];
+	mblk_info.tx_mblk_addr[0] = property[0] -
+			framer->tx_mblk_hardware_addr;
+	mblk_info.tx_mblk_addr[1] = property[2] -
+			framer->tx_mblk_hardware_addr;
 	mblk_info.tx_mblk_size[0] = property[1];
 	mblk_info.tx_mblk_size[1] = property[3];
 	dev_info(dev, "cpri_axc: memblk info-----\n");
@@ -1858,9 +1864,6 @@ int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction)
 	struct axc_map_table *map_table;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	unsigned int num_bf_seg;
-	u32 *reg_cma;
-	u32 *reg_rcmd0;
-	u32 *reg_rcmd1;
 	u32 *reg_cr;
 	u32 *reg_accr;
 	unsigned int max_axc_count = framer->framer_param.max_axc_count;
@@ -1881,17 +1884,11 @@ int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction)
 			AXC_MODE_MASK, 0x0);
 
 	if (direction & UL_AXCS) {
-		reg_cma = &regs->cpri_tcma;
-		reg_rcmd0 = &regs->cpri_tcmd0;
-		reg_rcmd1 = &regs->cpri_tcmd1;
 		reg_accr = &regs->cpri_taccr;
 		reg_cr = &regs->cpri_tcr;
 		axcs = framer->ul_axcs;
 		map_table = &framer->ul_map_table;
 	} else {
-		reg_cma = &regs->cpri_rcma;
-		reg_rcmd0 = &regs->cpri_rcmd0;
-		reg_rcmd1 = &regs->cpri_rcmd1;
 		reg_cr = &regs->cpri_rcr;
 		reg_accr = &regs->cpri_raccr;
 		axcs = framer->dl_axcs;
@@ -1996,6 +1993,7 @@ int cpri_axc_param_get(struct cpri_framer *framer, unsigned long arg_ioctl)
 	struct axc **axcs;
 	struct axc *axc;
 	struct axc_map_table *map_table;
+	u32 axc_hardware_base_addr;
 
 	arg = kzalloc(sizeof(struct axc_config_params), GFP_KERNEL);
 	if (arg == NULL) {
@@ -2034,9 +2032,11 @@ int cpri_axc_param_get(struct cpri_framer *framer, unsigned long arg_ioctl)
 	if (flag & DL_AXCS) {
 		axcs = framer->dl_axcs;
 		map_table = &framer->dl_map_table;
+		axc_hardware_base_addr = framer->rx_mblk_hardware_addr;
 	} else {
 		axcs = framer->ul_axcs;
 		map_table = &framer->ul_map_table;
+		axc_hardware_base_addr = framer->tx_mblk_hardware_addr;
 	}
 
 	for (loop = 0; loop < count; loop++) {
@@ -2064,6 +2064,8 @@ int cpri_axc_param_get(struct cpri_framer *framer, unsigned long arg_ioctl)
 			param->K = axc->K;
 			param->Na = axc->Na;
 			param->Ns = axc->Nst;
+			param->axc_dma_ptr = axc->axc_buf->addr +
+				axc_hardware_base_addr;
 			if (copy_to_user(param->pos, axc->pos,
 						sizeof(struct axc_pos))) {
 				dev_err(dev, "copy to user err id: %d!!\n",

@@ -377,6 +377,7 @@ struct axc_info {
 	unsigned int Ns;
 	__u8 sample_width;
 	struct axc_pos *pos;
+	__u32 axc_dma_ptr;
 };
 
 struct axc_config_params {

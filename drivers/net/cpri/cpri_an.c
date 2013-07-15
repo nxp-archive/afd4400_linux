@@ -27,323 +27,45 @@
 #include <linux/delay.h>
 
 #include <linux/cpri.h>
+#include <mach/serdes-d4400.h>
 
-#define SERDES3_BASE	0x04088000
-#define SERDES_SIZE	0x4000
-
-#ifdef USE_PLL2
-#define PLL_RSTCTL	0x020
-#define PLL_CR0		0x024
-#define PLL_CR1		0x028
-#define PLL_CR4		0x034
-#else
-#define PLL_RSTCTL	0x000
-#define PLL_CR0		0x004
-#define PLL_CR1		0x008
-#define PLL_CR4		0x014
-#endif
-
-#define PCCR3		0x0ec
-#define LN_CGCR0	0x8c0
-#define LN_CGCR1	0x8C4
-#define LN_RECR0	0x8d0
-#define LN_RECR1	0x8d4
-#define LN_TECR0	0x8d8
-#define LN_TTLCR0	0x8e0
-#define LN_TTLCR1	0x8e4
-#define LN_TCSR3	0x8fc
-
-/* RSTCTL */
-#define SDEN		(1 << 5)
-#define SDRST_B		(1 << 6)
-#define PLLRST_B	(1 << 7)
-#define RSTDONE		(1 << 30)
-#define RSTREQ		(1 << 31)
-
-/* CR0 */
-#define REFCLK_SEL_MASK		0x7
-#define REFCLK_SEL_SHIFT	28
-#define REFCLK_100		0x0
-#define REFCLK_122_88		0x1
-#define REFCLK_153_6		0x2
-#define FRATE_MASK		0xf
-#define FRATE_SHIFT		16
-#define FRATE_5_0_GHZ		0x0
-#define FRATE_4_9152_GHZ	0x3
-#define FRAME_3_072_GHZ		0xc
-
-#define REFCLK_EN		(1 << 27)
-#define PLL_LOCKED		(1 << 23)
-
-/* PCCR3 */
-#define LANE_CFG_MASK		0xf
-#define LANE_SINGLE_CHANNEL	0x2
-#define LANE0_CFG_SHIFT		16
-
-/* LN_GCR0 */
-#define TRST_B			(1 << 21)
-#define RRST_B			(1 << 22)
-#define IF20BIT_EN		(1 << 18)
-#define FIRST_LANE		(1 << 16)
-#define TPLL_LES		(1 << 27)
-#define RPLL_LES		(1 << 31)
-
-#define PROTS_SHIFT		0x7
-#define PROTS_MASK		0x1f
-#define PROT_JESD204		0xc
-
-#define RRAT_SEL_SHIFT		28
-#define TRAT_SEL_SHIFT		24
-#define RAT_SEL_MASK		0x3
-#define RRAT_QUATER		0x2
-#define LOOPBACK_EN		0x01
-#define LOOPBACK_EN_SHIFT	28
-
-#define SERDES_PLL_TIMEOUT_MS	100
-
-static void serdes_disable_lanes(u32 base_reg)
+int linkrate_autoneg_reset(struct cpri_framer *framer,
+		enum cpri_link_rate linerate)
 {
-	u32 *reg,  mask;
+	struct serdes_pll_params pll_param;
+	struct serdes_lane_params lane_param;
+	u32 line_rate[7] = {0, 1228800, 2457600, 3072000, 4915200,
+		6144000, 9830400};
 
-	reg = (u32 *) (base_reg + PLL_RSTCTL);
-	/* Disable all lanes */
-	mask = SDRST_B;
-	cpri_reg_clear(reg, mask);
-	udelay(1);
-
-	mask = SDEN;
-	cpri_reg_set(reg, mask);
-	udelay(1);
-}
-
-static void serdes_enable_lanes(u32 base_reg)
-{
-	u32 *reg, val;
-
-	reg = (u32 *) (base_reg + PLL_RSTCTL);
-	val = ioread32(reg);
-	/* enable all lanes */
-	val |= (SDRST_B | SDEN | PLLRST_B);
-	iowrite32(val, reg);
-}
-
-static int init_serdes_pll(struct cpri_framer *framer,
-	u32 base_reg)
-{
-	u32 *reg, val = 0, mask = 0;
-	int rc = 0;
-	unsigned long timeout;
-
-
-	serdes_disable_lanes(base_reg);
-	/* program pll*/
-	reg = (u32 *) (base_reg + PLL_CR0);
-	val = REFCLK_122_88;
-	mask = REFCLK_SEL_MASK << REFCLK_SEL_SHIFT;
-	cpri_reg_set_val(reg, mask, val);
-
-	val = FRATE_4_9152_GHZ;
-	mask = FRATE_MASK << FRATE_SHIFT;
-	cpri_reg_set_val(reg, mask, val);
-
-
-	mask = REFCLK_EN;
-	cpri_reg_set(reg, mask);
-	val = ioread32(reg);
-
-	timeout = jiffies + msecs_to_jiffies(SERDES_PLL_TIMEOUT_MS);
-
-	reg = (u32 *) (base_reg + PLL_RSTCTL);
-	val = ioread32(reg);
-	mask = RSTREQ;
-	cpri_reg_set(reg, mask);
-
-	val = ioread32(reg);
-	while (!(val & RSTDONE)) {
-		if (jiffies > timeout) {
-			dev_err(framer->cpri_dev->dev, "%s: SERDES PLL reset failed [%x]\n",
-				__func__, val);
-			rc = -EBUSY;
-			goto out;
-		}
-		val = ioread32(reg);
-	}
-
-	reg = (u32 *) (base_reg + PLL_CR0);
-	val = ioread32(reg);
-	while (!(val & PLL_LOCKED)) {
-		if (jiffies > timeout) {
-			dev_err(framer->cpri_dev->dev, "%s: SERDES PLL lock failed [%x]\n",
-				__func__, val);
-			rc = -EBUSY;
-			goto out;
-		}
-		val = ioread32(reg);
-	}
-	dev_info(framer->cpri_dev->dev, "%s: SERDES PLL reset locked, cr0 0x%x\n",
-		__func__, val);
-
-	serdes_enable_lanes(base_reg);
-out:
-	return rc;
-}
-
-static int init_serdes_lane(struct cpri_framer *framer,
-	u32 base_reg)
-{
-	u32 *reg, val, mask;
-	int rc = 0;
-
-	reg = (u32 *) (base_reg + PCCR3);
-	val = ioread32(reg);
-	val = LANE_SINGLE_CHANNEL;
-	mask = LANE_CFG_MASK << LANE0_CFG_SHIFT;
-	cpri_reg_set_val(reg, mask, val);
-	/*Reset and disable lane */
-	reg = (u32 *) (base_reg + LN_CGCR0);
-	val = ioread32(reg);
-	val |= (~(TRST_B | RRST_B));
-	iowrite32(val, reg);
-	udelay(1);
-	/*configure lane*/
-	reg = (u32 *) (base_reg + LN_CGCR0);
-	val = ioread32(reg);
-	val |= RRAT_QUATER << RRAT_SEL_SHIFT;
-	val |= RRAT_QUATER << TRAT_SEL_SHIFT;
-	val |= TPLL_LES;
-	val |= RPLL_LES;
-
-	val |= IF20BIT_EN;
-	val |= (PROT_JESD204 & PROTS_MASK) << PROTS_SHIFT;
-	val |= FIRST_LANE;
-	iowrite32(val, reg);
-
-
-	udelay(1);
-
-	/*Enable lane */
-	reg = (u32 *) (base_reg + LN_CGCR0);
-	val = ioread32(reg);
-	val |= (TRST_B | RRST_B);
-	iowrite32(val, reg);
-	udelay(10);
-	return rc;
-}
-
-static int cpri_init_serdes(struct cpri_framer *framer)
-{
-	int rc = 0;
-	u32 base_reg = 0;
-
-	struct device *dev = framer->cpri_dev->dev;
-
-	base_reg = (u32) ioremap_nocache(SERDES3_BASE, SERDES_SIZE);
-	if (!base_reg) {
-		dev_err(dev, "%s: Failed serdes ioremap\n", __func__);
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	dev_info(dev, "serdes base %x, size %x, virt %x\n",
-			SERDES3_BASE, SERDES_SIZE, base_reg);
-	rc = init_serdes_pll(framer, base_reg);
-	if (rc) {
-		dev_err(dev, "%s: serdes pll init failed\n", __func__);
-		goto out;
-	}
-
-	rc = init_serdes_lane(framer, base_reg);
-	if (rc) {
-		dev_err(dev, "%s: serdes lane init failed\n", __func__);
-		goto out;
-	}
-out:
-	if (!base_reg)
-		iounmap((void *) base_reg);
-	return rc;
-}
-
-void linkrate_autoneg_reset(struct cpri_framer *framer)
-{
-	u32  __iomem *gcr_regs;
-	u32 value;
-	u32 *serdes_regs;
-
-	/*XXX: This code is temporary, GCR driver will export function for
-	 * Auto neg reset and PHY link rate config.
-	 */
-	/* temporary code added to check with GCR0 register values
-	 */
-	if (framer->autoneg_param.flags & CPRI_SERDES_LOOPBACK) {
-#define SERDES3_BASE 	0x04088000
-#define LOOP_BACK_REG	0x040888BC
-#define LOOP_BACK_VAL 	0x10000000
-#define SERDES_REG_SIZE 0x8
-#define SERDES_PLL_REG	0x0
-#define SERDES_PLL_VAL	0x80000000
-		serdes_regs = ioremap_nocache(LOOP_BACK_REG,
-				SERDES_REG_SIZE);
-		value = readl(serdes_regs);
-		value |= LOOP_BACK_VAL;
-		writel(value, serdes_regs);
-		value = readl(serdes_regs);
-		schedule_timeout_interruptible(
-				msecs_to_jiffies(100));
-		iounmap(serdes_regs);
-
-
-		serdes_regs = ioremap_nocache(SERDES3_BASE, SERDES_REG_SIZE);
-		value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
-		value |= (SERDES_PLL_VAL | 0x30000);
-		value &= 0xfffff0ff;
-		value |= 0x500;
-		writel(value, (u32 *)(serdes_regs + SERDES_PLL_REG));
-		schedule_timeout_interruptible(msecs_to_jiffies(500));
-		value = readl((u32 *)(serdes_regs + SERDES_PLL_REG));
-		iounmap(serdes_regs);
+	pll_param.pll_id = SERDES_PLL_1;
+	pll_param.rfclk_sel = REF_CLK_FREQ_122_88_MHZ;
+	if ((linerate ==  RATE4_3072_0M) || (linerate == RATE6_6144_0M)) {
+		pll_param.frate_sel = PLL_FREQ_3_072_GHZ;
+		pll_param.vco_type = SERDES_RING_VCO;
 	} else {
-		cpri_init_serdes(framer);
-		mdelay(10);
+		pll_param.frate_sel = PLL_FREQ_4_9152_GHZ;
+		pll_param.vco_type = SERDES_LC_VCO;
 	}
-#define GCR_BASE0	0x012C0000
-#define GCR_REG_SIZE	512
-#define SYNC_SELECT	0x1fffffff
-	gcr_regs = ioremap_nocache(GCR_BASE0, GCR_REG_SIZE);
+	if (serdes_init_pll(framer->serdes_handle, &pll_param))
+		return -EINVAL;
+	pll_param.pll_id = SERDES_PLL_2;
+	serdes_init_pll(framer->serdes_handle, &pll_param);
+	lane_param.lane_id = framer->serdesspec.args[0];
+	lane_param.grp_prot = SERDES_PROT_CPRI;
+	lane_param.gen_conf.lane_prot = SERDES_LANE_PROTS_CPRI;
+	lane_param.gen_conf.bit_rate_kbps = line_rate[linerate];
+	lane_param.gen_conf.cflag = (SERDES_20BIT_EN |  SERDES_TPLL_LES |
+			SERDES_RPLL_LES | SERDES_FIRST_LANE);
+	if (framer->autoneg_param.flags & CPRI_SERDES_LOOPBACK)
+		lane_param.gen_conf.cflag |= SERDES_LOOPBACK_EN;
 
-#define LINK_RATE_VAL 		0x20
-#define AUTONEG_RESET_VAL 0x21
-	value = readl(&gcr_regs[4]);
-	value = LINK_RATE_VAL;
-	writel(value, &gcr_regs[4]);
-	schedule_timeout_interruptible(msecs_to_jiffies(100));
+	if (serdes_init_lane(framer->serdes_handle, &lane_param))
+		return -EINVAL;
+	gcr_set_cpri_line_rate(framer->cpri_dev->dev_id, linerate);
+	gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
 
-	value = AUTONEG_RESET_VAL;
-	writel(value, &gcr_regs[4]);
-	schedule_timeout_interruptible(msecs_to_jiffies(100));
-	value = readl(&gcr_regs[4]);
-	/* end here */
-/* for VSPA data path */
-	/* mux cpri 1 framer1 19 */
-	writel(0, &gcr_regs[20]);
-	writel(0xffffffff, &gcr_regs[21]);
-	writel(0, &gcr_regs[29]);
-	writel(0xffffffff, &gcr_regs[30]);
-#define CPRI_19_RX1	0x2
-	value = readl(&gcr_regs[23]);
-	value = CPRI_19_RX1;
-	writel(value, &gcr_regs[23]);
-	schedule_timeout_interruptible(msecs_to_jiffies(100));
-	value = readl(&gcr_regs[23]);
-	mdelay(10);
 
-#define CPRI_19_TX1	0x300000
-	value = readl(&gcr_regs[48]);
-	value |= CPRI_19_TX1;
-	writel(value, &gcr_regs[48]);
-	schedule_timeout_interruptible(msecs_to_jiffies(100));
-	value = readl(&gcr_regs[48]);
-	mdelay(10);
-
+	return 0;
 }
 
 static void cpri_configure_irq_events(struct cpri_framer *framer)
@@ -1122,6 +844,29 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	enum cpri_link_rate high = param->link_rate_high;
 	int err = 0;
 	unsigned long timer_dur;
+	struct device_node *child = NULL;
+	unsigned int framer_id;
+
+	for_each_child_of_node(framer->cpri_node, child) {
+
+		of_property_read_u32(child, "framer-id", &framer_id);
+		if (framer_id < 0) {
+			dev_err(dev, "Failed to get framer id\n");
+			return;
+		}
+		if (framer_id == framer->id)
+			break;
+	}
+	if (of_get_named_serdes(child, &framer->serdesspec,
+			"serdes-handle", 0)) {
+			dev_err(dev, "Failed to get serdes-handle\n");
+			return;
+	}
+	framer->serdes_handle = get_attached_serdes_dev(framer->serdesspec.np);
+	if (framer->serdes_handle == NULL) {
+		dev_err(dev, "Failed to get serdes handle\n");
+		return;
+	}
 
 	/* Setup line rate timer */
 	init_timer(&linerate_timer);
@@ -1152,7 +897,11 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		 * if timeout happen
 		 */
 
-		linkrate_autoneg_reset(framer);
+		if (linkrate_autoneg_reset(framer, rate)) {
+			dev_err(dev, "line autoneg reset failed\n");
+			return;
+		}
+
 		mdelay(10);
 		/* Enable framer clock */
 		if (framer->id == 2)
