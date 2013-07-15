@@ -366,30 +366,30 @@
 				reg = <0x0 0x8000>;
 				framer-id = <1>;
 				max-axcs = <24>;
-				memblk-rx = <0x0 0x1800 0x1800 0x1800>;
-				memblk-tx = <0x0 0x1800 0x1800 0x1800>;
+				memblk-rx = <0x83000000 0x1800 0x83801800 0x1800>;
+				memblk-tx = <0x83000000 0x1800 0x83801800 0x1800>;
 				local-mac-address = [ 00 00 AB CD 21 AB ];
 				interrupts = <0 71 0x04>,
 					 <0 73 0x04>,
 					 <0 75 0x04>,
 					 <0 77 0x04>;
 				sfp-handle = <&cpriphy0>;
-				gcr-handle = <&scm>;
+				serdes-handle = <&serdes3 2>;
 			};
 
 			framer1@0x8000 {
 				reg = <0x8000 0x8000>;
 				framer-id = <2>;
 				max-axcs = <24>;
-				memblk-rx = <0x0 0x1800 0x1800 0x1800>;
-				memblk-tx = <0x0 0x1800 0x1800 0x1800>;
+				memblk-rx = <0x84000000 0x1800 0x84801800 0x1800>;
+				memblk-tx = <0x84000000 0x1800 0x84801800 0x1800>;
 				local-mac-address = [ 00 00 AB CD 21 CD ];
 				interrupts = <0 72 0x4>,
 					 <0 74 0x4>,
 					 <0 76 0x4>,
 					 <0 78 0x4>;
 				sfp-handle = <&cpriphy1>;
-				gcr-handle = <&scm>;
+				serdes-handle = <&serdes3 4>;
 				};
 			};
 
@@ -784,8 +784,8 @@
 				device_type = "network";
 				model = "eTSEC";
 				compatible = "fsl,etsec2";
-				fsl,num_rx_queues = <0x08>;
-				fsl,num_tx_queues = <0x08>;
+				fsl,num_rx_queues = <0x01>;
+				fsl,num_tx_queues = <0x01>;
 				fsl,errata = <0x00000004>;
 				local-mac-address = [ 00 00 ab cd 22 ef ];
 				phy-handle = <&phy0>;
@@ -800,8 +800,8 @@
 					#size-cells = <1>;
 					reg-names = "queue-group0";
 					reg = <0x80000 0x1000>;
-					fsl,rx-bit-map = <0xFF>;
-					fsl,tx-bit-map = <0xFF>;
+					rx-bit-map = <0xFF>;
+					tx-bit-map = <0xFF>;
 					interrupts = <0 184 0x04>,
 						     <0 183 0x04>,
 						     <0 185 0x04>;
@@ -814,8 +814,8 @@
 				device_type = "network";
 				model = "eTSEC";
 				compatible = "fsl,etsec2";
-				fsl,num_rx_queues = <0x08>;
-				fsl,num_tx_queues = <0x08>;
+				fsl,num_rx_queues = <0x01>;
+				fsl,num_tx_queues = <0x01>;
 				fsl,errata = <0x00000004>;
 				local-mac-address = [ 00 00 ab cd 23 ef ];
 				phy-handle = <&phy2>;
