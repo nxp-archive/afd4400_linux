@@ -36,6 +36,7 @@
 #include <linux/poll.h>
 
 #include <linux/vspa_dev.h>
+#include <mach/gpc.h>
 
 #define MAX_VSPA_PER_SOC	11
 #define VSPA_DEVICE_NAME "vspa"
@@ -152,8 +153,11 @@ static long vspa_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 		rc = vspa_register_irqs(dev);
 		return rc;
 
-	case IOCTL_REQ_RST:
-		return 0;
+	case IOCTL_REQ_PDN:
+		return d4400_gpc_vspa_full_pow_gate(dev->id);
+
+	case IOCTL_REQ_PUP:
+		return d4400_gpc_vspa_full_pow_up(dev->id);
 
 	default:
 		return -EINVAL;

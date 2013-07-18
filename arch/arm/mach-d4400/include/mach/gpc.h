@@ -16,7 +16,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  * MA 02110-1301, USA.
  */
-
+#ifndef _MACH_GPC_H_
+#define  _MACH_GPC_H_
 /* vspa_id max = 11 , start ID = 1 */
 extern int d4400_gpc_vspa_full_pow_up(u8 vspa_id);
 extern int d4400_gpc_vspa_full_pow_gate(u8 vspa_id);
+#endif
