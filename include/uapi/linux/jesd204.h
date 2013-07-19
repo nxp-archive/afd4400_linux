@@ -63,6 +63,15 @@ struct jesd_dev_params {
 #define CONF_SERDES_LOOPBACK_EN		(1 << 17)
 /** @brief \struct ils params
  */
+/* data_rate */
+#define DATA_RATE_1_2288_G		1228800
+#define DATA_RATE_2_4576_G		2457600
+#define DATA_RATE_3_0720_G		3072000
+#define DATA_RATE_4_9152_G		4915200
+#define DATA_RATE_6_1440_G		6144000
+#define DATA_RATE_9_8304_G		9830400
+
+
 struct ils_params {
 	__u8 device_id;
 	__u8 bank_id;

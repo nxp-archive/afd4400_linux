@@ -349,6 +349,8 @@ struct jesd_transport_dev {
 	u32 test_mode_flags;
 	struct jesd204_dev *parent;
 	void *tbgen_dev_handle;
+	struct of_phandle_args serdesspec;
+	void *serdes_handle;
 	void *timer_handle;
 	void *txalign_timer_handle;
 	struct work_struct link_monitor;
@@ -439,6 +441,7 @@ struct jesd204_private {
 	u8 rx_dev_num;
 };
 
+extern void gcr_jesd_init(void);
 void jesd_enable_sysref_capture(struct jesd_transport_dev *tdev);
 int  jesd_reg_dump_to_user(u32 *reg, unsigned int offset,
 			unsigned int length, u32 *buf);

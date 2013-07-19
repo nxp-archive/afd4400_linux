@@ -31,6 +31,7 @@
 #include <linux/tbgen.h>
 #include <linux/jesd204.h>
 #include <linux/phygasket.h>
+#include <mach/serdes-d4400.h>
 
 #define TRANS_TX_NAME "jesd_tx"
 #define TRANS_RX_NAME "jesd_rx"
@@ -312,7 +313,7 @@ static int jesd_set_delays(struct jesd_transport_dev *tdev)
 	* itself config delay
 	*/
 	if (tdev->type == JESD_DEV_TX)
-		iowrite32(tdev->delay & 0x15, &tdev->tx_regs->tx_sync_delay);
+		iowrite32(tdev->delay & 0xF, &tdev->tx_regs->tx_sync_delay);
 	else if ((tdev->type == JESD_DEV_RX) || (tdev->type == JESD_DEV_SRX)) {
 		/*Set to 2 when K=5, F=4
 		Set to 4 when K=10, F=2
@@ -320,16 +321,16 @@ static int jesd_set_delays(struct jesd_transport_dev *tdev)
 		Set to 10 when K=12, F=2 as per RM*/
 		if (tdev->ils.frame_per_mf_k == 5 &&
 				tdev->ils.octect_per_frame_f == 4)
-			delay = 2;
+			delay = 0;
 		else if (tdev->ils.frame_per_mf_k == 10 &&
 				tdev->ils.octect_per_frame_f == 2)
-			delay = 4;
+			delay = 0;
 		else if (tdev->ils.frame_per_mf_k == 6 &&
 					tdev->ils.octect_per_frame_f == 4)
-			delay = 5;
+			delay = 3;
 		else if (tdev->ils.frame_per_mf_k == 12 &&
 					tdev->ils.octect_per_frame_f == 2)
-			delay = 10;
+			delay = 6;
 		else
 			delay = 0;
 
@@ -442,6 +443,7 @@ static int jesd_update_ils_csum(struct jesd_transport_dev *tdev)
 static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0, i;
+	u32 ref_clk;
 	u32 *reg, val, mask, enable_mask = 0;
 
 	for (i = 0; i < tdev->active_lanes; i++)
@@ -469,7 +471,23 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 	mask = SYNC_PIPELINE_MASK << SYNC_PIPELINE_SHIFT;
 	jesd_update_reg(reg, val, mask);
 
-	iowrite32(0x1f, &tdev->tx_regs->tx_sync_fil_char);
+	ref_clk =  get_ref_clock(tdev->tbgen_dev_handle);
+
+	if (ref_clk == 614400) {
+		if (tdev->ils.lanes_per_converter_l == 1)
+			iowrite32(0x1D & 0x1F,
+			&tdev->tx_regs->tx_sync_fil_char);
+		else if (tdev->ils.lanes_per_converter_l == 2)
+			iowrite32(0x13 & 0x1F,
+			&tdev->tx_regs->tx_sync_fil_char);
+	} else {
+		if (tdev->ils.lanes_per_converter_l == 1)
+			iowrite32(0x1F & 0x1F,
+			 &tdev->tx_regs->tx_sync_fil_char);
+		else if (tdev->ils.lanes_per_converter_l == 2)
+			iowrite32(0x15 & 0x1F,
+			&tdev->tx_regs->tx_sync_fil_char);
+	}
 
 	if (tdev->dev_flags & DEV_FLG_LOOPBACK_MASK) {
 		reg = &tdev->tx_regs->tx_transcontrol;
@@ -539,344 +557,41 @@ static int jesd_setup_transport(struct jesd_transport_dev *tdev)
 /* XXX: initializing SERDES here only for bringup, need to move it to
  * serdes driver
  */
-#define SERDES1_BASE	0x01084000
-#define SERDES_SIZE	0x4000
-
-#ifdef USE_PLL2
-#define PLL_RSTCTL	0x020
-#define PLL_CR0		0x024
-#define PLL_CR1		0x028
-#define PLL_CR4		0x034
-#else
-#define PLL_RSTCTL	0x000
-#define PLL_CR0		0x004
-#define PLL_CR1		0x008
-#define PLL_CR4		0x014
-#endif
-
-#define PCCR5		0x0f4
-#define LN_CGCR0	0x800
-#define LN_CGCR1	0x804
-#define LN_RECR0	0x810
-#define LN_RECR1	0x814
-#define LN_TECR0	0x818
-#define LN_TTLCR0	0x820
-#define LN_TTLCR1	0x824
-#define LN_TCSR3	0x83c
-
-/* RSTCTL */
-#define SDEN		(1 << 5)
-#define SDRST_B		(1 << 6)
-#define PLLRST_B	(1 << 7)
-#define RSTDONE		(1 << 30)
-#define RSTREQ		(1 << 31)
-
-/* CR0 */
-#define REFCLK_SEL_MASK		0x7
-#define REFCLK_SEL_SHIFT	28
-#define REFCLK_100		0x0
-#define REFCLK_122_88		0x1
-#define REFCLK_153_6		0x2
-#define FRATE_MASK		0xf
-#define FRATE_SHIFT		16
-#define FRATE_5_0_GHZ		0x0
-#define FRATE_4_9152_GHZ	0x3
-#define FRAME_3_072_GHZ		0xc
-
-#define REFCLK_EN		(1 << 27)
-#define PLL_LOCKED		(1 << 23)
-
-/* CR1 */
-#define VCO_EN			(1 << 21)
-
-/* PCCR5 */
-#define LANE_CFG_MASK		0xf
-#define LANE_SINGLE_CHANNEL	0x1
-#define LANE0_CFG_SHIFT		28
-
-/* LN_GCR0 */
-#define TRST_B			(1 << 21)
-#define RRST_B			(1 << 22)
-#define IF20BIT_EN		(1 << 18)
-#define FIRST_LANE		(1 << 16)
-#define TPLL_LES		(1 << 27)
-#define RPLL_LES		(1 << 31)
-
-#define PROTS_SHIFT		0x7
-#define PROTS_MASK		0x1f
-#define PROT_JESD204		0xc
-
-#define RRAT_SEL_SHIFT		28
-#define TRAT_SEL_SHIFT		24
-#define RAT_SEL_MASK		0x3
-#define RRAT_QUATER		0x2
-#define RRAT_UNITY		0x0
-#define RRAT_DOUBLE		0x3
-#define LOOPBACK_EN		0x01
-#define LOOPBACK_EN_MASK	0x03
-#define LOOPBACK_EN_SHIFT	28
-
-#define SERDES_PLL_TIMEOUT_MS	100
-
-static void serdes_disable_lanes(u32 base_reg)
-{
-	u32 *reg, val, mask;
-
-	reg = (u32 *) (base_reg + PLL_RSTCTL);
-	/* Disable all lanes */
-	val = ~SDRST_B;
-	mask = SDRST_B;
-	jesd_update_reg(reg, val, mask);
-	udelay(1);
-
-	val = SDEN;
-	mask = SDEN;
-	jesd_update_reg(reg, val, mask);
-	udelay(1);
-}
-
-static void serdes_enable_lanes(u32 base_reg)
-{
-	u32 *reg, val, mask;
-
-	reg = (u32 *) (base_reg + PLL_RSTCTL);
-	/* enable all lanes */
-	val = SDRST_B | SDEN | PLLRST_B;
-	mask = SDRST_B | SDEN | PLLRST_B;
-	jesd_update_reg(reg, val, mask);
-}
-
-static int init_serdes_pll(struct jesd_transport_dev *tdev,
-	u32 base_reg)
-{
-	u32 *reg, val = 0, mask = 0;
-	int rc = 0;
-	unsigned long timeout;
-
-
-	serdes_disable_lanes(base_reg);
-	/* program pll*/
-	reg = (u32 *) (base_reg + PLL_CR0);
-	val |= REFCLK_122_88 << REFCLK_SEL_SHIFT;
-	mask |= REFCLK_SEL_MASK << REFCLK_SEL_SHIFT;
-
-	if (tdev->data_rate == DATA_RATE_6144)
-		val |= FRAME_3_072_GHZ << FRATE_SHIFT;
-
-	if ((tdev->data_rate == DATA_RATE_4915) ||
-		(tdev->data_rate == DATA_RATE_1228))
-		val |= FRATE_4_9152_GHZ << FRATE_SHIFT;
-
-	mask = FRATE_MASK << FRATE_SHIFT;
-
-	val |= REFCLK_EN;
-	mask |= REFCLK_EN;
-
-	jesd_update_reg(reg, val, mask);
-
-	reg = (u32 *) (base_reg + PLL_CR1);
-	val = VCO_EN;
-	mask = VCO_EN;
-	jesd_update_reg(reg, val, mask);
-
-	timeout = jiffies + msecs_to_jiffies(SERDES_PLL_TIMEOUT_MS);
-
-	reg = (u32 *) (base_reg + PLL_RSTCTL);
-	val = RSTREQ;
-	mask = RSTREQ;
-	jesd_update_reg(reg, val, mask);
-
-	val = ioread32(reg);
-	while (!(val & RSTDONE)) {
-		if (jiffies > timeout) {
-			dev_err(tdev->dev, "%s: SERDES PLL reset failed [%x]\n",
-				tdev->name, val);
-			rc = -EBUSY;
-			goto out;
-		}
-		val = ioread32(reg);
-	}
-	dev_info(tdev->dev, "%s: SERDES PLL reset done, rctctl %x\n",
-		tdev->name, val);
-
-	reg = (u32 *) (base_reg + PLL_CR0);
-	val = ioread32(reg);
-	while (!(val & PLL_LOCKED)) {
-		if (jiffies > timeout) {
-			dev_err(tdev->dev, "%s: SERDES PLL lock failed [%x]\n",
-				tdev->name, val);
-			rc = -EBUSY;
-			goto out;
-		}
-		val = ioread32(reg);
-	}
-	dev_info(tdev->dev, "%s: SERDES PLL reset locked, cr0 %x\n",
-		tdev->name, val);
-
-	serdes_enable_lanes(base_reg);
-out:
-	return rc;
-}
-
-static int init_serdes_lane(struct jesd_transport_dev *tdev,
-	u32 base_reg)
-{
-	u32 *reg, val, mask;
-	int rc = 0;
-
-	reg = (u32 *) (base_reg + PCCR5);
-	val = LANE_SINGLE_CHANNEL << LANE0_CFG_SHIFT;
-	mask = LANE_CFG_MASK << LANE0_CFG_SHIFT;
-	iowrite32(val, reg);
-	/*Reset and disable lane */
-	reg = (u32 *) (base_reg + LN_CGCR0);
-	val = ~(TRST_B | RRST_B);
-	mask = TRST_B | RRST_B;
-	jesd_update_reg(reg, val, mask);
-	udelay(1);
-
-	/*configure lane*/
-	reg = (u32 *) (base_reg + LN_CGCR0);
-	val = 0;
-
-	dev_info(tdev->dev, "%s: data rate %d\n", tdev->name, tdev->data_rate);
-
-	if (tdev->data_rate == DATA_RATE_4915) {
-		val |= RRAT_UNITY << RRAT_SEL_SHIFT;
-		val |= RRAT_UNITY << TRAT_SEL_SHIFT;
-	}
-	if (tdev->data_rate == DATA_RATE_6144) {
-		val |= RRAT_DOUBLE << RRAT_SEL_SHIFT;
-		val |= RRAT_DOUBLE << TRAT_SEL_SHIFT;
-	}
-
-	if (tdev->data_rate == DATA_RATE_1228) {
-		val |= RRAT_QUATER << RRAT_SEL_SHIFT;
-		val |= RRAT_QUATER << TRAT_SEL_SHIFT;
-	}
-
-	val |= TPLL_LES;
-	val |= RPLL_LES;
-
-	val |= IF20BIT_EN;
-	val |= (PROT_JESD204 & PROTS_MASK) << PROTS_SHIFT;
-	val |= FIRST_LANE;
-	iowrite32(val, reg);
-
-	if (tdev->dev_flags & DEV_FLG_SERDES_LOOPBACK_EN) {
-		dev_info(tdev->dev, "%s: Enabling SERDES loopback\n",
-			tdev->name);
-		reg = (u32 *) (base_reg + (LN_TCSR3));
-		val = LOOPBACK_EN << LOOPBACK_EN_SHIFT;
-		mask = LOOPBACK_EN_MASK << LOOPBACK_EN_SHIFT;
-		jesd_update_reg(reg, val, mask);
-	}
-
-	udelay(1);
-
-	/*Enable lane */
-	reg = (u32 *) (base_reg + LN_CGCR0);
-	val = (TRST_B | RRST_B);
-	mask = TRST_B | RRST_B;
-	jesd_update_reg(reg, val, mask);
-	udelay(10);
-
-	return rc;
-}
-
-#define GCR_BASE	0x012c0000
-#define GCR_SIZE	0x4000
-#define GCR4		0x010
-#define GCR6		0x018
-#define GCR72		0x13c
-#define GCR75		0x148
-#define GCR22		0x058
-#define GCR41		0x0c0
-#define GCR43		0x0c8
-#define GCR45		0x0d0
-#define GCR52		0x0ec
-
-#define GCR22_DMA_REQ_MASK	0x7
-#define JESDTX1_DMA_REQ_EN	0x1
-#define JESDTX1_DMA_REQ_SHIFT	6
-
-static void jesd_init_gcr(struct jesd_transport_dev *tdev)
-{
-	u32 base_reg = 0, val, *reg, mask;
-
-	/* init GCR only once*/
-	if (tdev->type != JESD_DEV_TX)
-		goto out;
-
-	/* GCR72 -> 0x00140000 */
-	base_reg = (u32) ioremap_nocache(GCR_BASE, GCR_SIZE);
-	reg = (u32 *) (base_reg + GCR72);
-	val = 0x00140000;
-	iowrite32(val, reg);
-
-	/* GCR75 -> 0xffffffff */
-	reg = (u32 *) (base_reg + GCR75);
-	val = 0xffffffff;
-	iowrite32(val, reg);
-
-	/* JESD TX1 -> VSPA 3 DMA 8*/
-	reg = (u32 *) (base_reg + GCR22);
-	val = JESDTX1_DMA_REQ_EN << JESDTX1_DMA_REQ_SHIFT;
-	mask = GCR22_DMA_REQ_MASK << JESDTX1_DMA_REQ_SHIFT;
-	jesd_update_reg(reg, val, mask);
-
-	/* JESD RX1 -> VSPA 3 DMA 8*/
-	reg = (u32 *) (base_reg + GCR41);
-	iowrite32(0x01, reg);
-
-	reg = (u32 *) (base_reg + GCR43);
-	iowrite32(0x03, reg);
-
-	/*JESD RX1 Ptr reset request to VSPA 5 DMA 8*/
-	reg = (u32 *) (base_reg + GCR45);
-	iowrite32(0x01, reg);
-
-	/*JESD TX1 Ptr reset request to VSPA 3 DMA 8*/
-	reg = (u32 *) (base_reg + GCR52);
-	iowrite32(0x400, reg);
-
-out:
-	return;
-}
-
 static int jesd_init_serdes(struct jesd_transport_dev *tdev)
 {
-	int rc = 0;
-	u32 base_reg = 0;
+	struct serdes_pll_params pll_param;
+	struct serdes_lane_params lane_param;
 
-	/*XXX: init PLL only once. Need to have proper way to handle it */
-	if (tdev->type != JESD_DEV_TX)
-		goto out;
-
-	base_reg = (u32) ioremap_nocache(SERDES1_BASE, SERDES_SIZE);
-	if (!base_reg) {
-		dev_err(tdev->dev, "%s: Failed serdes ioremap\n", tdev->name);
-		rc = -ENOMEM;
-		goto out;
+	pll_param.pll_id = SERDES_PLL_1;
+	pll_param.rfclk_sel = REF_CLK_FREQ_122_88_MHZ;
+	if ((tdev->data_rate ==  DATA_RATE_3_0720_G) ||
+		(tdev->data_rate == DATA_RATE_6_1440_G)) {
+		pll_param.frate_sel = PLL_FREQ_3_072_GHZ;
+		pll_param.vco_type = SERDES_RING_VCO;
+	} else {
+		pll_param.frate_sel = PLL_FREQ_4_9152_GHZ;
+		pll_param.vco_type = SERDES_LC_VCO;
 	}
+	if (serdes_init_pll(tdev->serdes_handle, &pll_param))
+		return -EINVAL;
 
-	dev_info(tdev->dev, "serdes base %x, size %x, virt %x\n",
-		SERDES1_BASE, SERDES_SIZE, base_reg);
-	rc = init_serdes_pll(tdev, base_reg);
-	if (rc) {
-		dev_err(tdev->dev, "%s: serdes pll init failed\n", tdev->name);
-		goto out;
-	}
+	lane_param.lane_id = tdev->serdesspec.args[0];
+	lane_param.gen_conf.lane_prot = SERDES_LANE_PROTS_JESD204;
+	lane_param.gen_conf.bit_rate_kbps = tdev->data_rate;
+	lane_param.gen_conf.cflag = (SERDES_20BIT_EN |  SERDES_TPLL_LES |
+			SERDES_RPLL_LES);
+	if (tdev->active_lanes == 1) {
+		lane_param.gen_conf.cflag |= SERDES_FIRST_LANE;
+		lane_param.grp_prot = SERDES_PROT_JESD_1_LANE;
+	} else
+		lane_param.grp_prot = SERDES_PROT_JESD_2_LANE;
 
-	rc = init_serdes_lane(tdev, base_reg);
-	if (rc) {
-		dev_err(tdev->dev, "%s: serdes lane init failed\n", tdev->name);
-		goto out;
-	}
-out:
-	if (!base_reg)
-		iounmap((void *) base_reg);
-	return rc;
+	if (tdev->config_flags & CONF_PHYGASKET_LOOPBACK_EN)
+		lane_param.gen_conf.cflag |= SERDES_LOOPBACK_EN;
+
+	if (serdes_init_lane(tdev->serdes_handle, &lane_param))
+		return -EINVAL;
+	return 0;
 }
 
 int jesd_start_transport(struct jesd_transport_dev *tdev)
@@ -890,7 +605,7 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 		goto out;
 	}
 
-	jesd_init_gcr(tdev);
+	gcr_jesd_init();
 
 	rc = jesd_init_serdes(tdev);
 	if (rc) {
@@ -1190,14 +905,14 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 		dev_err(tdev->dev, "%s: Invalid lanes (%d), max %d\n",
 			tdev->name, trans_p->lanes, tdev->max_lanes);
 		rc = -EINVAL;
-		goto out;
+		return rc;
 	}
 
 	if (jdev->used_lanes >= jdev->max_lanes) {
-		dev_err(tdev->dev, "%s: Parent's all lanes are used\n",
-			tdev->name);
+		dev_err(tdev->dev, "%s: Parent's all lanes (%d) are used\n",
+			tdev->name, jdev->max_lanes);
 		rc = -EBUSY;
-		goto out;
+		return rc;
 	}
 	/*create lanes*/
 	for (i = 0; i < trans_p->lanes; i++) {
@@ -1206,7 +921,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 			dev_err(tdev->dev, "%s: Lane allocation Failed [%d]\n",
 				tdev->name, i);
 			rc = -ENOMEM;
-			goto out;
+			return rc;
 		}
 		lane_dev->id = i + tdev->id;
 		lane_dev->enabled = 0;
@@ -1260,19 +975,9 @@ static int config_frames_per_mf(struct jesd_transport_dev *tdev)
 	u32 ref_clk, *reg, frames_per_mf = 0;
 	int rc = 0;
 
-
-
-#if 0
 	ref_clk =  get_ref_clock(tdev->tbgen_dev_handle);
 
-#else
-	/*XXX: Hardcoded ref clock for bringup. It is not even 122.8 Mhz
-	 *on medusa,  check values from h/w guys
-	 */
-	 ref_clk = 614;
-#endif
-
-	if (ref_clk == 614) {
+	if (ref_clk == 614400) {
 		/* As per RM For ref_clk=614.4MHz:
 		* Set to 5 when the link uses 1 lane (L=1)
 		* Set to 10 when the link uses 2 lanes (L=2)
@@ -1281,7 +986,7 @@ static int config_frames_per_mf(struct jesd_transport_dev *tdev)
 			frames_per_mf = 5;
 		else if (tdev->ils.lanes_per_converter_l == 2)
 			frames_per_mf =  10;
-	} else if (ref_clk == 983) {
+	} else if (ref_clk == 983040) {
 		/* For ref_clk=983.04MHz:
 		* Set to 5 when the link uses 1 lane (L=1)
 		* Set to 11 when the link uses 2 lanes (L=2)
@@ -1918,15 +1623,38 @@ out:
 static int jesd204_open(struct inode *inode, struct file *pfile)
 {
 	struct jesd_transport_dev *tdev = NULL;
+	struct device_node *child = NULL;
 	int rc = 0;
+	unsigned int transport_id;
 
 	tdev = container_of(inode->i_cdev, struct jesd_transport_dev, c_dev);
-	if (tdev != NULL) {
-		pfile->private_data = tdev;
-		atomic_inc(&tdev->ref);
-	} else {
-		rc = -ENODEV;
+	if (tdev == NULL)
+		return -ENODEV;
+
+	pfile->private_data = tdev;
+
+	for_each_child_of_node(tdev->parent->node, child) {
+		of_property_read_u32(child, "transport-id", &transport_id);
+		if (transport_id < 0) {
+			dev_err(tdev->dev, "Failed to get transport id\n");
+			return -ENODEV;
+		}
+		if (transport_id == tdev->id)
+			break;
 	}
+
+	if (of_get_named_serdes(child, &tdev->serdesspec,
+		"serdes-handle", 0)) {
+		dev_err(tdev->dev, "Failed to get serdes-handle\n");
+		return -ENODEV;
+	}
+
+	tdev->serdes_handle = get_attached_serdes_dev(tdev->serdesspec.np);
+	if (tdev->serdes_handle == NULL) {
+		dev_err(tdev->dev, "Failed to get serdes handle\n");
+		return -ENODEV;
+	}
+	atomic_inc(&tdev->ref);
 
 	return rc;
 }
