@@ -399,8 +399,9 @@ err_request_gpio_failed:
 
 static int config_sfp_lines(struct sfp_dev *sfp)
 {
-	int ret;
+	int ret = 0;
 
+	return 0; /* need to implement with pca 9565 driver changes */
 	/* Get the GPIO pin numbers from device node */
 	sfp->irq_txfault = of_get_named_gpio(sfp->dev_node,
 				"sfp-int-txfault", 0);
@@ -446,7 +447,7 @@ static int sfp_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
 {
 	struct sfp_dev *sfp = NULL;
-	struct device_node *child = NULL, *node = NULL;
+	struct device_node *node = NULL;
 	struct device *dev = &client->dev;
 	unsigned int num_addr = 0;
 	int use_smbus = 0, err = 0;
@@ -539,13 +540,11 @@ static int sfp_probe(struct i2c_client *client,
 #endif
 
 	/* ------------ End populating sfp_dev ---------- */
-#if 0
 	/* Configure transceiver pins */
 	if (config_sfp_lines(sfp) < 0) {
 		dev_err(dev, "sfp pin configuration failed\n");
 		goto err_clients;
 	}
-#endif
 
 	dev_notice(dev, "Tx Fault pin: %d, Rx LOS pin: %d ",
 			sfp->irq_txfault, sfp->irq_rxlos);
