@@ -93,17 +93,20 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 		break;
 	case JESD_DEV_RX:
 	case JESD_DEV_SRX:
-		if (tdev->dev_flags & DEV_FLG_PHYGASKET_LOOPBACK_EN)
+		if (tdev->dev_flags & DEV_FLG_PHYGASKET_LOOPBACK_EN) {
+			dev_info(tdev->dev, "%s: Enabling PHYGASKET loopback\n",
+				tdev->name);
 			phy_data_src = PHY_DATA_RX_LOOPBACK;
-		else
+		} else {
 			phy_data_src = PHY_DATA_JESDRX;
+		}
 		break;
 	default:
 		rc = -EINVAL;
 		goto out;
 	}
 
-	dev_dbg(tdev->dev, "%s: data src %d\n", tdev->name, phy_data_src);
+	dev_info(tdev->dev, "%s: data src %d\n", tdev->name, phy_data_src);
 
 	for (i = 0; i < tdev->active_lanes; i++) {
 		lane = tdev->lane_devs[i];
@@ -133,31 +136,31 @@ void lane_stats_update(struct jesd_transport_dev *tdev,
 
 static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 {
-	int line_rate, m, s, np, l;
-	int fs, fc, clkdiv, ref, rc = 0;
+	int clkdiv, refclk, rc = 0, char_rate;
 	u32 *reg = NULL, mask, val;
 
-	/*XXX: TBD set clk div based on tdev->data_rate and tdev->ref_clk*/
-	ref = get_ref_clock(tdev->tbgen_dev_handle);
+	refclk = get_ref_clock(tdev->tbgen_dev_handle);
+	char_rate = tdev->data_rate / 10;
 
-	m = tdev->ils.conv_per_device_m;
-	s = tdev->ils.samples_per_cnvrtr_per_frame;
-	np = tdev->ils.bits_per_converter;
-	l = tdev->ils.lanes_per_converter_l;
-	fs = tdev->ils.octect_per_frame_f;
+	clkdiv = refclk / char_rate;
 
-	line_rate = (((m*s*np*fs)*(10/8))/l);
-	fc = line_rate/20;
+	switch (clkdiv) {
+	case TRANSPORT_FULL_RATE:
+	case TRANSPORT_HALF_RATE:
+	case TRANSPORT_QUATER_RATE:
+	case TRANSPORT_DEV_BY_8:
+		clkdiv -= 1;
+		break;
+	default:
+		dev_err(tdev->dev, "%s: Data rate %dKhz Invalid, refclk %d Khz",
+			tdev->name, tdev->data_rate, refclk);
+		rc = -EINVAL;
+		goto out;
+	}
 
-	if (tdev->type == JESD_DEV_TX)
-		clkdiv = (ref/fc);
-	else
-		clkdiv = ((ref*2)/fc);
+	dev_info(tdev->dev, "%s: clkdiv %d, data rate %dKhz, refclk %dKhz\n",
+		tdev->name, clkdiv, tdev->data_rate, refclk);
 
-	/*XXX: For medusa setting it to 0 hardcoded for bringup.
-	 *This needs cleanup
-	 */
-	clkdiv = 7;
 	val = (clkdiv & CLKDIV_MASK) << CLKDIV_SHIFT; /*mask for three bits*/
 	mask = CLKDIV_MASK << CLKDIV_SHIFT;
 	if (tdev->type == JESD_DEV_TX)
@@ -167,6 +170,7 @@ static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 
 	jesd_update_reg(reg, val, mask);
 
+out:
 	return rc;
 }
 
@@ -467,7 +471,7 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 
 	iowrite32(0x1f, &tdev->tx_regs->tx_sync_fil_char);
 
-	if (tdev->dev_flags & DEV_FLG_PHYGASKET_LOOPBACK_EN) {
+	if (tdev->dev_flags & DEV_FLG_LOOPBACK_MASK) {
 		reg = &tdev->tx_regs->tx_transcontrol;
 		val = SYNC_SELECT_TBGEN;
 		mask = SYNC_SELECT_TBGEN;
@@ -606,7 +610,10 @@ static int jesd_setup_transport(struct jesd_transport_dev *tdev)
 #define TRAT_SEL_SHIFT		24
 #define RAT_SEL_MASK		0x3
 #define RRAT_QUATER		0x2
+#define RRAT_UNITY		0x0
+#define RRAT_DOUBLE		0x3
 #define LOOPBACK_EN		0x01
+#define LOOPBACK_EN_MASK	0x03
 #define LOOPBACK_EN_SHIFT	28
 
 #define SERDES_PLL_TIMEOUT_MS	100
@@ -653,7 +660,13 @@ static int init_serdes_pll(struct jesd_transport_dev *tdev,
 	val |= REFCLK_122_88 << REFCLK_SEL_SHIFT;
 	mask |= REFCLK_SEL_MASK << REFCLK_SEL_SHIFT;
 
-	val |= FRATE_4_9152_GHZ << FRATE_SHIFT;
+	if (tdev->data_rate == DATA_RATE_6144)
+		val |= FRAME_3_072_GHZ << FRATE_SHIFT;
+
+	if ((tdev->data_rate == DATA_RATE_4915) ||
+		(tdev->data_rate == DATA_RATE_1228))
+		val |= FRATE_4_9152_GHZ << FRATE_SHIFT;
+
 	mask = FRATE_MASK << FRATE_SHIFT;
 
 	val |= REFCLK_EN;
@@ -725,8 +738,23 @@ static int init_serdes_lane(struct jesd_transport_dev *tdev,
 	/*configure lane*/
 	reg = (u32 *) (base_reg + LN_CGCR0);
 	val = 0;
-	val |= RRAT_QUATER << RRAT_SEL_SHIFT;
-	val |= RRAT_QUATER << TRAT_SEL_SHIFT;
+
+	dev_info(tdev->dev, "%s: data rate %d\n", tdev->name, tdev->data_rate);
+
+	if (tdev->data_rate == DATA_RATE_4915) {
+		val |= RRAT_UNITY << RRAT_SEL_SHIFT;
+		val |= RRAT_UNITY << TRAT_SEL_SHIFT;
+	}
+	if (tdev->data_rate == DATA_RATE_6144) {
+		val |= RRAT_DOUBLE << RRAT_SEL_SHIFT;
+		val |= RRAT_DOUBLE << TRAT_SEL_SHIFT;
+	}
+
+	if (tdev->data_rate == DATA_RATE_1228) {
+		val |= RRAT_QUATER << RRAT_SEL_SHIFT;
+		val |= RRAT_QUATER << TRAT_SEL_SHIFT;
+	}
+
 	val |= TPLL_LES;
 	val |= RPLL_LES;
 
@@ -734,6 +762,15 @@ static int init_serdes_lane(struct jesd_transport_dev *tdev,
 	val |= (PROT_JESD204 & PROTS_MASK) << PROTS_SHIFT;
 	val |= FIRST_LANE;
 	iowrite32(val, reg);
+
+	if (tdev->dev_flags & DEV_FLG_SERDES_LOOPBACK_EN) {
+		dev_info(tdev->dev, "%s: Enabling SERDES loopback\n",
+			tdev->name);
+		reg = (u32 *) (base_reg + (LN_TCSR3));
+		val = LOOPBACK_EN << LOOPBACK_EN_SHIFT;
+		mask = LOOPBACK_EN_MASK << LOOPBACK_EN_SHIFT;
+		jesd_update_reg(reg, val, mask);
+	}
 
 	udelay(1);
 
@@ -752,6 +789,7 @@ static int init_serdes_lane(struct jesd_transport_dev *tdev,
 #define GCR4		0x010
 #define GCR6		0x018
 #define GCR72		0x13c
+#define GCR75		0x148
 #define GCR22		0x058
 #define GCR41		0x0c0
 #define GCR43		0x0c8
@@ -774,6 +812,11 @@ static void jesd_init_gcr(struct jesd_transport_dev *tdev)
 	base_reg = (u32) ioremap_nocache(GCR_BASE, GCR_SIZE);
 	reg = (u32 *) (base_reg + GCR72);
 	val = 0x00140000;
+	iowrite32(val, reg);
+
+	/* GCR75 -> 0xffffffff */
+	reg = (u32 *) (base_reg + GCR75);
+	val = 0xffffffff;
 	iowrite32(val, reg);
 
 	/* JESD TX1 -> VSPA 3 DMA 8*/
@@ -1128,6 +1171,12 @@ static void jesd_init_dev_flags(struct jesd_transport_dev *tdev,
 		tdev->dev_flags |= DEV_FLG_PHYGASKET_LOOPBACK_EN;
 	else
 		tdev->dev_flags &= ~DEV_FLG_PHYGASKET_LOOPBACK_EN;
+
+	if (config_flags & CONF_SERDES_LOOPBACK_EN)
+		tdev->dev_flags |= DEV_FLG_SERDES_LOOPBACK_EN;
+	else
+		tdev->dev_flags &= ~DEV_FLG_SERDES_LOOPBACK_EN;
+
 }
 
 static int jesd_init_transport(struct jesd_transport_dev *tdev,

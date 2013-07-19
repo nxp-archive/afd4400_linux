@@ -22,6 +22,10 @@
 
 #define DEVICE_TX	0
 #define DEVICE_RX	1
+#define TRANSPORT_FULL_RATE	1
+#define TRANSPORT_HALF_RATE	2
+#define TRANSPORT_QUATER_RATE	4
+#define TRANSPORT_DEV_BY_8	8
 
 #define LINK_STATUS_CODE_GRP_SYNC_DONE	(1 << 0)
 #define LINK_STATUS_FRM_SYNC_DONE	(1 << 1)
@@ -402,8 +406,10 @@ struct jesd_transport_dev {
 /*dev_flags*/
 #define DEV_FLG_NO_TRANSPORT_EVENTS	(1 << 0)
 #define DEV_FLG_PHYGASKET_LOOPBACK_EN	(1 << 1)
-#define DEV_FLG_TEST_PATTERNS_EN	(1 << 2)
-
+#define DEV_FLG_SERDES_LOOPBACK_EN	(1 << 2)
+#define DEV_FLG_TEST_PATTERNS_EN	(1 << 3)
+#define DEV_FLG_LOOPBACK_MASK	(DEV_FLG_PHYGASKET_LOOPBACK_EN | \
+				DEV_FLG_SERDES_LOOPBACK_EN)
 /*config_bitmap*/
 #define JESD_CONF_ILS_LEN_INIT		(1 << 0)
 #define JESD_CONF_ILS_INIT		(1 << 1)

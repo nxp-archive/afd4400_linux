@@ -195,6 +195,7 @@ int validate_refclk(struct tbgen_dev *tbg, u32 ref_clk)
 #define TPLLGSR		0x1A0
 #define TPLLLKSR	0x1B0
 #define TPLLGDCR	0x2A0
+#define CCDR2		0x00C
 #define TPLLLKDCR	0x2B0
 #define CCMCR2		0x098
 
@@ -250,9 +251,21 @@ int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 	reg = (u32 *) (reg_base + TPLLGDCR);
 	val = (multiplier & PLL_MULTIPLIER_MASK) << PLL_MULTIPLIER_SHIFT;
 	val |= OVERRIDE_EN;
+	if (pll_params->refclk_khz == REF_CLK_614MHZ)
+		val |= 1 << 17;
 	iowrite32(val, reg);
 
 	dev_info(tbg->dev, "TPLLGDCR 0x%x\n", ioread32(reg));
+	if (pll_params->refclk_khz == REF_CLK_614MHZ) {
+		reg = (u32 *) (reg_base + CCDR2);
+		val = ioread32(reg);
+		dev_info(tbg->dev, "CCDR2 0x%x\n", ioread32(reg));
+		val &= ~((1 << 24) | (1 << 25) | (1 << 26));
+		val |= (1 << 26);
+		iowrite32(val, reg);
+		dev_info(tbg->dev, "CCDR2 0x%x\n", ioread32(reg));
+		udelay(200);
+	}
 
 	/* Pll reset down, start PLL state m/c */
 	reg = (u32 *) (reg_base + CCMCR2);

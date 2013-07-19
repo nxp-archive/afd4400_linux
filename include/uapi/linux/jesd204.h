@@ -13,6 +13,12 @@
 #ifndef JESD204_UAPI_H_	/* prevent circular inclusion */
 #define JESD204_UAPI_H_	/* by using protection macros */
 
+
+#define DATA_RATE_6144		6144000
+#define DATA_RATE_4915		4915200
+#define DATA_RATE_1228		1228800
+
+
 /** @brief the state for jesd204
  * a signle state determining enum
  */
@@ -54,6 +60,7 @@ struct jesd_dev_params {
 #define CONF_PHY_ORDER_MS_BIT_FIRST_EN	(1 << 7)
 #define CONF_STRICT_CGS			(1 << 8)
 #define CONF_PHYGASKET_LOOPBACK_EN	(1 << 16)
+#define CONF_SERDES_LOOPBACK_EN		(1 << 17)
 /** @brief \struct ils params
  */
 struct ils_params {
