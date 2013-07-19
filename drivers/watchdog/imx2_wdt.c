@@ -329,6 +329,7 @@ static void imx2_wdt_shutdown(struct platform_device *pdev)
 
 static const struct of_device_id imx2_wdt_dt_ids[] = {
 	{ .compatible = "fsl,imx21-wdt", },
+	{ .compatible = "fsl,d4400-wdt", },
 	{ /* sentinel */ }
 };
 
