@@ -784,8 +784,8 @@
 				device_type = "network";
 				model = "eTSEC";
 				compatible = "fsl,etsec2";
-				fsl,num_rx_queues = <0x01>;
-				fsl,num_tx_queues = <0x01>;
+				fsl,num_rx_queues = <0x08>;
+				fsl,num_tx_queues = <0x08>;
 				fsl,errata = <0x00000004>;
 				local-mac-address = [ 00 00 ab cd 22 ef ];
 				phy-handle = <&phy0>;
@@ -800,8 +800,8 @@
 					#size-cells = <1>;
 					reg-names = "queue-group0";
 					reg = <0x80000 0x1000>;
-					rx-bit-map = <0xFF>;
-					tx-bit-map = <0xFF>;
+					fsl,rx-bit-map = <0xFF>;
+					fsl,tx-bit-map = <0xFF>;
 					interrupts = <0 184 0x04>,
 						     <0 183 0x04>,
 						     <0 185 0x04>;
@@ -814,8 +814,8 @@
 				device_type = "network";
 				model = "eTSEC";
 				compatible = "fsl,etsec2";
-				fsl,num_rx_queues = <0x01>;
-				fsl,num_tx_queues = <0x01>;
+				fsl,num_rx_queues = <0x08>;
+				fsl,num_tx_queues = <0x08>;
 				fsl,errata = <0x00000004>;
 				local-mac-address = [ 00 00 ab cd 23 ef ];
 				phy-handle = <&phy2>;
@@ -830,8 +830,8 @@
 					#size-cells = <1>;
 					reg-names = "queue-group0";
 					reg = <0xa1000 0x1000>;
-					rx-bit-map = <0xFF>;
-					tx-bit-map = <0xFF>;
+					fsl,rx-bit-map = <0xFF>;
+					fsl,tx-bit-map = <0xFF>;
 					interrupts = <0 190 0x04>,
 						     <0 189 0x04>,
 						     <0 191 0x04>;
