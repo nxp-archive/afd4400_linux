@@ -539,6 +539,11 @@ int jesd_setup_rx_transport(struct jesd_transport_dev *tdev)
 	mask = SW_DMA_ENABLE;
 	jesd_update_reg(reg, val, mask);
 
+	reg = &tdev->rx_regs->rx_ctrl_0;
+	val = RX_DIS;
+	mask = RX_DIS;
+	jesd_update_reg(reg, val, mask);
+
 	return rc;
 }
 
