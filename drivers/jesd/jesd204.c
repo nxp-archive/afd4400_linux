@@ -692,10 +692,12 @@ static int jesd_set_ilas_len(struct jesd_transport_dev *tdev, int ilas_len)
 	}
 	tdev->ilas_len = ilas_len;
 
-	if (tdev->type == JESD_DEV_TX)
+	if (tdev->type == JESD_DEV_TX) {
+		val = val - 1;
 		reg = &tdev->tx_regs->tx_ilas_len;
-	else
+	} else {
 		reg = &tdev->rx_regs->rx_ilas_len;
+	}
 
 	val &= MAX_ILAS_LEN_MASK;
 	iowrite32(val, reg);
