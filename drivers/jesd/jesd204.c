@@ -586,8 +586,11 @@ static int jesd_init_serdes(struct jesd_transport_dev *tdev)
 	} else
 		lane_param.grp_prot = SERDES_PROT_JESD_2_LANE;
 
-	if (tdev->config_flags & CONF_PHYGASKET_LOOPBACK_EN)
+	if (tdev->dev_flags & DEV_FLG_SERDES_LOOPBACK_EN) {
+		dev_info(tdev->dev, "%s: Enabling SERDES loopback\n",
+			tdev->name);
 		lane_param.gen_conf.cflag |= SERDES_LOOPBACK_EN;
+	}
 
 	if (serdes_init_lane(tdev->serdes_handle, &lane_param))
 		return -EINVAL;
