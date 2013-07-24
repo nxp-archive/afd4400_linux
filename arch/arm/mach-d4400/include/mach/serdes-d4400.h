@@ -330,7 +330,15 @@ struct serdes_dev {
 	struct list_head list;
 	u32 serdes_id;
 	u32 max_lane;
-	u32 opmode;
+#define SERDES_PLL1_INIT_DONE		(1 << 0)
+#define SERDES_PLL2_INIT_DONE		(1 << 1)
+/*	BIT definition for cflaags
+ *
+ *	BIT0	0: PLL1 Not locked
+ *		1: PLL1 locked
+ *
+ *	BIT1:	0: PLL2 Not locked
+ *		1: PLL2 locked */
 	u32 cflag;
 	spinlock_t lock;
 	struct serdes_pll_params pll[SERDES_PLL_MAX];

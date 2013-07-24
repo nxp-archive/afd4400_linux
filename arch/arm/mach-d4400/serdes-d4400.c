@@ -427,6 +427,15 @@ int serdes_init_pll(void *sdev_handle,
 		rc = -EINVAL;
 		goto out;
 	}
+
+	/* If Pll is already initialized then return */
+	if (sdev->cflag & (1 << pll->pll_id)) {
+		dev_info(sdev->dev, "PLL %d already intialized\n",
+				pll->pll_id);
+		rc = -EALREADY;
+		goto out;
+	}
+
 	/* Disable all lanes */
 	serdes_disable_all_lanes(pll->pll_id, sdev->regs);
 
@@ -451,6 +460,12 @@ int serdes_init_pll(void *sdev_handle,
 
 	/* Set PLL to Application Mode */
 	serdes_pll_set_app_mode(pll->pll_id, sdev->regs);
+
+	/* Update PLL initialized state */
+	srds_update_reg(&sdev->cflag,
+			(1 << pll->pll_id),
+			(1 << pll->pll_id));
+
 out:
 	return rc;
 }
@@ -663,6 +678,8 @@ static int serdes_d4400_probe(struct platform_device *pdev)
 
 	serdes_dev->dev = dev;
 	serdes_dev->node = np;
+	/* Initialize cflag with 0 */
+	serdes_dev->cflag = 0;
 
 	spin_lock_init(&serdes_dev->lock);
 
