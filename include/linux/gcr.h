@@ -12,6 +12,7 @@
 /* GCR value to init JESD */
 #define OHM_TERM_EN		0xFFFFFFFF
 #define TPD_BGR_EN		0x00140000
+
 /* gcr 1 device is max for user app */
 #define GCR_DEV_MAX    1
 
@@ -55,10 +56,20 @@
 #define GCR_MSK3 0xf
 #define INTER_VSP_CHAN_MIN 4
 #define INTER_VSP_CHAN_MAX 7
-
-
-
 /* end here */
+
+/* bit shift value for jesd PRR */
+#define JESD_PRR_SHIFT_VAL_00	0
+#define JESD_PRR_SHIFT_VAL_03	3
+#define JESD_PRR_SHIFT_VAL_06	6
+#define JESD_PRR_SHIFT_VAL_11	11
+#define JESD_PRR_SHIFT_VAL_14	14
+#define JESD_PRR_SHIFT_VAL_17	17
+#define JESD_PRR_SHIFT_VAL_19	19
+#define JESD_PRR_SHIFT_VAL_20	20
+#define JESD_PRR_SHIFT_VAL_23	23
+#define JESD_PRR_SHIFT_VAL_25	25
+#define JESD_PRR_SHIFT_VAL_29	29
 
 
 /* prepheral gcr dma channel config bit mask */
@@ -163,7 +174,7 @@ extern u32 gcr_read_set(u32 gcr_id);
 extern void gcr_write_set(struct gcr_ctl_parm *param,
 		unsigned char count);
 extern int gcr_jesd_dma_ptr_rst_req(struct jesd_dma_ptr_rst_parm *ptr_rst_parm,
-		unsigned count);
+		u8 count);
 extern int gcr_inter_vsp_dma_cfg(struct inter_vsp_dma_config_t *vsp_parm,
 		unsigned char count);
 extern int gcr_cpri_dma_mux(struct cpri_dma_mux_config *cpri_mux_parm,

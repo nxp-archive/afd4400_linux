@@ -227,7 +227,7 @@ long gcr_ctrl(struct file *file, unsigned int cmd, unsigned long ioctl_arg)
 			}
 			for (i = 0; i < count; i++) {
 				mutex_lock(&priv->gcr_lock);
-				m_addr = param->reg_offset + i;
+				m_addr = (param + i)->reg_offset;
 				data = gcr_read_set(m_addr);
 				mutex_unlock(&priv->gcr_lock);
 				(param + i)->param = data;
