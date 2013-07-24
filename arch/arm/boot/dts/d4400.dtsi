@@ -541,6 +541,68 @@
 				};
 			};
 
+			jesdtx@0x84000{
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "fsl,d4400-jesd204-tx";
+				ranges = <0x0 0x84000 0x4000>;
+				reg = <0x00084000 0x4000>;
+				lanes = <2>;
+
+				transport0@0x0{
+					reg = <0x0000000 0x7FC>;
+					transport-type = <0>;
+					transport-id = <2>;
+					timer-id = <2>;
+					phy-gasket = <&phy1>;
+					max-lanes = <2>;
+					serdes-handle = <&serdes1 2>;
+					interrupts = <0 121 0x4>;
+				};
+
+				transport1@0x800{
+					reg = <0x00000800 0x7FC>;
+					transport-type = <0>;
+					transport-id = <3>;
+					timer-id = <3>;
+					phy-gasket = <&phy1>;
+					max-lanes = <1>;
+					serdes-handle = <&serdes1 3>;
+					interrupts = <0 122 0x4>;
+				};
+			};
+
+			jesdrx@0x94000{
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "fsl,d4400-jesd204-rx";
+				ranges = <0x0 0x94000 0x4000>;
+				reg = <0x00094000 0x4000>;
+				lanes = <2>;
+
+				transport0@0x0{
+					reg = <0x00000000 0x3FF>;
+					transport-type = <1>;
+					transport-id = <2>;
+					timer-id = <0>;
+					phy-gasket = <&phy1>;
+					max-lanes = <2>;
+					serdes-handle = <&serdes1 2>;
+					interrupts = <0 108 0x4>;
+				};
+
+				transport1@0x400{
+					reg = <0x00000400 0x3FF>;
+					transport-type = <1>;
+					transport-id = <3>;
+					timer-id = <1>;
+					phy-gasket = <&phy1>;
+					max-lanes = <1>;
+					serdes-handle = <&serdes1 3>;
+					interrupts = <0 109 0x4>;
+				};
+			};
+
 			phy1: phygasket@0xb4000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
