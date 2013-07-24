@@ -894,9 +894,9 @@
 					reg = <0xa1000 0x1000>;
 					fsl,rx-bit-map = <0xFF>;
 					fsl,tx-bit-map = <0xFF>;
-					interrupts = <0 190 0x04>,
-						     <0 189 0x04>,
-						     <0 191 0x04>;
+					interrupts = <0 191 0x04>,
+						     <0 190 0x04>,
+						     <0 192 0x04>;
 				};
 			};
 
