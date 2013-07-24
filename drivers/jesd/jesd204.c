@@ -597,6 +597,76 @@ static int jesd_init_serdes(struct jesd_transport_dev *tdev)
 	return 0;
 }
 
+#define GCR_BASE	0x012c0000
+#define GCR_SIZE	0x4000
+#define GCR4		0x010
+#define GCR6		0x018
+#define GCR72		0x13c
+#define GCR75		0x148
+#define GCR22		0x058
+#define GCR23		0x05c
+#define GCR41		0x0c0
+#define GCR42		0x0c4
+#define GCR43		0x0c8
+#define GCR45		0x0d0
+#define GCR52		0x0ec
+
+#define GCR22_DMA_REQ_MASK	0x7
+#define JESDTX1_DMA_REQ_EN	0x1
+#define JESDTX1_DMA_REQ_SHIFT	6
+
+static void jesd_init_gcr(struct jesd_transport_dev *tdev)
+{
+	u32 base_reg = 0, val, *reg, mask;
+
+	/* init GCR only once*/
+	if (tdev->type != JESD_DEV_TX)
+		goto out;
+
+	/* GCR72 -> 0x00140000 */
+	base_reg = (u32) ioremap_nocache(GCR_BASE, GCR_SIZE);
+	reg = (u32 *) (base_reg + GCR72);
+	val = 0x00140000;
+	iowrite32(val, reg);
+
+	/* GCR75 -> 0xffffffff */
+	reg = (u32 *) (base_reg + GCR75);
+	val = 0xffffffff;
+	iowrite32(val, reg);
+
+	/* JESD TX1 -> VSPA 3 DMA 8*/
+	reg = (u32 *) (base_reg + GCR22);
+	val = JESDTX1_DMA_REQ_EN << JESDTX1_DMA_REQ_SHIFT;
+	mask = GCR22_DMA_REQ_MASK << JESDTX1_DMA_REQ_SHIFT;
+	jesd_update_reg(reg, val, mask);
+
+	/* JESD TX4 -> VSPA 3 DMA 11*/
+	reg = (u32 *) (base_reg + GCR23);
+	iowrite32(0x40000, reg);
+
+	/* JESD RX1 -> VSPA 3 DMA 8*/
+	reg = (u32 *) (base_reg + GCR41);
+	iowrite32(0x01, reg);
+
+	/* JESD RX4 -> VSPA 3 DMA 11*/
+	reg = (u32 *) (base_reg + GCR42);
+	iowrite32(0x01, reg);
+
+	reg = (u32 *) (base_reg + GCR43);
+	iowrite32(0x603, reg);
+
+	/*JESD RX1 Ptr reset request to VSPA 5 DMA 8*/
+	reg = (u32 *) (base_reg + GCR45);
+	iowrite32(0x1001, reg);
+
+	/*JESD TX1 Ptr reset request to VSPA 3 DMA 8*/
+	reg = (u32 *) (base_reg + GCR52);
+	iowrite32(0x10400, reg);
+
+out:
+	return;
+}
+
 int jesd_start_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
@@ -608,7 +678,7 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 		goto out;
 	}
 
-	gcr_jesd_init();
+	jesd_init_gcr(tdev);
 
 	rc = jesd_init_serdes(tdev);
 	if (rc) {
