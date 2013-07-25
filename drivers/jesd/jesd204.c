@@ -1837,7 +1837,19 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 			mask = SW_DMA_ENABLE;
 			jesd_update_reg(transport_ctrl_reg, val, mask);
 		}
-		tbgen_timer_enable(tdev->timer_handle);
+
+		/* XXX: Disable TX alignment timer and AXRF timer firing
+		 * because we don't have right values of timers yet, and
+		 * we program both timers as active low from user space
+		 * so that both strobes remain active all the time if
+		 * timer is not fires
+		 */
+#if 0
+		if (tdev->type == JESD_DEV_TX)
+			tbgen_timer_enable(tdev->txalign_timer_handle);
+#endif
+		if (tdev->type != JESD_DEV_TX)
+			tbgen_timer_enable(tdev->timer_handle);
 		/* We don't need sysref now till link is restarted */
 		jesd_marks_syref_capture_ready(tdev, 0);
 		requeue = 0;
@@ -1914,8 +1926,10 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 		jesd_update_reg(reg, val, mask);
 	}
 
+#if 0
 	if (tdev->type == JESD_DEV_TX)
 		tbgen_timer_enable(tdev->txalign_timer_handle);
+#endif
 	tdev->sync_expire = jiffies + msecs_to_jiffies(tdev->sync_timeout_ms);
 	schedule_work(&tdev->link_monitor);
 }
