@@ -387,10 +387,6 @@ int ad9368_write(struct rf_phy_dev *phy_dev, u32 reg,
 		rc = spi_write_transaction(phy_dev, cntrwd, TRANSACTION_BYTES);
 	} else {
 		cntrwd[0] = OPCODE_WRITE_AD9368;
-		cntrwd[1] = OPCODE_INIT_REG;
-		cntrwd[2] = OPCODE_INIT_REG;
-		rc = spi_write_transaction(phy_dev, cntrwd, TRANSACTION_BYTES);
-		cntrwd[0] = OPCODE_WRITE_AD9368;
 		cntrwd[0] |= (reg>>8);
 		cntrwd[1] = (u8)reg;
 		cntrwd[2] = (u8)data;
