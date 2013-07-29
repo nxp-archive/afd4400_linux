@@ -338,6 +338,7 @@ int cpri_state_validation(enum cpri_state present_state,
 	case CPRI_STATE_CONFIGURED:
 	case CPRI_STATE_LINK_ERROR:
 	case CPRI_STATE_LINE_RATE_AUTONEG:
+	case CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS:
 		if (new_state <= CPRI_STATE_PROT_VER_AUTONEG ||
 				new_state <= CPRI_STATE_LINK_ERROR)
 			ret = 0;
@@ -617,6 +618,7 @@ static int cpri_probe(struct platform_device *pdev)
 	int ret = 0, i, rc = 0;
 	struct cpri_common_regs __iomem *common_regs;
 	const struct of_device_id *id;
+	unsigned char dev_name[20];
 
 	if (!np || !of_device_is_available(np)) {
 		rc = -ENODEV;
@@ -648,6 +650,7 @@ static int cpri_probe(struct platform_device *pdev)
 			cpri_dev->dev_flags |= CPRI_D4400;
 	}
 
+	sprintf(dev_name, "%s%d", DEV_NAME, cpri_dev->dev_id);
 
 	cpri_dev->regs = of_iomap(np, 0);
 	if (!cpri_dev->regs) {
@@ -667,7 +670,7 @@ static int cpri_probe(struct platform_device *pdev)
 
 	/* Allocating dynamic major and minor nos for framer interface */
 	rc = alloc_chrdev_region(&devt, 0,
-			MAX_FRAMERS_PER_COMPLEX, DEV_NAME);
+			MAX_FRAMERS_PER_COMPLEX, dev_name);
 	if (rc < 0) {
 		dev_dbg(dev, "alloc_chrdev_region() failed\n");
 		goto err_chrdev;
@@ -755,7 +758,7 @@ static int cpri_probe(struct platform_device *pdev)
 			goto err_chrdev;
 		}
 		device_create(cpri_class, framer->cpri_dev->dev, framer->dev_t,
-			NULL, "%s%d", DEV_NAME, framer->id-1);
+			NULL, "%s_frmr%d", dev_name, framer->id-1);
 
 		raw_spin_lock_init(&framer->regs_lock);
 		raw_spin_lock_init(&framer->tx_cwt_lock);

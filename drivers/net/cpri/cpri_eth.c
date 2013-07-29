@@ -12,6 +12,7 @@
  */
 
 #include <linux/cpri.h>
+
 /*defines for using OCRAM for Medusa*/
 /*16KB used for CPRI*/
 #define OCRAM_CPRI_TOTAL_LEN (16 * 1024)
@@ -1656,7 +1657,8 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	ndev->watchdog_timeo = CPRI_ETH_TX_TIMEOUT;
 	ndev->mtu = CPRI_ETH_DEF_MTU;
 	ndev->netdev_ops = &cpri_eth_netdev_ops;
-	sprintf(ndev->name, "%s%d_eth", DEV_NAME, framer->id-1);
+	sprintf(ndev->name, "%s%d_eth%d", DEV_NAME, framer->cpri_dev->dev_id,
+			framer->id-1);
 	/* TODO: dev->ethtool_ops = &cpri_eth_ethtool_ops; */
 
 	ndev->features |= NETIF_F_HIGHDMA;

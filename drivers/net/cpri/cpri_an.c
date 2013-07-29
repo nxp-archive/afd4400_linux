@@ -34,8 +34,14 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 {
 	struct serdes_pll_params pll_param;
 	struct serdes_lane_params lane_param;
+	struct cpri_framer *pair_framer;
 	u32 line_rate[7] = {0, 1228800, 2457600, 3072000, 4915200,
 		6144000, 9830400};
+
+	if (framer->id == 1)
+		pair_framer = framer->cpri_dev->framer[1];
+	else
+		pair_framer = framer->cpri_dev->framer[0];
 
 	pll_param.pll_id = SERDES_PLL_1;
 	pll_param.rfclk_sel = REF_CLK_FREQ_122_88_MHZ;
@@ -46,10 +52,17 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 		pll_param.frate_sel = PLL_FREQ_4_9152_GHZ;
 		pll_param.vco_type = SERDES_LC_VCO;
 	}
-	if (serdes_init_pll(framer->serdes_handle, &pll_param))
-		return -EINVAL;
-	pll_param.pll_id = SERDES_PLL_2;
-	serdes_init_pll(framer->serdes_handle, &pll_param);
+	/* cpri hardware support common link rate for both framers
+	 * below logic will take care of if either of cpri framer is
+	 * up than next will follow first framer
+	 */
+	if (pair_framer->framer_state <
+			CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS) {
+		gcr_set_cpri_line_rate(framer->cpri_dev->dev_id, linerate);
+		gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
+		if (serdes_init_pll(framer->serdes_handle, &pll_param))
+			return -EINVAL;
+	}
 	lane_param.lane_id = framer->serdesspec.args[0];
 	lane_param.grp_prot = SERDES_PROT_CPRI;
 	lane_param.gen_conf.lane_prot = SERDES_LANE_PROTS_CPRI;
@@ -61,8 +74,6 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 
 	if (serdes_init_lane(framer->serdes_handle, &lane_param))
 		return -EINVAL;
-	gcr_set_cpri_line_rate(framer->cpri_dev->dev_id, linerate);
-	gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
 
 
 	return 0;
@@ -452,6 +463,7 @@ void update_bf_data(struct cpri_framer *framer)
 
 void cpri_setup_vendor_autoneg(struct cpri_framer *framer)
 {
+#if 0	/* need to test with control word testing */
 	enum cpri_prot_ver tx_prot_ver, rx_prot_ver;
 	struct device *dev = framer->cpri_dev->dev;
 
@@ -466,6 +478,7 @@ void cpri_setup_vendor_autoneg(struct cpri_framer *framer)
 		dev_err(dev, "cpri prot version mismatch\n");
 		return;
 	}
+#endif
 
 
 /* end here */
@@ -875,6 +888,9 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 
 	for (rate = high; rate >= low; rate--) {
 		dev_dbg(dev, "trying new link rate\n");
+		cpri_state_machine(framer,
+				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS);
+#if 0
 		/* Disable framer clock */
 		if (framer->id == 2)
 			cpri_reg_clear(
@@ -882,7 +898,6 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		else
 			cpri_reg_clear(
 				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
-#if 0
 		/* Init and set highest possible line rate for serdes only when
 		 *  the previous state is STANDBY & the framer config in
 		 *  SLAVE mode

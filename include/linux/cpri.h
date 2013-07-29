@@ -450,8 +450,10 @@ struct cpri_framer {
 	struct timer_list l1_timer;
 	/* misc */
 	unsigned char notification_state;
-	u32 rx_mblk_hardware_addr;
-	u32 tx_mblk_hardware_addr;
+	u32 rx_mblk_hardware_addr0;
+	u32 rx_mblk_hardware_addr1;
+	u32 tx_mblk_hardware_addr0;
+	u32 tx_mblk_hardware_addr1;
 };
 
 enum cpri_linerate {
