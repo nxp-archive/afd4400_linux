@@ -23,6 +23,8 @@
                 gpio2 = &gpioC;
                 gpio3 = &gpioD;
                 gpio4 = &gpioE;
+		ethernet0 = &enet0;
+		ethernet1 = &enet1;
         };
 
         cpus {
