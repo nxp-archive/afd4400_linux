@@ -636,11 +636,6 @@ static void jesd_init_gcr(struct jesd_transport_dev *tdev)
 	val = 0x00140000;
 	iowrite32(val, reg);
 
-	/* GCR75 -> 0xffffffff */
-	reg = (u32 *) (base_reg + GCR75);
-	val = 0xffffffff;
-	iowrite32(val, reg);
-
 	/* JESD TX1 -> VSPA 3 DMA 8*/
 	reg = (u32 *) (base_reg + GCR22);
 	val = JESDTX1_DMA_REQ_EN << JESDTX1_DMA_REQ_SHIFT;
