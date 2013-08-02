@@ -544,6 +544,8 @@ int jesd_setup_rx_transport(struct jesd_transport_dev *tdev)
 	mask = RX_DIS;
 	jesd_update_reg(reg, val, mask);
 
+	iowrite32(0, &tdev->rx_regs->rx_sync_ass_msk);
+
 	return rc;
 }
 
@@ -718,9 +720,6 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 
 	/* Makrk jesd link ready for sysref capture*/
 	jesd_marks_syref_capture_ready(tdev, 1);
-
-	if (tdev->type != JESD_DEV_TX)
-		enable_irq(tdev->irq);
 
 	return rc;
 out:
@@ -1035,12 +1034,6 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 			tdev->name, rc);
 		goto out;
 	}
-
-	/* XXX: JESD RX gives spurious IRQs. Disable the line
-	 * after we are done with SYSREF IRQ
-	 */
-	if (tdev->type != JESD_DEV_TX)
-		disable_irq_nosync(tdev->irq);
 
 	return rc;
 out:
@@ -1903,12 +1896,6 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 	mask = SYSREF_MASK;
 	jesd_update_reg(ctrl_reg, val, mask);
 
-	/* XXX: JESD RX gives spurious IRQs. Disable the line
-	 * after we are done with SYSREF IRQ
-	 */
-	if (tdev->type != JESD_DEV_TX)
-		disable_irq_nosync(tdev->irq);
-
 	val = ~IRQ_SYSREF_ROSE;
 	mask = IRQ_SYSREF_ROSE;
 	jesd_update_reg(irq_en_reg, val, mask);
@@ -2003,10 +1990,6 @@ static void jesd_rx_tasklet(unsigned long data)
 void jesd_deframer_isr(struct jesd_transport_dev *tdev)
 {
 	struct config_registers_rx *rx_regs = tdev->rx_regs;
-	u32 irq_mask;
-
-	irq_mask = ioread32(&rx_regs->rx_irq_ve_msk);
-	dev_info(tdev->dev, "%s: deframer irq %x\n", tdev->name, irq_mask);
 
 	if (ioread32(&rx_regs->rx_cgs)) {
 		dev_info(tdev->dev, "%s: code grp sync %x\n", tdev->name,
@@ -2031,11 +2014,6 @@ void jesd_deframer_isr(struct jesd_transport_dev *tdev)
 			ioread32(&rx_regs->rx_g_csum));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_g_csum);
 	}
-	/* XXX: Deframer IRQs are spurious, trying our best to stop them!
-	 * Disabling here again in hope that some day these interrupts will
-	 * stop!
-	 */
-	iowrite32(0, &rx_regs->rx_irq_ve_msk);
 }
 
 static irqreturn_t jesd_rx_isr(int irq, void *param)
