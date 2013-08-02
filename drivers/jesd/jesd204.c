@@ -1434,11 +1434,15 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 			rc = 0;
 		if (new_state == JESD_STATE_SYNC_FAILED)
 			rc = 0;
+		if (new_state == JESD_STATE_STOPPED)
+			rc = 0;
 		break;
 	case JESD_STATE_SYNC_FAILED:
 		if (new_state == JESD_STATE_CONFIGURED)
 			rc = 0;
 		if (new_state == JESD_STATE_ENABLED)
+			rc = 0;
+		if (new_state == JESD_STATE_STOPPED)
 			rc = 0;
 		break;
 	case JESD_STATE_READY:
