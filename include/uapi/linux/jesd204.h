@@ -13,11 +13,8 @@
 #ifndef JESD204_UAPI_H_	/* prevent circular inclusion */
 #define JESD204_UAPI_H_	/* by using protection macros */
 
-
-#define DATA_RATE_6144		6144000
-#define DATA_RATE_4915		4915200
-#define DATA_RATE_1228		1228800
-
+#define IQ_RATE_153M		153600
+#define IQ_RATE_122M		122880
 
 /** @brief the state for jesd204
  * a signle state determining enum
@@ -42,7 +39,6 @@ enum jesd_dev_type {
 	JESD_DEV_INVAL,
 };
 struct jesd_dev_params {
-	unsigned long data_rate;
 	__u8 delay;
 	__u32 config_flags;
 	__u32 lanes;
@@ -92,6 +88,7 @@ struct ils_params {
 	__u8 jesd_ver;
 	__u8 csum_lane_0;
 	__u8 csum_lane_1;
+	unsigned long data_rate;
 };
 /** @brief irq of mask
  */

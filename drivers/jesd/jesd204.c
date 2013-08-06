@@ -1003,14 +1003,13 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 		jdev->used_lanes++;
 	}
 
-	tdev->data_rate = trans_p->data_rate;
 	tdev->delay = trans_p->delay;
 	tdev->config_flags = trans_p->config_flags;
 	tdev->active_lanes = trans_p->lanes;
 	jesd_init_dev_flags(tdev, trans_p->config_flags);
 
-	dev_dbg(tdev->dev, "%s: data rate %d, dlay %x, flags %x, lanes %d\n",
-		tdev->name, tdev->data_rate, tdev->delay, tdev->config_flags,
+	dev_dbg(tdev->dev, "%s: dlay %x, flags %x, lanes %d\n",
+		tdev->name, tdev->delay, tdev->config_flags,
 		tdev->active_lanes);
 
 	if (tdev->type == JESD_DEV_TX) {
@@ -1248,7 +1247,7 @@ static int jesd_set_ils_pram(struct jesd_transport_dev *tdev)
 		goto out;
 
 	config_octets_per_frm(tdev);
-
+	tdev->data_rate = tdev->ils.data_rate;
 	rc = config_frames_per_mf(tdev);
 	if (rc < 0)
 		goto out;
@@ -1613,8 +1612,6 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 
 		memcpy(&trans_dev_info.ils, &tdev->ils,
 						sizeof(struct ils_params));
-		trans_dev_info.init_params.data_rate =
-						tdev->data_rate;
 		trans_dev_info.init_params.delay =
 						tdev->delay;
 		trans_dev_info.init_params.config_flags =
