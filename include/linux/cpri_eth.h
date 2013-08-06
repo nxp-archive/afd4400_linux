@@ -28,8 +28,12 @@
 #define BD_LFLAG_FSHIFT(flags) ((flags) << BD_FLAG_SHIFT)
 #define BD_LFLAG_LSHIFT(len) ((len << BD_LEN_SHIFT) & BD_LENGTH_MASK)
 /* needed for read ops */
-#define BD_LSTATUS_LSHIFT(len) ((len >> BD_LEN_SHIFT) & BD_LENGTH_MASK)
+#define BD_LSTATUS_LSHIFT(len) ((len >> BD_LEN_SHIFT) &\
+		(BD_LENGTH_MASK >> BD_LEN_SHIFT))
 #define BD_LSTATUS_SSHIFT(status) ((status) >> BD_FLAG_SHIFT)
+
+#define CPRI_ETH_NEXT_INDX(cur, rsize) \
+		((((cur)+1) >= (rsize)) ? 0 : ((cur)+1))
 
 struct cpri_eth_extra_stats {
 	unsigned long kernel_dropped;
@@ -113,12 +117,6 @@ struct cpri_eth_priv {
 	struct cpri_eth_extra_stats extra_stats;
 };
 
-#define CPRI_ETH_NEXT_BDE(cur, base, rsize) \
-		((((cur)+1) >= ((base)+(rsize))) ? (base) : ((cur)+1))
-
-#define CPRI_ETH_NEXT_INDX(cur, rsize) \
-		((((cur)+1) >= (rsize)) ? 0 : ((cur)+1))
-
 #define CPRI_ETH_BD_TO_LE(bd_le, bd) \
 do {\
 	(bd_le)->lstatus = be32_to_cpu((bd)->lstatus); \
@@ -147,8 +145,8 @@ do {\
 
 
 /* Defaults */
-#define CPRI_ETH_DEF_TX_RING_SIZE	8
-#define CPRI_ETH_DEF_RX_RING_SIZE	8
+#define CPRI_ETH_DEF_TX_RING_SIZE	254
+#define CPRI_ETH_DEF_RX_RING_SIZE	254
 #define CPRI_ETH_DEF_TX_START_THRESH	4
 #define CPRI_ETH_DEF_RX_BUF_SIZE	2816
 #define CPRI_ETH_DEF_MTU		1500
@@ -182,11 +180,10 @@ do {\
 #define CPRI_ETH_HW_CRC_CHECK		0x00020000
 #define CPRI_ETH_STORE_FWD		0x00040000
 
-#define CPRI_ETH_DEF_FLAGS (CPRI_ETH_HW_CRC_STRIP | \
-			CPRI_ETH_TRIG | CPRI_ETH_RX_PREAMBLE_ABORT | \
-			CPRI_ETH_BCAST | CPRI_ETH_MAC_CHECK | \
-			CPRI_ETH_LEN_CHECK | CPRI_ETH_HW_CRC_EN | \
-			CPRI_ETH_HW_CRC_CHECK)
+#define CPRI_ETH_DEF_FLAGS (CPRI_ETH_TRIG | CPRI_ETH_BCAST | \
+		CPRI_ETH_MCAST_FLT | CPRI_ETH_LEN_CHECK | \
+		CPRI_ETH_HW_CRC_EN | CPRI_ETH_HW_CRC_CHECK | \
+		CPRI_ETH_MAC_CHECK)
 
 /* Config Registers */
 /* CPRin_ETH_CONFIG_1 */

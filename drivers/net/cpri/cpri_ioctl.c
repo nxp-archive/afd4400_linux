@@ -591,6 +591,11 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 		break;
 
+	case CPRI_BD_DUMP:
+		bd_dump(framer->eth_priv->ndev);
+
+		break;
+
 	case CPRI_SET_STATE:
 		if (copy_from_user(&framer_state,
 				(enum cpri_state *)ioargp,

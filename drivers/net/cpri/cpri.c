@@ -118,7 +118,7 @@ void framer_int_enable(struct cpri_framer *framer)
 {
 	u32 val = 0;
 
-	val = ETH_EVENT_EN_MASK  | TIMING_INT_LEVEL_MASK;
+	val = ETH_EVENT_EN_MASK  | CONTROL_INT_LEVEL_MASK;
 
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_rctrltiminginten,
@@ -126,9 +126,12 @@ void framer_int_enable(struct cpri_framer *framer)
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_tctrltiminginten,
 			MASK_ALL, val);
+
 	val = (RX_IQ_OVERRUN | TX_IQ_UNDERRUN |
 		TX_VSS_UNDERRUN | RX_VSS_OVERRUN |
-		ECC_CONFIG_MEM | ECC_DATA_MEM);
+		ECC_CONFIG_MEM | ECC_DATA_MEM | RX_ETH_MEM_OVERRUN |
+		TX_ETH_UNDERRUN | RX_ETH_BD_UNDERRUN | RX_ETH_DMA_OVERRUN |
+		ETH_FORWARD_REM_FIFO_FULL);
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_errinten, MASK_ALL, val);
 }
@@ -139,9 +142,8 @@ static void cpri_interrupt_enable(struct cpri_dev *cpdev)
 	int loop = 0;
 	u32 val;
 	for (loop = 1; loop < CPRI_INT_COUNT; loop++) {
-		val = 0;
 		val = (((loop - 1) << 28) | LEVEL_MASK |
-				IEVENT_IQ_THRESHOLD_EN_MASK);
+			IEVENT_IQ_THRESHOLD_EN_MASK | IEVENT_ETH_EN_MASK);
 		cpri_reg_write(&cpdev->lock,
 				&cpdev->regs->cpri_intctrl[loop],
 				MASK_ALL, val);
@@ -196,10 +198,8 @@ static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)cookie;
 	u32 events;
-	u32 mask = 0;
 
-	mask = IEVENT_ETH_MASK | IEVENT_VSS_THRESHOLD_MASK;
-	events = cpri_reg_get_val(&framer->regs->cpri_tevent, mask);
+	events = cpri_reg_get_val(&framer->regs->cpri_tevent, MASK_ALL);
 
 	/* Handle tx ethernet event - Called function will disable the
 	 * the interrupt and schedules for bottom half. Interrupt will
@@ -221,11 +221,8 @@ static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)cookie;
 	u32 events;
-	u32 mask = 0;
 
-	mask = IEVENT_ETH_MASK | IEVENT_VSS_THRESHOLD_MASK |
-		IEVENT_IQ_THRESHOLD_MASK;
-	events = cpri_reg_get_val(&framer->regs->cpri_revent, mask);
+	events = cpri_reg_get_val(&framer->regs->cpri_revent, MASK_ALL);
 
 	/* Handle rx ethernet event - Called function will disable the
 	 * the interrupt and schedules for bottom half. Interrupt will

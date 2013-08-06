@@ -247,17 +247,17 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 			framer->tx_mblk_hardware_addr1;
 	mblk_info.tx_mblk_size[0] = property[1];
 	mblk_info.tx_mblk_size[1] = property[3];
-	dev_info(dev, "cpri_axc: memblk info-----\n");
-	dev_info(dev, "cpri_axc:Rx addr0: 0x%x size0: %d\n",
+	dev_dbg(dev, "cpri_axc: memblk info-----\n");
+	dev_dbg(dev, "cpri_axc:Rx addr0: 0x%x size0: %d\n",
 			mblk_info.rx_mblk_addr[0],
 			mblk_info.rx_mblk_size[0]);
-	dev_info(dev, "cpri_axc:Rx addr1: 0x%x size1: %d\n",
+	dev_dbg(dev, "cpri_axc:Rx addr1: 0x%x size1: %d\n",
 			mblk_info.rx_mblk_addr[1],
 			mblk_info.rx_mblk_size[1]);
-	dev_info(dev, "cpri_axc:Tx addr0: 0x%x size0: %d\n",
+	dev_dbg(dev, "cpri_axc:Tx addr0: 0x%x size0: %d\n",
 			mblk_info.tx_mblk_addr[0],
 			mblk_info.tx_mblk_size[0]);
-	dev_info(dev, "cpri_axc:Tx addr1: 0x%x size1: %d\n",
+	dev_dbg(dev, "cpri_axc:Tx addr1: 0x%x size1: %d\n",
 			mblk_info.tx_mblk_addr[1],
 			mblk_info.tx_mblk_size[1]);
 	ret = of_property_read_u32(child, "max-axcs", property);
@@ -267,7 +267,7 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 		goto mem_err;
 	}
 	framer->framer_param.max_axc_count = property[0];
-	dev_info(dev, "cpri_axc maximum axc count: %d\n",
+	dev_dbg(dev, "cpri_axc maximum axc count: %d\n",
 			framer->framer_param.max_axc_count);
 
 

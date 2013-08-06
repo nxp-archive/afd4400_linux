@@ -913,6 +913,7 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child);
 void axc_buf_cleanup(struct cpri_framer *framer);
 int populate_segment_table_data(struct cpri_framer *framer);
 void cleanup_segment_table_data(struct cpri_framer *framer);
+void bd_dump(struct net_device *ndev);
 void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state);
 int cpri_state_validation(enum cpri_state present_state,
 		enum cpri_state new_state);

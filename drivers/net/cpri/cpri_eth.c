@@ -13,81 +13,47 @@
 
 #include <linux/cpri.h>
 
-/*defines for using OCRAM for Medusa*/
-/*16KB used for CPRI*/
-#define OCRAM_CPRI_TOTAL_LEN (16 * 1024)
 
-#define OCRAM_CPRI_BD_LEN 512
-
-#define MEDUSA_TOTAL_TX_BUFF 4
-#define MEDUSA_TOTAL_RX_BUFF 5
-
-#define OCRAM_CPRI_TX_LEN (MEDUSA_TOTAL_TX_BUFF *\
-		(CPRI_ETH_DEF_RX_BUF_SIZE + CPRI_ETH_RXBUF_ALIGNMENT))
-
-#define OCRAM_CPRI_RX_LEN (MEDUSA_TOTAL_RX_BUFF *\
-		(CPRI_ETH_DEF_RX_BUF_SIZE + CPRI_ETH_RXBUF_ALIGNMENT))
-
-#define OCRAM_CPRI_BD_MEM 0x0d100000
-#define OCRAM_MEM_OFFSET_FPGA 0x0c000000
-
-#define OCRAM_CPRI_TX_MEM (OCRAM_CPRI_BD_MEM + OCRAM_CPRI_BD_LEN)
-#define OCRAM_CPRI_RX_MEM (OCRAM_CPRI_TX_MEM + OCRAM_CPRI_TX_LEN)
-
-/*OCRAM Tx/Rx buffer housekeeping*/
-struct cpri_ocram {
-	unsigned int status;
-	unsigned int ocram_ptr;
-};
-
-struct rxtxmem {
-	struct cpri_ocram tx_mem_ocram[MEDUSA_TOTAL_TX_BUFF];
-	struct cpri_ocram rx_mem_ocram[MEDUSA_TOTAL_RX_BUFF];
-};
-
-struct rxtxmem cpri_rtxm;
-
-enum {
-	OCRAM_BUF_FREE = 0,
-	OCRAM_BUF_ALLOCATED
-};
-
-unsigned int cpri_ocram_vaddr;
-
-/*mem copy to ocram: ensuring 32BIT access always*/
-void *cpri_memcpy_ocram(void *dst, void *src, unsigned int size)
+struct cpri_eth_bd_entity *cpri_eth_next_bde(struct cpri_eth_bd_entity *cur,
+		struct cpri_eth_bd_entity *base, unsigned char rsize)
 {
-	int *temp_dst = dst;
-	int *temp_src = src;
-
-	if (0 == (size%4))
-		size = size/4;
-	else
-		size = (size + 4)/4;
-
-	while (size--)
-		*temp_dst++ = *temp_src++;
-	return dst;
+	return (((cur + 1) >= (base + rsize)) ? base : (cur + 1));
 }
 
-static void cpri_mem_sync(void)
+void bd_dump(struct net_device *ndev)
 {
-	asm("dmb");
-	asm("dsb");
-}
+	void *vaddr;
+	int i;
+	struct cpri_eth_bd_entity *bd_ptr;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_eth_tx_bd *tx_bd = priv->tx_bd;
+	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
+	struct device *dev = priv->framer->cpri_dev->dev;
 
-int cpri_free_ocram_bd(int buff_ptr)
-{
-	int tx_cnt;
-
-	for (tx_cnt = 0; tx_cnt < MEDUSA_TOTAL_TX_BUFF; tx_cnt++) {
-		if ((buff_ptr + OCRAM_MEM_OFFSET_FPGA) ==
-				cpri_rtxm.tx_mem_ocram[tx_cnt].ocram_ptr) {
-			cpri_rtxm.tx_mem_ocram[tx_cnt].status = OCRAM_BUF_FREE;
-			return 0;
-		}
+	vaddr = tx_bd->tx_bd_base;
+	if (vaddr == 0) {
+		dev_err(dev, "tx_bd resourses null--");
+		return;
 	}
-	return -1;
+	bd_ptr = rx_bd->rx_bd_base;
+	for (i = 0; i < rx_bd->rx_bd_ring_size; i++) {
+		if (bd_ptr != NULL)
+			dev_dbg(dev, "rx[%d] bdp: %p, lsts: 0x%x, bfptr: 0x%x",
+				i, bd_ptr, bd_ptr->lstatus,
+				bd_ptr->buf_ptr);
+		bd_ptr++;
+	}
+
+	bd_ptr = tx_bd->tx_bd_base;
+	for (i = 0; i < tx_bd->tx_bd_ring_size; i++) {
+		if (bd_ptr != NULL)
+			dev_dbg(dev, "tx[%d] bdp: %p, lsts: 0x%x, bfptr: 0x%x",
+				i, bd_ptr, bd_ptr->lstatus,
+				bd_ptr->buf_ptr);
+		bd_ptr++;
+	}
+
+
 }
 
 static int cpri_eth_init_bd_regs(struct net_device *ndev)
@@ -110,25 +76,15 @@ static int cpri_eth_init_bd_regs(struct net_device *ndev)
 		CPRI_ETH_RX_BD_RING_SZ_MASK, CPRI_ETH_DEF_RX_RING_SIZE);
 
 	/* Ring Base address */
-	if (priv->framer->cpri_dev->dev_flags & CPRI_MEDUSA_OCRAM)
-		cpri_reg_set_val(&regs->cpri_tethbdringbaddr,
-			CPRI_ETH_TX_BD_RING_BASE_MASK,
-			(tx_bd->tx_bd_dma_base - OCRAM_MEM_OFFSET_FPGA));
-	else
-		cpri_reg_set_val(&regs->cpri_tethbdringbaddr,
-			CPRI_ETH_TX_BD_RING_BASE_MASK, tx_bd->tx_bd_dma_base);
+	cpri_reg_set_val(&regs->cpri_tethbdringbaddr,
+		CPRI_ETH_TX_BD_RING_BASE_MASK, tx_bd->tx_bd_dma_base);
 
 	cpri_reg_clear(&regs->cpri_tethbdringbaddrmsb,
 		CPRI_ETH_TX_BD_RING_BASE_MSB_MASK);
 
-	if (priv->framer->cpri_dev->dev_flags & CPRI_MEDUSA_OCRAM)
-		cpri_reg_set_val(&regs->cpri_rethbdringbaddr,
-			CPRI_ETH_RX_BD_RING_BASE_MASK,
-			(rx_bd->rx_bd_dma_base - OCRAM_MEM_OFFSET_FPGA));
-	else
-		cpri_reg_set_val(&regs->cpri_rethbdringbaddr,
-			CPRI_ETH_RX_BD_RING_BASE_MASK,
-			rx_bd->rx_bd_dma_base);
+	cpri_reg_set_val(&regs->cpri_rethbdringbaddr,
+		CPRI_ETH_RX_BD_RING_BASE_MASK,
+		rx_bd->rx_bd_dma_base);
 
 	cpri_reg_clear(&regs->cpri_rethbdringbaddrmsb,
 		CPRI_ETH_RX_BD_RING_BASE_MSB_MASK);
@@ -231,7 +187,6 @@ static void cpri_eth_free_rx_skbs(struct net_device *ndev, int limit)
 
 	return;
 }
-
 static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
 		struct cpri_eth_bd_entity *bdp,
 			    dma_addr_t buf, unsigned int bd_index)
@@ -239,19 +194,19 @@ static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
 	struct net_device *ndev = rx_bd->ndev;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_framer *framer = priv->framer;
-	struct cpri_eth_bd_entity txbde_le;
+	struct cpri_eth_bd_entity rxbde_le;
 	struct cpri_reg_data data[1];
 	unsigned int bd_nxtindex;
 
-	txbde_le.buf_ptr = buf;
-	txbde_le.lstatus = BD_LFLAG_FSHIFT(CPRI_ETH_BD_RX_EMPTY);
-	CPRI_ETH_BD_TO_BE(bdp, &txbde_le); /* b-endian */
+	rxbde_le.buf_ptr = buf;
+	rxbde_le.lstatus = BD_LFLAG_FSHIFT(CPRI_ETH_BD_RX_EMPTY);
+	CPRI_ETH_BD_TO_BE(bdp, &rxbde_le); /* b-endian */
 	bd_nxtindex = CPRI_ETH_NEXT_INDX(bd_index, CPRI_ETH_DEF_RX_RING_SIZE);
 	data[0].val = bd_nxtindex;
 	data[0].mask = CPRI_ETH_RX_BD_R_PTR_MASK;
-	if (!data[0].val) {
+	if ((!data[0].val)) {
 		/* also set the wrap bit */
-		data[0].val = CPRI_ETH_RX_BD_W_PTR_WRAP_MASK;
+		data[0].val |= CPRI_ETH_RX_BD_W_PTR_WRAP_MASK;
 	}
 
 
@@ -269,20 +224,10 @@ static void cpri_new_rxbdp(struct cpri_eth_rx_bd *rx_bd,
 	static int i;
 	dma_addr_t buf;
 
-	if (priv->framer->cpri_dev->dev_flags & CPRI_MEDUSA_OCRAM) {
-		cpri_init_rxbdp(rx_bd, bdp,
-			(OCRAM_CPRI_RX_MEM +
-			(i % MEDUSA_TOTAL_RX_BUFF)*
-			(priv->rx_buffer_size) -
-			OCRAM_MEM_OFFSET_FPGA), i);
-		i++;
-	} else {
-		buf = dma_map_single(&priv->ofdev->dev, skb->data,
-				priv->rx_buffer_size, DMA_FROM_DEVICE);
-		cpri_init_rxbdp(rx_bd, bdp, buf, i);
-		i++;
-	}
-
+	buf = dma_map_single(&priv->ofdev->dev, skb->data,
+			priv->rx_buffer_size, DMA_FROM_DEVICE);
+	cpri_init_rxbdp(rx_bd, bdp, buf, i);
+	i++;
 }
 
 static int cpri_eth_init_rx_skbs(struct cpri_eth_rx_bd *rx_bd)
@@ -327,23 +272,15 @@ static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
 
 
 	/* Allocate memory for the buffer descriptors */
-	if (priv->framer->cpri_dev->dev_flags & CPRI_D4400) {
-		vaddr = dma_alloc_coherent(&priv->ofdev->dev,
-				dma_alloc_size + CPRI_ETH_BD_RING_ALIGN,
-				&addr, GFP_KERNEL);
-		if (!vaddr) {
-			netdev_err(ndev, "Could not allocate bd's!\n");
-			return -ENOMEM;
-		}
-		memset(vaddr, 0, dma_alloc_size);
-	} else {
-
-		/*Allocate memory from OCRAM*/
-		/*Do FIXED allocation as landshark is not available for kernel*/
-		vaddr = ioremap(OCRAM_CPRI_BD_MEM, OCRAM_CPRI_TOTAL_LEN);
-		addr = OCRAM_CPRI_BD_MEM;
-		cpri_ocram_vaddr = (int)vaddr;
+	vaddr = dma_alloc_coherent(&priv->ofdev->dev,
+			dma_alloc_size + CPRI_ETH_BD_RING_ALIGN,
+			&addr, GFP_KERNEL);
+	if (!vaddr) {
+		netdev_err(ndev, "Could not allocate bd's!\n");
+		return -ENOMEM;
 	}
+	memset(vaddr, 0, dma_alloc_size);
+
 
 	/* Store the aligned pointers */
 	priv->addr = addr;
@@ -456,12 +393,9 @@ static void cpri_eth_free_skb_resources(struct net_device *ndev)
 				(sizeof(struct cpri_eth_bd_entity) *
 				tx_bd->tx_bd_ring_size);
 
-	if (priv->framer->cpri_dev->dev_flags & CPRI_MEDUSA_OCRAM)
-		iounmap((void *)cpri_ocram_vaddr);
-	else
-		dma_free_coherent(&priv->ofdev->dev,
-				dma_alloc_size + CPRI_ETH_BD_RING_ALIGN,
-				priv->vaddr, priv->addr);
+	dma_free_coherent(&priv->ofdev->dev,
+			dma_alloc_size + CPRI_ETH_BD_RING_ALIGN,
+			priv->vaddr, priv->addr);
 
 
 	tx_bd->tx_bd_base = 0;
@@ -681,37 +615,11 @@ static int cpri_eth_xmit(struct sk_buff *skb, struct net_device *ndev)
 	struct cpri_eth_bd_entity *txbde;
 	struct cpri_eth_bd_entity txbde_le;
 	struct cpri_eth_bd_entity *base = tx_bd->tx_bd_base;
-	unsigned int tx_bd_cnt = 0, tx_bd_free = 0, num_free_tx_bd = 0;
 	struct device *dev = priv->framer->cpri_dev->dev;
+	int loop;
 
 	raw_spin_lock_irqsave(&tx_bd->txlock, flags);
 
-	if (framer->cpri_dev->dev_flags & CPRI_MEDUSA_OCRAM) {
-		/* Stop Tx if OCRAM MEM is allocated */
-		/* In Medusa only MEDUSA_TOTAL_TX_BUFF Tx BD is available
-		 * verify that if none is free fail gracefully
-		 */
-		for (tx_bd_cnt = 0; tx_bd_cnt < MEDUSA_TOTAL_TX_BUFF;
-				tx_bd_cnt++) {
-			if (OCRAM_BUF_ALLOCATED !=
-				cpri_rtxm.tx_mem_ocram[tx_bd_cnt].status) {
-				if (0 == num_free_tx_bd)
-					tx_bd_free = tx_bd_cnt;
-				num_free_tx_bd++;
-			}
-		}
-		if (0 == num_free_tx_bd) {
-			netif_stop_queue(ndev);
-			cpri_eth_stats_incr(ndev, &priv->stats.tx_fifo_errors);
-			cpri_eth_stats_incr(ndev, &priv->stats.tx_dropped);
-			raw_spin_unlock_irqrestore(&tx_bd->txlock, flags);
-			dev_err(dev, "cpri No free tx bd's!!\n");
-			return NETDEV_TX_BUSY;
-
-		} else {
-			/*Free buffer available at location tx_bd_free*/
-		}
-	}
 	/* check if there is space to queue this packet */
 	if (!tx_bd->num_txbdfree) {
 		/* no space, stop the queue */
@@ -728,31 +636,19 @@ static int cpri_eth_xmit(struct sk_buff *skb, struct net_device *ndev)
 	cpri_eth_stats_incr(ndev, &priv->stats.tx_packets);
 
 	/* update the descriptor */
-	if (framer->cpri_dev->dev_flags & CPRI_MEDUSA_OCRAM) {
-		/*Copy buffer to OCRAM address*/
-		txbde_le.lstatus = 0;
-		txbde_le.lstatus |= BD_LFLAG_LSHIFT(skb_headlen(skb));
 
-		cpri_rtxm.tx_mem_ocram[tx_bd_free].status = OCRAM_BUF_ALLOCATED;
-		cpri_rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr =
-			(OCRAM_CPRI_TX_MEM + tx_bd_free *
-			(CPRI_ETH_DEF_RX_BUF_SIZE + CPRI_ETH_RXBUF_ALIGNMENT));
-
-		cpri_memcpy_ocram((int *)(cpri_ocram_vaddr
-				+ (cpri_rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr
-				- OCRAM_CPRI_BD_MEM)), skb->data,
-				skb_headlen(skb));
-		cpri_mem_sync();
-		txbde_le.buf_ptr = cpri_rtxm.tx_mem_ocram[tx_bd_free].ocram_ptr
-			- OCRAM_MEM_OFFSET_FPGA;
-		txbde_le.lstatus |= BD_LFLAG_FSHIFT(CPRI_ETH_BD_TX_READY);
-		tx_bd_free++;
-	} else {
-		txbde_le.lstatus = 0;
-		txbde_le.lstatus |= BD_LFLAG_LSHIFT(skb_headlen(skb));
-		txbde_le.buf_ptr = dma_map_single(&priv->ofdev->dev, skb->data,
-				skb_headlen(skb), DMA_TO_DEVICE);
-		txbde_le.lstatus |= BD_LFLAG_FSHIFT(CPRI_ETH_BD_TX_READY);
+	txbde_le.lstatus = 0;
+	txbde_le.lstatus |= BD_LFLAG_LSHIFT(skb_headlen(skb));
+	txbde_le.buf_ptr = dma_map_single(&priv->ofdev->dev, skb->data,
+			skb_headlen(skb), DMA_TO_DEVICE);
+	txbde_le.lstatus |= BD_LFLAG_FSHIFT(CPRI_ETH_BD_TX_READY);
+	dev_dbg(dev, "transmitted ethernet lstatus: 0x%x, len: %d\n",
+			txbde_le.lstatus, skb_headlen(skb));
+	for (loop = 0; loop < skb_headlen(skb); loop++) {
+		if (!(loop % 8))
+			dev_dbg(dev, "0x%x  ", *((skb->data + loop)));
+		else
+			dev_dbg(dev, "0x%x\n", *((skb->data + loop)));
 	}
 
 
@@ -765,12 +661,13 @@ static int cpri_eth_xmit(struct sk_buff *skb, struct net_device *ndev)
 
 	wmb();
 
+
 	tx_bd->tx_skbuff[tx_bd->skb_curtx] = skb;
 
 	tx_bd->skb_curtx =
 		CPRI_ETH_NEXT_INDX(tx_bd->skb_curtx, CPRI_ETH_DEF_TX_RING_SIZE);
 	tx_bd->tx_bd_current =
-		CPRI_ETH_NEXT_BDE(txbde, base, tx_bd->tx_bd_ring_size);
+		cpri_eth_next_bde(txbde, base, tx_bd->tx_bd_ring_size);
 
 	(tx_bd->num_txbdfree)--;
 
@@ -831,91 +728,86 @@ static int cpri_eth_config(struct net_device *ndev, unsigned int flags)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_framer *framer = priv->framer;
 
-	unsigned changed = priv->flags ^ flags;
-
-	if (changed & CPRI_ETH_HW_CRC_STRIP) {
+	priv->flags |= flags;
+	/* TBD : stripping/MAC-Addr/MAC-Check/Multi cast */
+#if 0
+	if (flags & CPRI_ETH_HW_CRC_STRIP)
 		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
 			CPRI_ETH_HW_CRC_STRIP, CPRI_ETH_HW_CRC_STRIP_MASK);
-
-	} else if (changed & CPRI_ETH_MAC_FAIL_PASS) {
+	if (flags & CPRI_ETH_MAC_FAIL_PASS)
 		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
 			CPRI_ETH_MAC_FAIL_PASS, CPRI_ETH_MAC_FAIL_PASS_MASK);
-
-	} else if (changed & CPRI_ETH_TRIG_TX_ABORT) {
+	if (flags & CPRI_ETH_MAC_CHECK)
 		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_TRIG_TX_ABORT, CPRI_ETH_TRIG_TX_ABORT_MASK);
-
-	} else if (changed & CPRI_ETH_TRIG_TX_READY) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_TRIG_TX_READY, CPRI_ETH_TRIG_TX_RDY_MASK);
-
-	} else if (changed & CPRI_ETH_TRIG_RX_ABORT) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_TRIG_RX_ABORT, CPRI_ETH_TRIG_RX_ABORT_MASK);
-
-	} else if (changed & CPRI_ETH_TRIG_RX_READY) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_TRIG_RX_READY, CPRI_ETH_TRIG_RX_RDY_MASK);
-
-	} else if (changed & CPRI_ETH_TRIG_TX) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_TRIG_TX, CPRI_ETH_TRIG_TX_MASK);
-
-	} else if (changed & CPRI_ETH_TRIG_RX) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_TRIG_RX, CPRI_ETH_TRIG_RX_MASK);
-
-	} else if (changed & CPRI_ETH_LONG_FRAME) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_LONG_FRAME, CPRI_ETH_LONG_FRAME_MASK);
-
-	} else if (changed & CPRI_ETH_RX_PREAMBLE_ABORT) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_RX_PREAMBLE_ABORT, CPRI_ETH_RX_PR_ABORT_MASK);
-
-	} else if (changed & CPRI_ETH_BCAST) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_BCAST, CPRI_ETH_BCAST_MASK);
-
-	} else if (changed & CPRI_ETH_MCAST_FLT) {
+			CPRI_ETH_MAC_CHECK, CPRI_ETH_MAC_CHECK_MASK);
+	if (flags & CPRI_ETH_MCAST_FLT)
 		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
 			CPRI_ETH_MCAST_FLT, CPRI_ETH_MCAST_FLT_MASK);
 
-	} else if (changed & CPRI_ETH_MAC_CHECK) {
+#endif
+	if (flags & CPRI_ETH_TRIG_TX_ABORT)
 		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_MAC_CHECK, CPRI_ETH_MAC_CHECK_MASK);
+			CPRI_ETH_TRIG_TX_ABORT, CPRI_ETH_TRIG_TX_ABORT_MASK);
 
-	} else if (changed & CPRI_ETH_LEN_CHECK) {
+	if (flags & CPRI_ETH_TRIG_RX_ABORT)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_TRIG_RX_ABORT, CPRI_ETH_TRIG_RX_ABORT_MASK);
+
+	if (flags & CPRI_ETH_TRIG_TX_READY)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_TRIG_TX_READY, CPRI_ETH_TRIG_TX_RDY_MASK);
+
+
+	if (flags & CPRI_ETH_TRIG_RX_READY)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_TRIG_RX_READY, CPRI_ETH_TRIG_RX_RDY_MASK);
+
+	if (flags & CPRI_ETH_TRIG_TX)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_TRIG_TX, CPRI_ETH_TRIG_TX_MASK);
+
+	if (flags & CPRI_ETH_GLOBAL_TRIG)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_GLOBAL_TRIG, CPRI_ETH_TRIG_RX_MASK);
+
+	if (flags & CPRI_ETH_TRIG_RX)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_TRIG_RX, CPRI_ETH_GLOBAL_TRIG_MASK);
+
+	if (flags & CPRI_ETH_LONG_FRAME)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_LONG_FRAME, CPRI_ETH_LONG_FRAME_MASK);
+
+	if (flags & CPRI_ETH_RX_PREAMBLE_ABORT)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_RX_PREAMBLE_ABORT, CPRI_ETH_RX_PR_ABORT_MASK);
+
+	if (flags & CPRI_ETH_BCAST)
+		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
+			CPRI_ETH_BCAST, CPRI_ETH_BCAST_MASK);
+
+	if (flags & CPRI_ETH_LEN_CHECK)
 		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
 			CPRI_ETH_LEN_CHECK, CPRI_ETH_LEN_CHECK_MASK);
 
-	} else if (changed & CPRI_ETH_LITTLE_END) {
-		cpri_eth_config_update(ndev, &framer->regs->cpri_ethcfg1, flags,
-			CPRI_ETH_LITTLE_END, CPRI_ETH_LITTLE_END_MASK);
-
-	} else if (changed & CPRI_ETH_HW_CRC_EN) {
 		/* For TX, We support on HW generated FCS for now! */
-		if (flags & CPRI_ETH_HW_CRC_EN) {
-			cpri_eth_config_update(ndev,
-				&framer->regs->cpri_ethcfg2,
-				flags, CPRI_ETH_HW_CRC_EN,
-				CPRI_ETH_HW_CRC_EN_MASK);
-		}
+	if (flags & CPRI_ETH_HW_CRC_EN)
+		cpri_eth_config_update(ndev,
+			&framer->regs->cpri_ethcfg2,
+			flags, CPRI_ETH_HW_CRC_EN,
+			CPRI_ETH_HW_CRC_EN_MASK);
 
-	} else if (changed & CPRI_ETH_HW_CRC_CHECK) {
+	if (flags & CPRI_ETH_HW_CRC_CHECK)
 		cpri_eth_config_update(ndev,
 				&framer->regs->cpri_ethcfg3, flags,
 				CPRI_ETH_HW_CRC_CHECK,
 				CPRI_ETH_HW_CRC_CHECK_MASK);
 
-	} else {
-		if (changed & CPRI_ETH_STORE_FWD) {
-			cpri_eth_config_update(ndev,
-					&framer->regs->cpri_ethcfg3,
-					flags, CPRI_ETH_STORE_FWD,
-					CPRI_ETH_STORE_FWD_MASK);
-		}
-	}
+	if (flags & CPRI_ETH_STORE_FWD)
+		cpri_eth_config_update(ndev,
+				&framer->regs->cpri_ethcfg3,
+				flags, CPRI_ETH_STORE_FWD,
+				CPRI_ETH_STORE_FWD_MASK);
 
 	return 0;
 }
@@ -931,6 +823,7 @@ static int cpri_eth_set_features(struct net_device *ndev,
 
 	ndev->features = features;
 
+	/* crc stripping need to be debugged with hardware */
 	if (changed & NETIF_F_RXFCS) {
 		if (features & NETIF_F_RXFCS) {
 			cpri_eth_config(ndev,
@@ -1000,6 +893,7 @@ static void cpri_eth_set_rx_mode(struct net_device *ndev)
 {
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_framer *framer = priv->framer;
+	u32 val;
 
 	if (ndev->flags & IFF_PROMISC)
 		cpri_eth_config(ndev, priv->flags | CPRI_ETH_MAC_CHECK);
@@ -1021,8 +915,17 @@ static void cpri_eth_set_rx_mode(struct net_device *ndev)
 
 		/* We need to enable specific multicast filters */
 		cpri_eth_set_mcast_hash(ndev);
-
 		cpri_eth_config(ndev, priv->flags | CPRI_ETH_MCAST_FLT);
+		cpri_eth_config(ndev, priv->flags & CPRI_ETH_TRIG_TX_READY);
+		cpri_eth_config(ndev, priv->flags & CPRI_ETH_TRIG_RX_READY);
+		cpri_eth_config(ndev, priv->flags & CPRI_ETH_TRIG_RX);
+		cpri_eth_config(ndev, priv->flags & CPRI_ETH_TRIG_TX);
+		val = (CPRI_ETH_TRIG_TX_ABORT_MASK | CPRI_ETH_TRIG_TX_RDY_MASK |
+			CPRI_ETH_TRIG_RX_RDY_MASK | CPRI_ETH_TRIG_TX_MASK |
+			CPRI_ETH_TRIG_RX_MASK);
+		cpri_reg_write(&framer->regs_lock,
+				&framer->regs->cpri_ethcfg1,
+				val, val);
 	}
 	return;
 }
@@ -1127,10 +1030,8 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 	struct cpri_eth_tx_bd *tx_bd = priv->tx_bd;
 	int tx_ring_size = tx_bd->tx_bd_ring_size;
 	struct net_device *ndev = priv->ndev;
-	struct cpri_framer *framer = priv->framer;
 
 	raw_spin_lock_irqsave(&tx_bd->txlock, flags);
-
 	base = tx_bd->tx_bd_base;
 	txbde = tx_bd->tx_bd_dirty;
 	skb_dirtytx = tx_bd->skb_dirtytx;
@@ -1139,7 +1040,6 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 	cpri_reg_get_val(&framer->regs->cpri_tethrdptrring,
 		CPRI_ETH_TX_BD_R_PTR_MASK, &val);
 	*/
-
 	while (txbde != tx_bd->tx_bd_current) {
 
 		CPRI_ETH_BD_TO_LE(&txbde_le, txbde);/* passing b-endian */
@@ -1150,11 +1050,8 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 
 		skb = tx_bd->tx_skbuff[skb_dirtytx];
 
-		if (framer->cpri_dev->dev_flags & CPRI_MEDUSA_OCRAM)
-			cpri_free_ocram_bd(txbde_le.buf_ptr);
-		else
-			dma_unmap_single(&priv->ofdev->dev, txbde_le.buf_ptr,
-				skb_headlen(skb), DMA_TO_DEVICE);
+		dma_unmap_single(&priv->ofdev->dev, txbde_le.buf_ptr,
+			skb_headlen(skb), DMA_TO_DEVICE);
 
 		bytes_sent += skb->len;
 
@@ -1163,7 +1060,7 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 		txbde->buf_ptr = 0;
 		txbde->lstatus = 0;
 
-		txbde = CPRI_ETH_NEXT_BDE(txbde, base, tx_ring_size);
+		txbde = cpri_eth_next_bde(txbde, base, tx_ring_size);
 
 		skb_dirtytx = CPRI_ETH_NEXT_INDX(skb_dirtytx,
 					CPRI_ETH_DEF_TX_RING_SIZE);
@@ -1183,7 +1080,6 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 	raw_spin_unlock_irqrestore(&tx_bd->txlock, flags);
 
 	netdev_completed_queue(ndev, howmany, bytes_sent);
-
 	cpri_eth_tx_resume(ndev);
 
 	return;
@@ -1191,9 +1087,6 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 
 int cpri_eth_handle_tx(struct cpri_framer *framer)
 {
-	struct cpri_eth_priv *priv = framer->eth_priv;
-
-	cpri_eth_tx_halt(priv->ndev);
 
 	tasklet_schedule(&framer->eth_priv->tasklet);
 
@@ -1247,11 +1140,11 @@ static int cpri_eth_rx_pkt_error(struct net_device *ndev,
 
 	CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
 
-	if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) && CPRI_ETH_BD_RX_CRC)
+	if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) & CPRI_ETH_BD_RX_CRC)
 		cpri_eth_stats_incr(ndev, &priv->stats.rx_crc_errors);
-	else if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) && CPRI_ETH_BD_RX_PLE)
+	else if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) & CPRI_ETH_BD_RX_PLE)
 		cpri_eth_stats_incr(ndev, &priv->stats.rx_length_errors);
-	else if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) && CPRI_ETH_BD_RX_BOF)
+	else if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) & CPRI_ETH_BD_RX_BOF)
 			cpri_eth_stats_incr(ndev, &priv->stats.rx_over_errors);
 
 	/* Re use the same skb and DMA mapping */
@@ -1268,7 +1161,8 @@ static int cpri_eth_rx_pkt(struct net_device *ndev, unsigned int skb_currx)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
 	struct cpri_eth_bd_entity *rxbde, rxbde_le;
-	int bf_ptr;
+	int loop;
+	struct device *dev = priv->framer->cpri_dev->dev;
 
 	memset(&rxbde_le, 0, sizeof(struct cpri_eth_bd_entity));
 
@@ -1277,16 +1171,8 @@ static int cpri_eth_rx_pkt(struct net_device *ndev, unsigned int skb_currx)
 
 	CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
 	pkt_len = BD_LSTATUS_LSHIFT(rxbde_le.lstatus);
-
-	if (priv->framer->cpri_dev->dev_flags & CPRI_MEDUSA_OCRAM) {
-		bf_ptr =  rxbde_le.buf_ptr;
-		cpri_memcpy_ocram(skb->data,
-			(void *)(bf_ptr + OCRAM_MEM_OFFSET_FPGA
-				+ cpri_ocram_vaddr - OCRAM_CPRI_BD_MEM),
-				pkt_len);
-	} else
-		dma_unmap_single(&priv->ofdev->dev, rxbde_le.buf_ptr,
-				priv->rx_buffer_size, DMA_FROM_DEVICE);
+	dma_unmap_single(&priv->ofdev->dev, rxbde_le.buf_ptr,
+			priv->rx_buffer_size, DMA_FROM_DEVICE);
 
 	/* Add another skb for the future */
 	newskb = cpri_eth_new_skb(ndev);
@@ -1307,15 +1193,25 @@ static int cpri_eth_rx_pkt(struct net_device *ndev, unsigned int skb_currx)
 			/* We need to strip it */
 			pkt_len -= ETH_FCS_LEN;
 		}
-
-		skb_put(skb, pkt_len);
 		cpri_eth_stats_incr_val(ndev, &priv->stats.rx_bytes, pkt_len);
 
+		dev_dbg(dev, "recieved etht buf dump: lstatus: 0x%x, len: %d\n",
+				rxbde_le.lstatus, pkt_len);
+		for (loop = 0; loop < pkt_len; loop++) {
+			if (!(loop % 8))
+				dev_dbg(dev, "\n");
+			dev_dbg(dev, "0x%x  ", *((skb->data + loop)));
+		}
+		skb_put(skb, pkt_len);
+		cpri_eth_stats_incr_val(ndev, &priv->stats.rx_bytes, pkt_len);
 		/* No checksum offloading */
 		skb_checksum_none_assert(skb);
 
 		/* Tell the skb what kind of packet this is */
 		skb->protocol = eth_type_trans(skb, ndev);
+
+
+		skb_pull_inline(skb, 2);
 
 		ret = netif_receive_skb(skb);
 
@@ -1325,6 +1221,7 @@ static int cpri_eth_rx_pkt(struct net_device *ndev, unsigned int skb_currx)
 				&priv->extra_stats.kernel_dropped);
 		}
 	}
+
 
 	rx_bd->rx_skbuff[skb_currx] = newskb;
 
@@ -1340,35 +1237,37 @@ static int cpri_eth_clean_rx_ring(struct net_device *ndev, int budget)
 	struct cpri_eth_bd_entity *rxbde, *base;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
+	struct cpri_eth_bd_entity rxbde_le;
 
 
 	raw_spin_lock_irqsave(&rx_bd->rxlock, flags);
-	base = (struct cpri_eth_bd_entity *)rx_bd->rx_bd_dma_base;
+	base = (struct cpri_eth_bd_entity *)rx_bd->rx_bd_base;
 	rxbde = rx_bd->rx_bd_current;
+	CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
 	skb_currx = rx_bd->skb_currx;
 
 	rmb();
 
 	/* No LE conversion here. Ctrl is only a byte value */
 
-	while (!(BD_LSTATUS_LSHIFT(rxbde->lstatus) && CPRI_ETH_BD_RX_EMPTY)
+	while (!(BD_LSTATUS_SSHIFT(rxbde_le.lstatus) & CPRI_ETH_BD_RX_EMPTY)
 					&& (howmany < budget)) {
 		rmb();
 
-		if (BD_LSTATUS_LSHIFT(rxbde->lstatus) && CPRI_ETH_BD_RX_ABORT) {
+		if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) &
+				CPRI_ETH_BD_RX_ABORT) {
 			cpri_eth_rx_pkt_error(ndev, skb_currx);
 			pkterr++;
-		} else {
+		} else
 			cpri_eth_rx_pkt(ndev, skb_currx);
-		}
 
 		howmany++;
 
 		rxbde =
-			CPRI_ETH_NEXT_BDE(rxbde, base, rx_bd->rx_bd_ring_size);
+			cpri_eth_next_bde(rxbde, base, rx_bd->rx_bd_ring_size);
 		skb_currx =
 			CPRI_ETH_NEXT_INDX(skb_currx, rx_bd->rx_bd_ring_size);
-
+		CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
 
 	}
 
@@ -1437,8 +1336,6 @@ static void cpri_eth_error_task(struct work_struct *work)
 		cpri_eth_stats_incr(ndev, &priv->extra_stats.tx_underrun);
 
 		netif_tx_disable(ndev);
-		cpri_eth_tx_halt(ndev);
-		cpri_eth_tx_resume(ndev);
 		netif_wake_queue(ndev);
 	}
 
@@ -1477,7 +1374,6 @@ int cpri_eth_handle_rx(struct cpri_framer *framer)
 	struct cpri_eth_priv *priv = framer->eth_priv;
 
 	if (napi_schedule_prep(&priv->napi)) {
-		cpri_eth_rx_halt(priv->ndev);
 		__napi_schedule(&priv->napi);
 	}
 	return 0;
@@ -1580,10 +1476,8 @@ static int cpri_eth_fwd_if_enable(struct net_device *ndev)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_framer *framer = priv->framer;
 
-	cpri_eth_config_set(ndev, &framer->regs->cpri_ethcfg1,
-			CPRI_ETH_HW_CRC_STRIP, CPRI_ETH_HW_CRC_STRIP_MASK);
-	cpri_eth_config_set(ndev, &framer->regs->cpri_ethcfg1,
-			CPRI_ETH_MAC_FAIL_PASS, CPRI_ETH_MAC_FAIL_PASS_MASK);
+	cpri_eth_config(ndev, priv->flags & CPRI_ETH_HW_CRC_STRIP);
+	cpri_eth_config(ndev, priv->flags & CPRI_ETH_MAC_FAIL_PASS);
 
 	cpri_reg_set(&framer->regs->cpri_ethfwdctrl,
 			CPRI_ETH_FWD_ENABLE_MASK);
@@ -1610,11 +1504,12 @@ void cpri_eth_enable(struct cpri_framer *framer)
 		return;
 
 	/* Enable interrupt events */
-	cpri_reg_set(&framer->regs->cpri_rctrltiminginten,
-			CPRI_ETH_RX_EV_EN_MASK);
-	cpri_reg_set(&framer->regs->cpri_tctrltiminginten,
-			CPRI_ETH_TX_EV_EN_MASK);
-
+	cpri_reg_write(&framer->regs_lock,
+			&framer->regs->cpri_rctrltiminginten, MASK_ALL,
+			(CONTROL_INT_LEVEL_MASK | CPRI_ETH_RX_EV_EN_MASK));
+	cpri_reg_write(&framer->regs_lock,
+			&framer->regs->cpri_tctrltiminginten, MASK_ALL,
+			(CONTROL_INT_LEVEL_MASK | CPRI_ETH_TX_EV_EN_MASK));
 	/* We cant do much when the remote fifo is full. Skip this event
 	 * cpri_reg_set(&framer->regs->cpri_errinten,
 	 *			CPRI_ETH_REM_FF_EN_MASK);
@@ -1636,6 +1531,12 @@ void cpri_eth_enable(struct cpri_framer *framer)
 EXPORT_SYMBOL(cpri_eth_enable);
 
 
+void reset_eth_regs(struct cpri_framer *framer)
+{
+	cpri_reg_set_val(&framer->regs->cpri_ethcfg1,
+		MASK_ALL, 0);
+}
+
 int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 			struct device_node *frnode)
 {
@@ -1643,6 +1544,7 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	struct cpri_eth_priv *priv = NULL;
 	int err = 0;
 
+	reset_eth_regs(framer);
 	err = cpri_eth_of_init(ofdev, &ndev, frnode);
 	if (err < 0)
 		return err;
@@ -1692,7 +1594,6 @@ EXPORT_SYMBOL(cpri_eth_init);
 void cpri_eth_parm_init(struct cpri_framer *framer)
 {
 	cpri_eth_tx_rx_halt(framer->eth_priv->ndev);
-	cpri_eth_config(framer->eth_priv->ndev, CPRI_ETH_DEF_FLAGS);
 }
 
 void cpri_eth_deinit(struct platform_device *ofdev, struct cpri_framer *framer)
