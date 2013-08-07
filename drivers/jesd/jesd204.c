@@ -465,29 +465,10 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 	/* XXX: setting up sync pipiline to 6 according to validation script
 	 * need to come up with right way to do it
 	 */
-
 	reg = &tdev->tx_regs->tx_transcontrol;
 	val = 6 << SYNC_PIPELINE_SHIFT;
 	mask = SYNC_PIPELINE_MASK << SYNC_PIPELINE_SHIFT;
 	jesd_update_reg(reg, val, mask);
-
-	ref_clk =  get_ref_clock(tdev->tbgen_dev_handle);
-
-	if (ref_clk == 614400) {
-		if (tdev->ils.lanes_per_converter_l == 1)
-			iowrite32(0x1D & 0x1F,
-			&tdev->tx_regs->tx_sync_fil_char);
-		else if (tdev->ils.lanes_per_converter_l == 2)
-			iowrite32(0x13 & 0x1F,
-			&tdev->tx_regs->tx_sync_fil_char);
-	} else {
-		if (tdev->ils.lanes_per_converter_l == 1)
-			iowrite32(0x1F & 0x1F,
-			 &tdev->tx_regs->tx_sync_fil_char);
-		else if (tdev->ils.lanes_per_converter_l == 2)
-			iowrite32(0x15 & 0x1F,
-			&tdev->tx_regs->tx_sync_fil_char);
-	}
 
 	if (tdev->dev_flags & DEV_FLG_LOOPBACK_MASK) {
 		reg = &tdev->tx_regs->tx_transcontrol;
@@ -2012,6 +1993,8 @@ void jesd_deframer_isr(struct jesd_transport_dev *tdev)
 			ioread32(&rx_regs->rx_g_csum));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_g_csum);
 	}
+
+	iowrite32(0, &tdev->rx_regs->rx_irq_ve_msk);
 }
 
 static irqreturn_t jesd_rx_isr(int irq, void *param)
