@@ -124,6 +124,8 @@ static void cpri_init_framer(struct cpri_framer *framer)
 	cpri_reg_set_val(&regs->cpri_taccr,
 			MASK_ALL, 0);
 
+	cpri_reg_clear(&regs->cpri_cmconfig, MASK_ALL);
+
 	/* Clear all control interrupt events */
 	cpri_reg_clear(&regs->cpri_rcr,
 		ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
@@ -512,7 +514,10 @@ static int check_ethrate(struct cpri_framer *framer)
 			status = cpri_reg_get_val(
 				&regs->cpri_cmstatus,
 				RX_FAST_CM_PTR_VALID_MASK);
-			if (status)
+			rx_eth_rate = cpri_reg_get_val(
+					&regs->cpri_cmstatus,
+					RX_FAST_CM_PTR_MASK);
+			if ((status) && (rx_eth_rate >= CPRI_ETH_PTR_MIN))
 				break;
 			txhfcnt = (u8) cpri_reg_get_val(
 				&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);

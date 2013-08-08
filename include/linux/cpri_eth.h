@@ -35,6 +35,8 @@
 #define CPRI_ETH_NEXT_INDX(cur, rsize) \
 		((((cur)+1) >= (rsize)) ? 0 : ((cur)+1))
 
+#define CPRI_ETH_PTR_MIN	0x14
+
 struct cpri_eth_extra_stats {
 	unsigned long kernel_dropped;
 
