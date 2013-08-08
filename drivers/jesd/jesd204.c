@@ -568,7 +568,7 @@ static int jesd_init_serdes(struct jesd_transport_dev *tdev)
 {
 	struct serdes_pll_params pll_param;
 	struct serdes_lane_params lane_param;
-
+	int rc;
 	pll_param.pll_id = SERDES_PLL_1;
 	pll_param.rfclk_sel = REF_CLK_FREQ_122_88_MHZ;
 	if ((tdev->data_rate ==  DATA_RATE_3_0720_G) ||
@@ -579,7 +579,8 @@ static int jesd_init_serdes(struct jesd_transport_dev *tdev)
 		pll_param.frate_sel = PLL_FREQ_4_9152_GHZ;
 		pll_param.vco_type = SERDES_LC_VCO;
 	}
-	if (serdes_init_pll(tdev->serdes_handle, &pll_param))
+	rc = serdes_init_pll(tdev->serdes_handle, &pll_param);
+	if (rc !=0 && rc != -EALREADY)
 		return -EINVAL;
 
 	lane_param.lane_id = tdev->serdesspec.args[0];
@@ -1041,7 +1042,8 @@ static int config_frames_per_mf(struct jesd_transport_dev *tdev)
 {
 	u32 ref_clk, *reg, frames_per_mf = 0;
 	int rc = 0;
-
+	if (!tdev->tbgen_dev_handle)
+		return -EINVAL;
 	ref_clk =  get_ref_clock(tdev->tbgen_dev_handle);
 
 	if (ref_clk == 614400) {
