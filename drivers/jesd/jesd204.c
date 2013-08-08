@@ -443,7 +443,6 @@ static int jesd_update_ils_csum(struct jesd_transport_dev *tdev)
 static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 {
 	int rc = 0, i;
-	u32 ref_clk;
 	u32 *reg, val, mask, enable_mask = 0;
 
 	for (i = 0; i < tdev->active_lanes; i++)
