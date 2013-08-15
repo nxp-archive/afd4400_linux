@@ -343,7 +343,7 @@ static long roc_ioctl(struct file *filep, unsigned int cmd,
 		if (!copy_from_user(&device_id, (int *)arg,
 			sizeof(int))) {
 			roc_dev->device_id = device_id;
-			if (roc_dev->device_id >=0 && roc_dev->device_id < 3) {
+			if (roc_dev->device_id >= 0 && roc_dev->device_id < 3) {
 				phy_dev = roc_dev->phy_dev[roc_dev->device_id];
 				rc = 0;
 			} else
@@ -437,47 +437,24 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			msleep_interruptible(cmds[i].param3);
 				break;
 
-		case SPI_WAIT_BBPLL_CAL:
+		case SPI_WAIT_CALPLL_CAL:
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
-			/*	if (check_cal_done(phy_dev, REG_CH1_OVERFLOW,
-							MASK_BBPLL_LOCK, 1))
-					break;*/
+				if (check_cal_done(phy_dev,
+						REG_CALPLL_LOCK,
+						MASK_CALPLL_LOCK, 1))
+					break;
 			}
 			break;
 
-		case SPI_WAIT_RXCP_CAL:
-			dev_dbg(dev, "SPI_WAIT_RXCP_CALL %u\n",
-			cmds[i].param1);
+		case SPI_WAIT_CLKPLLCP_CAL:
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
-			/*	if (check_cal_done(phy_dev, REG_RX_CAL_STATUS,
-						MASK_RX_CP_CAL_VALID, 1))
-					break;*/
-			}
-			break;
-
-		case SPI_WAIT_TXCP_CAL:
-			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
-					elapsed_time++) {
-				msleep_interruptible(1);
-			/*	if (check_cal_done(phy_dev,
-						REG_TX_CAL_STATUS,
-						MASK_TX_CP_CAL_VALID, 1))
-					break;*/
-			}
-			break;
-
-		case SPI_WAIT_RXFILTER_CAL:
-			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
-					elapsed_time++) {
-				msleep_interruptible(1);
-		/*		if (check_cal_done(phy_dev,
-						REG_CALIBRATION_CONTROL,
-						MASK_RX_BB_TUNE, 0))
-					break;*/
+				if (check_cal_done(phy_dev,
+						REG_CLKPLLCP, MASK_CLKPLLCP, 1))
+					break;
 			}
 			break;
 
@@ -489,21 +466,6 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 				if (check_cal_done(phy_dev,
 						REG_CALIBRATION_CONTROL,
 						MASK_TX_BB_TUNE, 0)) {
-					rc = 0;
-					break;
-				} else
-					rc = 1;
-			}
-			break;
-
-		case SPI_WAIT_BBDC_CAL:
-			dev_dbg(dev, "SPI_WAIT_BBDC_CALL\n");
-			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
-					elapsed_time++) {
-				msleep_interruptible(1);
-				if (check_cal_done(phy_dev,
-						REG_CALIBRATION_CONTROL,
-						MASK_DC_CAL_BBSTART, 0)) {
 					rc = 0;
 					break;
 				} else
@@ -536,6 +498,42 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 					break;
 			}
 			break;
+		/*
+		*Kernel handler for WAIT_CALDONE MAILBOX command
+		*If cmds[i].param1 != 0 then it's a single mailbox command check
+		*cmds[i].param1 is the register address
+		*cmds[i].param2 is the mask
+		*They are calculated in the user space
+		*else it's a mask command checking
+		*all four registers starting from 0x41C
+		*/
+		case SPI_WAIT_MAILBOX:
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (cmds[i].param1) {
+					if (check_cal_done(phy_dev,
+							cmds[i].param1,
+							cmds[i].param2, 0))
+						break;
+				} else {
+					if (check_cal_done_4regs(phy_dev,
+							REG_ARMSTATUS,
+							cmds[i].param2))
+						break;
+				}
+			}
+			break;
+
+		case SPI_WAIT_ARMBUSY:
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_ARMBUSY, MASK_ARMBUSY, 0))
+					break;
+			}
+			break;
 
 		case SPI_WAIT_CALDONE:
 			dev_dbg(dev, "Waiting for unknown CALDONE.\n");
@@ -562,9 +560,15 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			}
 			break;
 		case SPI_WAIT_INITARM_CAL:
-			dev_dbg(dev, "SPI_WAIT_INITARM_CAL RECEIVED.\n");
-			msleep_interruptible(cmds[i].param3);
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_INITARM, MASK_INITARM, 1))
+					break;
+			}
 			break;
+
 		case SPI_WAIT_RFPLLLOCK_CAL:
 			dev_dbg(dev, "SPI_WAIT_RFPLLLOCK_CAL RECEIVED.\n");
 			for (elapsed_time = 1; elapsed_time < 11;

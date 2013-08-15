@@ -227,6 +227,34 @@ int check_cal_done(struct rf_phy_dev *phy_dev, u32 reg, u32 mask,
 }
 EXPORT_SYMBOL(check_cal_done);
 
+/*
+*This function checks 4 registers starting from address reg.
+*This function is currently made for
+*command like WAIT_CALDONE MAILBOX,55555555,2000.
+*/
+
+int check_cal_done_4regs(struct rf_phy_dev *phy_dev, u32 reg, u32 mask)
+{
+	struct ad_dev_info *phy_info = phy_dev->priv;
+	struct device *dev;
+	u32 val[4];
+	u32 temp;
+
+	int rc = 0;
+	if (phy_info == NULL)
+		return -EINVAL;
+	dev = &phy_info->ad_spi->dev;
+	ad9368_read(phy_dev, reg, 4, val);
+
+	temp = (val[0] & mask) || (val[1] & (mask >> 8))
+			|| (val[2] & (mask >> 16)) || (val[3] & (mask >> 24));
+	if (!temp)
+		rc = 1;
+
+	return rc;
+}
+EXPORT_SYMBOL(check_cal_done_4regs);
+
 int ad_init(struct rf_phy_dev *phy_dev,
 		struct rf_init_params *params)
 {

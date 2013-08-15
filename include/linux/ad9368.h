@@ -63,12 +63,16 @@
 #define REG_CALIBRATION_CONFIG1	0x169
 #define REG_RX_CP_CONFIG	0x23D
 #define REG_TX_CP_CONFIG	0x27D
-
+#define REG_ARMBUSY			0x414
+#define REG_ARMSTATUS			0x41C
+#define REG_CALPLL_LOCK		0x14D
+#define REG_CLKPLL_LOCK		0x125
+#define REG_INITARM			0x41B
 #define VAL_CAL_CONF1_TRACKOFF	0xC0
 
 #define REG_RF_CP_CONFIG	0x18D
-#define REG_CLKPLL_LOCK		0x122
-#define MASK_CLKPLL_SET		0x80
+#define REG_CLKPLLCP			0x122
+#define MASK_CLKPLL_SET		0x01
 #define REG_CP_OVERRANGE_VCO_LOCK 0x190
 #define MASK_RFPLLLOCK_SET	0x01
 /* Calibration status masks */
@@ -76,6 +80,11 @@
 #define MASK_RX_CP_CAL_VALID	0x80
 #define MASK_TX_CP_CAL_VALID	0x80
 #define MASK_RX_BB_TUNE		0x80
+#define MASK_ARMBUSY		0x80
+#define MASK_CALPLL_LOCK	0x80
+#define MASK_CLKPLL_LOCK	0x80
+#define MASK_CLKPLLCP		0x80
+#define MASK_INITARM		0xFF
 #define MASK_TX_BB_TUNE		0x01
 #define MASK_DC_CAL_BBSTART	0x00
 #define MASK_ADC_TUNE_CAL_START	0x80
@@ -133,6 +142,8 @@ extern int ad_init(struct rf_phy_dev *phy, struct rf_init_params *params);
 extern int ad9368_start(struct rf_phy_dev *phy_dev);
 extern int check_cal_done(struct rf_phy_dev *phy_dev, u32 reg, u32 mask,
 		u32 bitval);
+
+extern int check_cal_done_4regs(struct rf_phy_dev *phy_dev, u32 reg, u32 mask);
 
 struct rf_device_id {
 	char name[RF_NAME_SIZE];
