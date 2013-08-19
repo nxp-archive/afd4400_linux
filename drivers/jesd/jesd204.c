@@ -647,27 +647,29 @@ static void jesd_init_gcr(struct jesd_transport_dev *tdev)
 	jesd_update_reg(reg, val, mask);
 
 	/* JESD TX4 -> VSPA 3 DMA 11*/
+	/* JESD TX3 -> VSPA 3 DMA 10*/
 	reg = (u32 *) (base_reg + GCR23);
-	iowrite32(0x40000, reg);
+	iowrite32(0x40040, reg);
 
-	/* JESD RX1 -> VSPA 3 DMA 8*/
+	/* JESD RX1 -> VSPA 5 DMA 8*/
+	/* JESD RX3 -> VSPA 5 DMA 10*/
 	reg = (u32 *) (base_reg + GCR41);
-	iowrite32(0x01, reg);
+	iowrite32(0x100001, reg);
 
-	/* JESD RX4 -> VSPA 3 DMA 11*/
+	/* JESD RX4 -> VSPA 5 DMA 11*/
 	reg = (u32 *) (base_reg + GCR42);
 	iowrite32(0x01, reg);
 
 	reg = (u32 *) (base_reg + GCR43);
-	iowrite32(0x603, reg);
+	iowrite32(0x643, reg);
 
 	/*JESD RX1 Ptr reset request to VSPA 5 DMA 8*/
 	reg = (u32 *) (base_reg + GCR45);
-	iowrite32(0x1001, reg);
+	iowrite32(0x1101, reg);
 
 	/*JESD TX1 Ptr reset request to VSPA 3 DMA 8*/
 	reg = (u32 *) (base_reg + GCR52);
-	iowrite32(0x10400, reg);
+	iowrite32(0x14400, reg);
 
 out:
 	return;
