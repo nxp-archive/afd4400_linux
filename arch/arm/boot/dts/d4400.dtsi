@@ -496,7 +496,8 @@
 					timer-id = <0>;
 					phy-gasket = <&phy1>;
 					max-lanes = <2>;
-					serdes-handle = <&serdes1 0>;
+					serdes-lanes = <&serdes1 0>,
+						<&serdes1 1>;
 					interrupts = <0 119 0x4>;
 				};
 
@@ -507,7 +508,7 @@
 					timer-id = <1>;
 					phy-gasket = <&phy1>;
 					max-lanes = <1>;
-					serdes-handle = <&serdes1 1>;
+					serdes-lanes = <&serdes1 1>;
 					interrupts = <0 120 0x4>;
 				};
 			};
@@ -527,7 +528,8 @@
 					timer-id = <0>;
 					phy-gasket = <&phy1>;
 					max-lanes = <2>;
-					serdes-handle = <&serdes1 0>;
+					serdes-lanes = <&serdes1 0>,
+						<&serdes1 1>;
 					interrupts = <0 106 0x4>;
 				};
 
@@ -538,7 +540,7 @@
 					timer-id = <1>;
 					phy-gasket = <&phy1>;
 					max-lanes = <1>;
-					serdes-handle = <&serdes1 1>;
+					serdes-lanes = <&serdes1 1>;
 					interrupts = <0 107 0x4>;
 				};
 			};
@@ -558,7 +560,8 @@
 					timer-id = <2>;
 					phy-gasket = <&phy1>;
 					max-lanes = <2>;
-					serdes-handle = <&serdes1 2>;
+					serdes-lanes = <&serdes1 2>,
+						<&serdes1 3>;
 					interrupts = <0 121 0x4>;
 				};
 
@@ -569,7 +572,7 @@
 					timer-id = <3>;
 					phy-gasket = <&phy1>;
 					max-lanes = <1>;
-					serdes-handle = <&serdes1 3>;
+					serdes-lanes = <&serdes1 3>;
 					interrupts = <0 122 0x4>;
 				};
 			};
@@ -589,7 +592,8 @@
 					timer-id = <0>;
 					phy-gasket = <&phy1>;
 					max-lanes = <2>;
-					serdes-handle = <&serdes1 2>;
+					serdes-lanes = <&serdes1 2>,
+						<&serdes1 3>;
 					interrupts = <0 108 0x4>;
 				};
 
@@ -600,7 +604,7 @@
 					timer-id = <1>;
 					phy-gasket = <&phy1>;
 					max-lanes = <1>;
-					serdes-handle = <&serdes1 3>;
+					serdes-lanes = <&serdes1 3>;
 					interrupts = <0 109 0x4>;
 				};
 			};
