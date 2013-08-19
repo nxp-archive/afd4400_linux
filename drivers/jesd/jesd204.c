@@ -59,6 +59,9 @@ static void jesd_restore_state(struct jesd_transport_dev *tdev);
 static int jesd_conf_auto_sync(struct jesd_transport_dev *tdev,
 	struct auto_sync_params *sync_params);
 
+static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
+	struct lane_device *lane_dev, int idx);
+
 void jesd_update_reg(u32 *reg, u32 val, u32 mask)
 {
 	u32 reg_val;
@@ -434,7 +437,7 @@ static int jesd_update_ils_csum(struct jesd_transport_dev *tdev)
 	if (tdev->type == JESD_DEV_TX && tdev->active_lanes == 2) {
 		val = ioread32(&tdev->tx_regs->tx_lid_1);
 		csum = (sum + val) & CSUM_MASK;
-		dev_dbg(tdev->dev, "%s: Lane0 csum 0x%x\n", tdev->name, csum);
+		dev_info(tdev->dev, "%s: Lane1 csum 0x%x\n", tdev->name, csum);
 		iowrite32(csum, &tdev->tx_regs->tx_csum_1);
 	}
 
@@ -541,37 +544,26 @@ static int jesd_setup_transport(struct jesd_transport_dev *tdev)
 	return rc;
 }
 
-/* XXX: initializing SERDES here only for bringup, need to move it to
- * serdes driver
- */
-static int jesd_init_serdes(struct jesd_transport_dev *tdev)
+static int jesd_serdes_lane_init(struct jesd_transport_dev *tdev,
+	struct lane_device *lane)
 {
-	struct serdes_pll_params pll_param;
 	struct serdes_lane_params lane_param;
-	int rc;
-	pll_param.pll_id = SERDES_PLL_1;
-	pll_param.rfclk_sel = REF_CLK_FREQ_122_88_MHZ;
-	if ((tdev->data_rate ==  DATA_RATE_3_0720_G) ||
-		(tdev->data_rate == DATA_RATE_6_1440_G)) {
-		pll_param.frate_sel = PLL_FREQ_3_072_GHZ;
-		pll_param.vco_type = SERDES_RING_VCO;
-	} else {
-		pll_param.frate_sel = PLL_FREQ_4_9152_GHZ;
-		pll_param.vco_type = SERDES_LC_VCO;
-	}
-	rc = serdes_init_pll(tdev->serdes_handle, &pll_param);
-	if (rc !=0 && rc != -EALREADY)
-		return -EINVAL;
+	int rc = 0;
 
-	lane_param.lane_id = tdev->serdesspec.args[0];
+	memset(&lane_param, 0 , sizeof(struct serdes_lane_params));
+
+	lane_param.lane_id = lane->serdes_lane_id;
 	lane_param.gen_conf.lane_prot = SERDES_LANE_PROTS_JESD204;
 	lane_param.gen_conf.bit_rate_kbps = tdev->data_rate;
 	lane_param.gen_conf.cflag = (SERDES_20BIT_EN |  SERDES_TPLL_LES |
 			SERDES_RPLL_LES);
-	if (tdev->active_lanes == 1) {
+
+	if (lane->flags & LANE_FLAGS_FIRST_LANE)
 		lane_param.gen_conf.cflag |= SERDES_FIRST_LANE;
+
+	if (tdev->active_lanes == 1)
 		lane_param.grp_prot = SERDES_PROT_JESD_1_LANE;
-	} else
+	else
 		lane_param.grp_prot = SERDES_PROT_JESD_2_LANE;
 
 	if (tdev->dev_flags & DEV_FLG_SERDES_LOOPBACK_EN) {
@@ -582,7 +574,38 @@ static int jesd_init_serdes(struct jesd_transport_dev *tdev)
 
 	if (serdes_init_lane(tdev->serdes_handle, &lane_param))
 		return -EINVAL;
-	return 0;
+
+	lane->flags |= LANE_FLAGS_ENABLED;
+
+	return rc;
+}
+
+static int jesd_init_serdes_pll(struct jesd_transport_dev *tdev)
+{
+	struct serdes_pll_params pll_param;
+	int rc = 0;
+
+	memset(&pll_param, 0, sizeof(struct serdes_pll_params));
+
+	pll_param.pll_id = SERDES_PLL_1;
+	pll_param.rfclk_sel = REF_CLK_FREQ_122_88_MHZ;
+
+	if ((tdev->data_rate ==  DATA_RATE_3_0720_G) ||
+		(tdev->data_rate == DATA_RATE_6_1440_G)) {
+		pll_param.frate_sel = PLL_FREQ_3_072_GHZ;
+		pll_param.vco_type = SERDES_RING_VCO;
+	} else {
+		pll_param.frate_sel = PLL_FREQ_4_9152_GHZ;
+		pll_param.vco_type = SERDES_LC_VCO;
+	}
+	rc = serdes_init_pll(tdev->serdes_handle, &pll_param);
+	if (rc == -EALREADY) {
+		dev_dbg(tdev->dev, "%s: Serder PLL already initialized\n",
+			tdev->name);
+		rc = 0;
+	}
+
+	return rc;
 }
 
 #define GCR_BASE	0x012c0000
@@ -652,7 +675,7 @@ out:
 
 int jesd_start_transport(struct jesd_transport_dev *tdev)
 {
-	int rc = 0;
+	int rc = 0, i;
 
 	rc = jesd_change_state(tdev, JESD_STATE_ENABLED);
 	if (rc) {
@@ -663,11 +686,20 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 
 	jesd_init_gcr(tdev);
 
-	rc = jesd_init_serdes(tdev);
+	rc = jesd_init_serdes_pll(tdev);
 	if (rc) {
 		dev_err(tdev->dev, "Failed to configure SEDRDES, err %d\n",
 			rc);
 		goto out;
+	}
+
+	for (i = 0; i < tdev->active_lanes; i++) {
+		rc = jesd_serdes_lane_init(tdev, tdev->lane_devs[i]);
+		if (rc) {
+			dev_err(tdev->dev, "%s: SERDES lane init failed %d\n",
+				tdev->name, rc);
+			goto out;
+		}
 	}
 
 	rc = jesd_config_phygasket(tdev);
@@ -953,7 +985,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 				struct jesd_dev_params *trans_p)
 {
 	int rc = 0, i;
-	struct lane_device *lane_dev;
+	struct lane_device *lane;
 	struct jesd204_dev *jdev = tdev->parent;
 
 	if (trans_p->lanes > tdev->max_lanes) {
@@ -963,24 +995,37 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 		return rc;
 	}
 
+#if 0
 	if (jdev->used_lanes >= jdev->max_lanes) {
 		dev_err(tdev->dev, "%s: Parent's all lanes (%d) are used\n",
 			tdev->name, jdev->max_lanes);
+		dev_err(tdev->dev, "%s: used lanes %d\n", tdev->name,
+			jdev->used_lanes);
 		rc = -EBUSY;
 		return rc;
 	}
+#endif
 	/*create lanes*/
 	for (i = 0; i < trans_p->lanes; i++) {
-		lane_dev = kzalloc(sizeof(struct lane_device), GFP_KERNEL);
-		if (!lane_dev) {
+
+		lane = kzalloc(sizeof(struct lane_device), GFP_KERNEL);
+		if (!lane) {
 			dev_err(tdev->dev, "%s: Lane allocation Failed [%d]\n",
 				tdev->name, i);
 			rc = -ENOMEM;
 			return rc;
 		}
-		lane_dev->id = i + tdev->id;
-		lane_dev->enabled = 0;
-		tdev->lane_devs[i] = lane_dev;
+
+		rc = jesd_attach_serdes_lanes(tdev, lane, i);
+		if (rc) {
+			dev_err(tdev->dev, "%s: SERDES attached failed [%d]\n",
+				tdev->name, i);
+			goto out;
+		}
+		lane->id = i + tdev->id;
+		if (lane->id > tdev->id)
+			lane->flags |= LANE_FLAGS_FIRST_LANE;
+		tdev->lane_devs[i] = lane;
 		jdev->used_lanes++;
 	}
 
@@ -1671,40 +1716,58 @@ out:
 	return rc;
 }
 
+static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
+	struct lane_device *lane, int idx)
+{
+	int rc = 0;
+	unsigned int transport_id;
+	struct device_node *child = NULL;
+	struct of_phandle_args serdesspec;
+
+	for_each_child_of_node(tdev->parent->node, child) {
+		of_property_read_u32(child, "transport-id", &transport_id);
+		if (transport_id < 0) {
+			dev_err(tdev->dev, "Failed to get transport id\n");
+			rc = -ENODEV;
+			goto out;
+		}
+		if (transport_id == tdev->id)
+			break;
+	}
+
+	if (of_get_named_serdes(child, &serdesspec,
+		"serdes-lanes", idx)) {
+		dev_err(tdev->dev, "Failed to get serdes lane handle\n");
+		rc = -ENODEV;
+		goto out;
+	}
+
+	lane->serdes_lane_id = serdesspec.args[0];
+	dev_info(tdev->dev, "%s: [%d] Serdes lane id %d\n", tdev->name, idx,
+		lane->serdes_lane_id);
+
+	if (!tdev->serdes_handle) {
+		tdev->serdes_handle = get_attached_serdes_dev(serdesspec.np);
+		if (tdev->serdes_handle == NULL) {
+			dev_err(tdev->dev, "Failed to get serdes handle\n");
+			rc = -ENODEV;
+			goto out;
+		}
+	}
+out:
+	return rc;
+}
+
 static int jesd204_open(struct inode *inode, struct file *pfile)
 {
 	struct jesd_transport_dev *tdev = NULL;
-	struct device_node *child = NULL;
 	int rc = 0;
-	unsigned int transport_id;
 
 	tdev = container_of(inode->i_cdev, struct jesd_transport_dev, c_dev);
 	if (tdev == NULL)
 		return -ENODEV;
 
 	pfile->private_data = tdev;
-
-	for_each_child_of_node(tdev->parent->node, child) {
-		of_property_read_u32(child, "transport-id", &transport_id);
-		if (transport_id < 0) {
-			dev_err(tdev->dev, "Failed to get transport id\n");
-			return -ENODEV;
-		}
-		if (transport_id == tdev->id)
-			break;
-	}
-
-	if (of_get_named_serdes(child, &tdev->serdesspec,
-		"serdes-handle", 0)) {
-		dev_err(tdev->dev, "Failed to get serdes-handle\n");
-		return -ENODEV;
-	}
-
-	tdev->serdes_handle = get_attached_serdes_dev(tdev->serdesspec.np);
-	if (tdev->serdes_handle == NULL) {
-		dev_err(tdev->dev, "Failed to get serdes handle\n");
-		return -ENODEV;
-	}
 	atomic_inc(&tdev->ref);
 
 	return rc;

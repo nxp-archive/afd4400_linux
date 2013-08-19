@@ -13,6 +13,7 @@
 #define JESD204_H_	/* by using protection macros */
 
 #include <uapi/linux/jesd204.h> /*user and kernel interface header*/
+#include <mach/serdes-d4400.h>
 
 #define DRIVER_NAME "jesd204"
 
@@ -324,9 +325,14 @@ struct config_registers_rx {
 struct lane_device {
 	struct jesd_transport_dev *tdev;
 	struct lane_stats l_stats;
+	enum srds_lane_id serdes_lane_id;
 	u8 id;
-	u8 enabled;
+	u32 flags;
 };
+/*Lane Flags*/
+#define LANE_FLAGS_ENABLED	(1 << 0)
+#define LANE_FLAGS_FIRST_LANE	(1 << 1)
+
 /** @brief /stuct jesd devices to be created for each transport
  *	hence the instance is defined in here.
  */
@@ -342,7 +348,6 @@ struct jesd_transport_dev {
 	u32 test_mode_flags;
 	struct jesd204_dev *parent;
 	void *tbgen_dev_handle;
-	struct of_phandle_args serdesspec;
 	void *serdes_handle;
 	void *timer_handle;
 	void *txalign_timer_handle;
