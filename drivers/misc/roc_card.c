@@ -640,6 +640,15 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 					rc = 1;
 			}
 			break;
+		case SPI_WAIT_RXADC_CAL:
+			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
+					elapsed_time++) {
+				msleep_interruptible(1);
+				if (check_cal_done(phy_dev,
+						REG_RXADC, MASK_RXADC, 0))
+					break;
+			}
+			break;
 		default:
 			dev_dbg(dev, "Not a valid AD_PHY command\n");
 			return -EINVAL;
