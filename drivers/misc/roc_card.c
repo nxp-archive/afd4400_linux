@@ -587,7 +587,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 				if (check_cal_done(phy_dev,
 						REG_RF_CP_CONFIG,
 						MASK_RFPLLCP_CAL, 1)) {
-					dev_info(dev, "RFPLLCP CAL DONE.\n");
+					dev_dbg(dev, "RFPLLCP CAL DONE.\n");
 					rc = 0;
 					break;
 				} else

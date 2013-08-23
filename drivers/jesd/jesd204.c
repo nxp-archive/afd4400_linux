@@ -1487,7 +1487,7 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 	}
 
 	if (!rc) {
-		dev_info(tdev->dev, "%s: Transitiong state %d -> %d\n",
+		dev_info(tdev->dev, "%s: Transitioning state %d -> %d\n",
 			tdev->name, old_state, new_state);
 		tdev->state = new_state;
 		tdev->old_state = old_state;
@@ -1899,7 +1899,7 @@ out:
 		if (tdev->sync_expire > jiffies) {
 			schedule_work(&tdev->link_monitor);
 		} else {
-			dev_err(tdev->dev, "%s: Failed to syncronize\n",
+			dev_err(tdev->dev, "%s: Failed to synchronize\n",
 				tdev->name);
 			jesd_change_state(tdev, JESD_STATE_SYNC_FAILED);
 		}

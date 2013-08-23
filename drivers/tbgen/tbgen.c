@@ -155,7 +155,7 @@ static int tbgen_handle_rfg_irq(struct tbgen_dev *tbg)
 		break;
 	case SYNC_SYSREF_IN_CONFIGURE:
 	case SYNC_SYSREF_IN_CONFIGURED:
-		dev_info(tbg->dev, "Configuring tbgen for SYSREF\n");
+		dev_dbg(tbg->dev, "Configuring tbgen for SYSREF\n");
 		tbgen_update_last_10ms_counter(tbg);
 		disable_fs_irq = 1;
 		tbg->sync_state = SYNC_SYSREF_IN_CONFIGURED;
