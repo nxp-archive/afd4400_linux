@@ -50,17 +50,17 @@
 
 				adrx: ad9368-1@2 {
 					compatible = "adi,ad9368-1";
-					spi-max-frequency = <2000000>;
+					spi-max-frequency = <20000000>;
 					reg = <2>;
 				};
 				adtx: ad9368-2@2 {
 					compatible = "adi,ad9368-2";
-					spi-max-frequency = <2000000>;
+					spi-max-frequency = <20000000>;
 					reg = <0>;
 				};
 				clkgen: ad9525@5 {
 					compatible = "adi,ad9525";
-					spi-max-frequency = <2000000>;
+					spi-max-frequency = <20000000>;
 					reg = <1>;
 				};
 			};
