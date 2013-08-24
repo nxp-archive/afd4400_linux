@@ -273,7 +273,7 @@ int ad9368_read(struct rf_phy_dev *phy_dev, u32 start,
 		.rx_buf = (unsigned long)rx,
 		.len = COMMAND_LEN + count,
 		.delay_usecs = 0,
-		.speed_hz = 20000000,
+		.speed_hz = phy_info->ad_spi->max_speed_hz,
 		.bits_per_word = 8,
 	};
 	/* RFdev f/w provides start address as u32, but
