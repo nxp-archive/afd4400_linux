@@ -332,6 +332,7 @@ struct lane_device {
 /*Lane Flags*/
 #define LANE_FLAGS_ENABLED	(1 << 0)
 #define LANE_FLAGS_FIRST_LANE	(1 << 1)
+#define LANE_FLAGS_PRIMARY	(1 << 2)
 
 /** @brief /stuct jesd devices to be created for each transport
  *	hence the instance is defined in here.

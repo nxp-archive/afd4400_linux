@@ -84,7 +84,7 @@ void jesd_read_reg(u32 *reg)
 
 static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 {
-	int rc = 0, i;
+	int rc = 0, i, swap_enable = 0;
 	struct lane_device *lane;
 	enum phygasket_data_src phy_data_src;
 
@@ -114,6 +114,16 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 
 	for (i = 0; i < tdev->active_lanes; i++) {
 		lane = tdev->lane_devs[i];
+		if ((tdev->type == JESD_DEV_TX) &&
+			(lane->flags & LANE_FLAGS_PRIMARY)) {
+			if ((tdev->active_lanes == 2))
+				swap_enable = 1;
+
+			dev_info(tdev->dev, "%s: [%d] lane_swap %d\n",
+				tdev->name, lane->id, swap_enable);
+			phy_gasket_swap_lanes(tdev->phy, lane->id,
+				swap_enable, tdev->type);
+		}
 		rc = phy_gasket_lane_ctrl(tdev->phy, phy_data_src, lane->id);
 		if (rc) {
 			dev_err(tdev->dev, "%s: Phy init Failed, lane %d\n",
@@ -1027,6 +1037,9 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 		lane->id = i + tdev->id;
 		if (lane->id > tdev->id)
 			lane->flags |= LANE_FLAGS_FIRST_LANE;
+		else
+			lane->flags |= LANE_FLAGS_PRIMARY;
+
 		tdev->lane_devs[i] = lane;
 		jdev->used_lanes++;
 	}
