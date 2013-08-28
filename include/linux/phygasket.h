@@ -121,8 +121,10 @@ struct lane_id {
 
 int phy_softreset(struct phygasket *phy, u8 device,
 				u8 reset, u8 lane);
-int phy_swap_lanes(struct phygasket *phy, u8 lane,
-				u8 swap, u8 device);
+
+void phy_gasket_swap_lanes(struct phygasket *phy, u8 lane,
+	int enable, enum jesd_dev_type dev_type);
+
 int phy_inverse_lanes(struct phygasket *phy, u8 lane,
 				u8 invert, u8 device);
 

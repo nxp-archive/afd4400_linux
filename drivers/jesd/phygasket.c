@@ -120,35 +120,23 @@ int phy_softreset(struct phygasket *phy, u8 device, u8 reset, u8 lane)
 	return 0;
 }
 
-int phy_swap_lanes(struct phygasket *phy, u8 lane, u8 swap, u8 device)
+void phy_gasket_swap_lanes(struct phygasket *phy, u8 lane,
+	int enable, enum jesd_dev_type dev_type)
 {
-	u32 bit_bang = 0;
+	u32 *reg, val, shift;
 
-	if (lane == 0 || lane == 1)
-		bit_bang = 0;
-	else if (lane == 2 || lane == 3)
-		bit_bang = 1;
-	else if (lane == 4 || lane == 5)
-		bit_bang = 2;
-	else if (lane == 6 || lane == 7)
-		bit_bang = 3;
+	if (dev_type == JESD_DEV_TX)
+		reg = &phy->pregs->tx_swap;
 	else
-		return -EINVAL;
+		reg = &phy->pregs->rx_swap;
 
-	if (swap == 0) {
-		if (device == DEVICE_RX)
-			jclear_bit(bit_bang, &phy->pregs->rx_swap);
-		else
-			jclear_bit(bit_bang, &phy->pregs->tx_swap);
-	} else if (swap == 1) {
-		if (device == DEVICE_RX)
-			jset_bit(bit_bang, &phy->pregs->rx_swap);
-		else
-			jset_bit(bit_bang, &phy->pregs->tx_swap);
-	} else
-		return -EINVAL;
+	shift = lane / 2;
+	val = ioread32(reg);
+	val &= ~(1 << shift);
+	if (enable)
+		val |= (1 << shift);
 
-	return 0;
+	iowrite32(val, reg);
 }
 
 int phy_inverse_lanes(struct phygasket *phy, u8 lane, u8 invert, u8 device)
