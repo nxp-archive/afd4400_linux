@@ -1,7 +1,8 @@
 /*
-* drivers/jesd/phygasket.h
+* drivers/jesd/phygasket.c
 *
-* Author: Freescale semiconductor, Inc.
+* Author: pankaj chauhan <pankaj.chauhan@freescale.com>
+* Author: Rohit Thapliyal <rohit.thapliyal@freescale.com>
 *
 * Copyright 2013 Freescale Semiconductor, Inc.
 *

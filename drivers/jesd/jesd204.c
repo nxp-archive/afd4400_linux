@@ -1,6 +1,7 @@
 /*
 * drivers/jesd/jesd204.c
-* Author: Freescale
+* Author: pankaj chauhan <pankaj.chauhan@freescale.com>
+* Author: Rohit Thapliyal <rohit.thapliyal@freescale.com>
 *
 * Copyright 2013 Freescale Semiconductor, Inc.
 *
