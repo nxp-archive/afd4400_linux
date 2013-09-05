@@ -36,6 +36,8 @@
 static LIST_HEAD(serdes_dev_list);
 raw_spinlock_t serdes_list_lock;
 
+static void serdes_disable_all_lanes(enum srds_pll_id pll_id,
+		struct serdes_regs *base_reg);
 /**@brief inline for set, clear and test bits for 32 bit */
 static inline void
 sclear_bit(int nr, void *addr)
@@ -247,72 +249,60 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 	mask = SRDS_LOOPBACK_EN;
 	srds_update_reg(reg, val, mask);
 
+	wmb();
 	/*Enable lane */
 	reg = (u32 *) (&base_reg->lane_csr[lane_id].gcr0);
 	val = (SRDS_LN_GCR_TRST_B_MASK | SRDS_LN_GCR_RRST_B_MASK);
 	mask = (SRDS_LN_GCR_TRST_B_MASK | SRDS_LN_GCR_RRST_B_MASK);
 	srds_update_reg(reg, val, mask);
-	udelay(10);
+	udelay(1);
 
 	return rc;
 }
 
-static int check_pll_reset_status(enum srds_pll_id pll_id,
-		struct serdes_regs *base_reg)
+static int serdes_set_pll_config(struct serdes_dev *sdev,
+	struct serdes_pll_params *pll, struct serdes_regs *base_reg)
 {
-	unsigned long timeout;
-	int rc = 0;
 	u32 *reg, val = 0, mask = 0;
+	int rc = 0;
+	unsigned int timeout;
 
+	/*Disable all lanes*/
+	serdes_disable_all_lanes(pll->pll_id, sdev->regs);
 
-	reg = (u32 *)(&base_reg->pll_reg[pll_id].pll_rstctl_reg);
+	/*power down*/
+	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
+	val = ~SRDS_PLL_RSTCTL_SDEN_MASK;
+	mask = SRDS_PLL_RSTCTL_SDEN_MASK;
+	srds_update_reg(reg, val, mask);
+	udelay(1);
+
+	/*power up again*/
+	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
+	val =  SRDS_PLL_RSTCTL_SDEN_MASK;
+	mask = SRDS_PLL_RSTCTL_SDEN_MASK;
+	srds_update_reg(reg, val, mask);
+	udelay(1);
+
+	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
 	val = SRDS_PLL_RSTCTL_RSTREQ_MASK;
 	mask = SRDS_PLL_RSTCTL_RSTREQ_MASK;
 	srds_update_reg(reg, val, mask);
-	mdelay(100);
+
 	timeout = jiffies + msecs_to_jiffies(SRDS_PLL_TIMEOUT_MS);
 
 	val = ioread32(reg);
 	while (!(val & SRDS_PLL_RSTCTL_RST_DONE_MASK)) {
 		if (jiffies > timeout) {
+			dev_info(sdev->dev, "Failed to reset pll %d\n",
+				pll->pll_id);
 			rc = -EBUSY;
 			goto out;
 		}
 		val = ioread32(reg);
 	}
-out:
-	return rc;
-}
 
-static int check_pll_lock_status(enum srds_pll_id pll_id,
-		struct serdes_regs *base_reg)
-{
-	unsigned long timeout;
-	int rc = 0;
-	u32 *reg, val;
-
-	timeout = jiffies + msecs_to_jiffies(SRDS_PLL_TIMEOUT_MS);
-
-	reg = (u32 *)(&base_reg->pll_reg[pll_id].pll_ctl_reg0);
-
-	val = ioread32(reg);
-	while (!(val & SRDS_PLLCR_PLL_LCK_MASK)) {
-		if (jiffies > timeout) {
-			rc = -EBUSY;
-			goto out;
-		}
-		val = ioread32(reg);
-	}
-out:
-	return rc;
-}
-
-static int serdes_set_pll_config(struct serdes_pll_params *pll,
-		struct serdes_regs *base_reg)
-{
-	u32 *reg, val = 0, mask = 0;
-	int rc = 0;
-
+	/*Change PLL settings*/
 	/* PLL frequency configurations */
 	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_ctl_reg0);
 	mask = SRDS_PLLCR_FRATE_SEL_MASK;
@@ -367,23 +357,52 @@ static int serdes_set_pll_config(struct serdes_pll_params *pll,
 	}
 	srds_update_reg(reg, val, mask);
 
-	return rc;
-}
+	/* Reset and Enable */
+	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
+	val = SRDS_PLL_RSTCTL_RSTREQ_MASK;
+	mask = SRDS_PLL_RSTCTL_RSTREQ_MASK;
+	srds_update_reg(reg, val, mask);
 
-static void serdes_pll_set_app_mode(enum srds_pll_id pll_id,
-		struct serdes_regs *base_reg)
-{
-	u32 *reg, val, mask;
+	timeout = jiffies + msecs_to_jiffies(SRDS_PLL_TIMEOUT_MS);
 
-	reg = (u32 *)(&base_reg->pll_reg[pll_id].pll_rstctl_reg);
+	val = ioread32(reg);
+	while (!(val & SRDS_PLL_RSTCTL_RST_DONE_MASK)) {
+		if (jiffies > timeout) {
+			dev_info(sdev->dev, "Failed to reset pll %d\n",
+				pll->pll_id);
+			rc = -EBUSY;
+			goto out;
+		}
+		val = ioread32(reg);
+	}
 
-	val = SRDS_PLL_RSTCTL_SDEN_MASK |
-		SRDS_PLL_RSTCTL_SRDST_B_MASK |
-		SRDS_PLL_RSTCTL_PLLRST_B_MASK;
+	timeout = jiffies + msecs_to_jiffies(SRDS_PLL_TIMEOUT_MS);
+
+	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_ctl_reg0);
+
+	val = ioread32(reg);
+	while (!(val & SRDS_PLLCR_PLL_LCK_MASK)) {
+		if (jiffies > timeout) {
+			dev_info(sdev->dev, "Failed to lock pll %d\n",
+				pll->pll_id);
+			rc = -EBUSY;
+			goto out;
+		}
+		val = ioread32(reg);
+	}
+
+	wmb();
+
+	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
+	val = (SRDS_PLL_RSTCTL_SDEN_MASK | SRDS_PLL_RSTCTL_PLLRST_B_MASK |
+		SRDS_PLL_RSTCTL_SRDST_B_MASK);
 	mask = val;
 	srds_update_reg(reg, val, mask);
 
-	return;
+	udelay(1);
+
+out:
+	return rc;
 }
 
 static void serdes_disable_all_lanes(enum srds_pll_id pll_id,
@@ -395,11 +414,6 @@ static void serdes_disable_all_lanes(enum srds_pll_id pll_id,
 
 	val = ~SRDS_PLL_RSTCTL_SRDST_B_MASK;
 	mask = SRDS_PLL_RSTCTL_SRDST_B_MASK;
-	srds_update_reg(reg, val, mask);
-	udelay(1);
-
-	val = SRDS_PLL_RSTCTL_SDEN_MASK;
-	mask = SRDS_PLL_RSTCTL_SDEN_MASK;
 	srds_update_reg(reg, val, mask);
 	udelay(1);
 
@@ -428,44 +442,26 @@ int serdes_init_pll(void *sdev_handle,
 		goto out;
 	}
 
+#if 0
 	/* If Pll is already initialized then return */
 	if (sdev->cflag & (1 << pll->pll_id)) {
-		dev_info(sdev->dev, "PLL %d already intialized\n",
+		dev_info(sdev->dev, "PLL %d already initialized\n",
 				pll->pll_id);
 		rc = -EALREADY;
 		goto out;
 	}
-
-	/* Disable all lanes */
-	serdes_disable_all_lanes(pll->pll_id, sdev->regs);
-
+#endif
 	/* PLL configuration */
-	rc = serdes_set_pll_config(pll, sdev->regs);
+	rc = serdes_set_pll_config(sdev, pll, sdev->regs);
 	if (rc < 0) {
 		dev_err(sdev->dev, "Invalid PLL config\n");
 		goto out;
 	}
 
-	rc = check_pll_reset_status(pll->pll_id, sdev->regs);
-	if (rc < 0) {
-		dev_err(sdev->dev, "SERDES PLL reset failed\n");
-		goto out;
-	}
-
-	rc = check_pll_lock_status(pll->pll_id, sdev->regs);
-	if (rc < 0) {
-		dev_err(sdev->dev, "SERDES PLL lock failed\n");
-		goto out;
-	}
-
-	/* Set PLL to Application Mode */
-	serdes_pll_set_app_mode(pll->pll_id, sdev->regs);
-
 	/* Update PLL initialized state */
 	srds_update_reg(&sdev->cflag,
 			(1 << pll->pll_id),
 			(1 << pll->pll_id));
-
 out:
 	return rc;
 }
