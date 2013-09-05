@@ -35,6 +35,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 	struct serdes_pll_params pll_param;
 	struct serdes_lane_params lane_param;
 	struct cpri_framer *pair_framer;
+	int serdes_init;
 	u32 line_rate[7] = {0, 1228800, 2457600, 3072000, 4915200,
 		6144000, 9830400};
 
@@ -60,7 +61,9 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 			CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS) {
 		gcr_set_cpri_line_rate(framer->cpri_dev->dev_id, linerate);
 		gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
-		if (serdes_init_pll(framer->serdes_handle, &pll_param))
+		serdes_init = serdes_init_pll(framer->serdes_handle,
+				&pll_param);
+		if ((serdes_init != -EALREADY) && (serdes_init != 0))
 			return -EINVAL;
 	}
 	lane_param.lane_id = framer->serdesspec.args[0];
@@ -523,7 +526,8 @@ static int check_ethrate(struct cpri_framer *framer)
 			err = -ETIME;
 			goto out;
 		}
-		dev_info(dev, "waiting for atleast 2 HF\n");
+		dev_dbg(dev, "waiting for atleast 2 HF\n");
+		schedule_timeout_interruptible(msecs_to_jiffies(1));
 	}
 
 
@@ -753,7 +757,7 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 				&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
 		if (txhfcnt >= 1)
 			break;
-		dev_info(dev, "waiting for 1 HF to sent out\n");
+		dev_dbg(dev, "waiting for 1 HF to sent out\n");
 		schedule_timeout_interruptible(msecs_to_jiffies(1));
 	}
 
@@ -831,7 +835,8 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 		/* Check for remote alarm indication cleared */
 		rai_cleared = (RAI & cpri_read(&regs->cpri_errevent));
 
-		dev_info(dev, "waiting for RAI to clear\n");
+		dev_dbg(dev, "waiting for RAI to clear\n");
+		schedule_timeout_interruptible(msecs_to_jiffies(1));
 
 	} while (rai_cleared);
 

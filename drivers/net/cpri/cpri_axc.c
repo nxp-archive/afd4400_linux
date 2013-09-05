@@ -291,7 +291,7 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 		tx_mblk->blocks[1].base = mblk_info.tx_mblk_addr[1];
 		tx_mblk->blocks[1].size = mblk_info.tx_mblk_size[1];
 		tx_mblk->blocks[1].next_free_addr = tx_mblk->blocks[1].base;
-		tx_mblk->blocks[0].rxtx_busy_flag = 0;
+		tx_mblk->blocks[1].rxtx_busy_flag = 0;
 	}
 	/* rx mem block initiallization */
 	/* rx mem blk 1 */
@@ -309,7 +309,7 @@ int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child)
 		rx_mblk->blocks[1].base = mblk_info.rx_mblk_addr[1];
 		rx_mblk->blocks[1].size = mblk_info.rx_mblk_size[1];
 		rx_mblk->blocks[1].next_free_addr = rx_mblk->blocks[1].base;
-		tx_mblk->blocks[0].rxtx_busy_flag = 0;
+		tx_mblk->blocks[1].rxtx_busy_flag = 0;
 	}
 
 	spin_lock_init(&tx_mblk->lock);

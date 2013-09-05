@@ -205,8 +205,12 @@ static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 	 * the interrupt and schedules for bottom half. Interrupt will
 	 * be enabled once the tx packets are processed
 	 */
-	if (events &  IEVENT_ETH_MASK)
+	if (events &  IEVENT_ETH_MASK) {
+		cpri_reg_write(&framer->regs_lock,
+				&framer->regs->cpri_tctrltiminginten,
+				ETH_EVENT_EN_MASK, ~ETH_EVENT_EN_MASK);
 		cpri_eth_handle_tx(framer);
+	}
 
 	/* TODO: Handle VSS threshold event here */
 	/* Clear events */
@@ -228,8 +232,12 @@ static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 	 * the interrupt and schedules for bottom half. Interrupt will
 	 * be enabled once the rx packets are processed
 	 */
-	if (events & IEVENT_ETH_MASK)
+	if (events & IEVENT_ETH_MASK) {
+		cpri_reg_write(&framer->regs_lock,
+				&framer->regs->cpri_rctrltiminginten,
+				ETH_EVENT_EN_MASK, ~ETH_EVENT_EN_MASK);
 		cpri_eth_handle_rx(framer);
+	}
 
 	/* TODO: Handle VSS threshold event here */
 

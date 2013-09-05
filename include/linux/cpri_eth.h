@@ -35,6 +35,12 @@
 #define CPRI_ETH_NEXT_INDX(cur, rsize) \
 		((((cur)+1) >= (rsize)) ? 0 : ((cur)+1))
 
+#define cpri_skip_bd(bdp, stride, base, ring_size) ({ \
+	typeof(bdp) new_bd = (bdp) + (stride); \
+	(new_bd >= (base) + (ring_size)) ? (new_bd - (ring_size)) : new_bd; })
+
+#define cpri_eth_next_bde(bdp, base, ring_size) \
+			cpri_skip_bd(bdp, 1, base, ring_size)
 #define CPRI_ETH_PTR_MIN	0x14
 
 struct cpri_eth_extra_stats {
@@ -64,7 +70,7 @@ struct cpri_eth_bd_entity {
 
 struct cpri_eth_rx_bd {
 	struct net_device *ndev;
-	raw_spinlock_t rxlock;
+	spinlock_t rxlock;
 	struct cpri_eth_bd_entity *rx_bd_base;
 	dma_addr_t rx_bd_dma_base;
 	struct	sk_buff **rx_skbuff;
@@ -75,7 +81,7 @@ struct cpri_eth_rx_bd {
 
 struct cpri_eth_tx_bd {
 	struct net_device *ndev;
-	raw_spinlock_t txlock;
+	spinlock_t txlock;
 	struct cpri_eth_bd_entity *tx_bd_base;
 	dma_addr_t tx_bd_dma_base;
 	struct sk_buff **tx_skbuff;
@@ -113,8 +119,6 @@ struct cpri_eth_priv {
 	dma_addr_t addr;
 	void *vaddr;
 
-	raw_spinlock_t initlock;
-	raw_spinlock_t statslock;
 	struct net_device_stats stats;
 	struct cpri_eth_extra_stats extra_stats;
 };
@@ -133,7 +137,7 @@ do {\
 
 
 #define CPRI_ETH_NAPI_WEIGHT		64
-#define CPRI_ETH_RXBUF_ALIGNMENT	256
+#define CPRI_ETH_RXBUF_ALIGNMENT	16
 #define CPRI_ETH_TX_TIMEOUT		(1000*HZ)
 #define CPRI_ETH_DISABLED		0
 #define CPRI_ETH_ENABLED		1
@@ -150,7 +154,7 @@ do {\
 #define CPRI_ETH_DEF_TX_RING_SIZE	254
 #define CPRI_ETH_DEF_RX_RING_SIZE	254
 #define CPRI_ETH_DEF_TX_START_THRESH	4
-#define CPRI_ETH_DEF_RX_BUF_SIZE	2816
+#define CPRI_ETH_DEF_RX_BUF_SIZE	4096
 #define CPRI_ETH_DEF_MTU		1500
 #define CPRI_ETH_DEF_RX_COAL_THRESH	0
 #define CPRI_ETH_DEF_TX_COAL_THRESH	0
@@ -185,7 +189,7 @@ do {\
 #define CPRI_ETH_DEF_FLAGS (CPRI_ETH_TRIG | CPRI_ETH_BCAST | \
 		CPRI_ETH_MCAST_FLT | CPRI_ETH_LEN_CHECK | \
 		CPRI_ETH_HW_CRC_EN | CPRI_ETH_HW_CRC_CHECK | \
-		CPRI_ETH_MAC_CHECK)
+		CPRI_ETH_MAC_CHECK | CPRI_ETH_HW_CRC_STRIP)
 
 /* Config Registers */
 /* CPRin_ETH_CONFIG_1 */
@@ -246,7 +250,7 @@ do {\
 #define CPRI_ETH_RX_BD_R_PTR_MASK		0x000001ff
 /* CPRInTERPR */
 #define CPRI_ETH_TX_BD_R_PTR_WRAP_MASK		0x00000100
-#define CPRI_ETH_TX_BD_R_PTR_MASK		0x000001ff
+#define CPRI_ETH_TX_BD_R_PTR_MASK		0x000000ff
 /* CPRInREWPR */
 #define CPRI_ETH_RX_BD_W_PTR_WRAP_MASK		0x00000100
 #define CPRI_ETH_RX_BD_W_PTR_MASK		0x000001ff
