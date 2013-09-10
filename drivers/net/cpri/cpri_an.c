@@ -389,24 +389,20 @@ void l1_timer_expiry_hndlr(unsigned long ptr)
 
 static void cpri_init_autoneg_timers(struct cpri_framer *framer)
 {
-	struct timer_list l1_timer = framer->l1_timer;
-	struct timer_list link_poller = framer->link_poller;
-	struct timer_list ethptr_poller = framer->ethptr_poller;
-
 	/* Initialise L1 timer */
-	init_timer(&l1_timer);
-	l1_timer.function = l1_timer_expiry_hndlr;
-	l1_timer.data = (unsigned long) framer;
+	init_timer(&framer->l1_timer);
+	framer->l1_timer.function = l1_timer_expiry_hndlr;
+	framer->l1_timer.data = (unsigned long) framer;
 
 	/* Initialise poller for operational mode */
-	init_timer(&link_poller);
-	link_poller.function = link_monitor;
-	link_poller.data = (unsigned long) framer;
+	init_timer(&framer->link_poller);
+	framer->link_poller.function = link_monitor;
+	framer->link_poller.data = (unsigned long) framer;
 
 	/* Initialise poller for passive link mode */
-	init_timer(&ethptr_poller);
-	ethptr_poller.function = ethptr_monitor;
-	ethptr_poller.data = (unsigned long) framer;
+	init_timer(&framer->ethptr_poller);
+	framer->ethptr_poller.function = ethptr_monitor;
+	framer->ethptr_poller.data = (unsigned long) framer;
 }
 
 static void set_autoneg_param(struct cpri_framer *framer,
@@ -418,7 +414,7 @@ static void set_autoneg_param(struct cpri_framer *framer,
 	if (param->flags & CPRI_RX_SCRAMBLER_EN)
 		cpri_reg_set(&regs->cpri_rscrseed,
 				RX_SCR_EN_MASK);
-
+	framer->l1_expiry_dur_sec = param->l1_setup_timeout;
 	cpri_init_autoneg_timers(framer);
 
 	cpri_state_machine(framer,
