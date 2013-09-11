@@ -637,54 +637,6 @@ static int jesd_init_serdes_pll(struct jesd_transport_dev *tdev)
 #define JESDTX1_DMA_REQ_EN	0x1
 #define JESDTX1_DMA_REQ_SHIFT	6
 
-static void jesd_init_gcr(struct jesd_transport_dev *tdev)
-{
-	u32 base_reg = 0, val, *reg, mask;
-
-	/* init GCR only once*/
-	if (tdev->type != JESD_DEV_TX)
-		goto out;
-
-	/* GCR72 -> 0x00140000 */
-	base_reg = (u32) ioremap_nocache(GCR_BASE, GCR_SIZE);
-	reg = (u32 *) (base_reg + GCR72);
-	val = 0x00140000;
-	iowrite32(val, reg);
-
-	/* JESD TX1 -> VSPA 3 DMA 8*/
-	reg = (u32 *) (base_reg + GCR22);
-	val = JESDTX1_DMA_REQ_EN << JESDTX1_DMA_REQ_SHIFT;
-	mask = GCR22_DMA_REQ_MASK << JESDTX1_DMA_REQ_SHIFT;
-	jesd_update_reg(reg, val, mask);
-
-	/* JESD TX4 -> VSPA 3 DMA 11*/
-	/* JESD TX3 -> VSPA 3 DMA 10*/
-	reg = (u32 *) (base_reg + GCR23);
-	iowrite32(0x40040, reg);
-
-	/* JESD RX1 -> VSPA 5 DMA 8*/
-	/* JESD RX3 -> VSPA 5 DMA 10*/
-	reg = (u32 *) (base_reg + GCR41);
-	iowrite32(0x100001, reg);
-
-	/* JESD RX4 -> VSPA 5 DMA 11*/
-	reg = (u32 *) (base_reg + GCR42);
-	iowrite32(0x01, reg);
-
-	reg = (u32 *) (base_reg + GCR43);
-	iowrite32(0x643, reg);
-
-	/*JESD RX1 Ptr reset request to VSPA 5 DMA 8*/
-	reg = (u32 *) (base_reg + GCR45);
-	iowrite32(0x1101, reg);
-
-	/*JESD TX1 Ptr reset request to VSPA 3 DMA 8*/
-	reg = (u32 *) (base_reg + GCR52);
-	iowrite32(0x14400, reg);
-
-out:
-	return;
-}
 
 int jesd_start_transport(struct jesd_transport_dev *tdev)
 {
@@ -697,7 +649,8 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 		goto out;
 	}
 
-	jesd_init_gcr(tdev);
+	if (tdev->type == JESD_DEV_TX)
+		gcr_jesd_init();
 
 	rc = jesd_init_serdes_pll(tdev);
 	if (rc) {

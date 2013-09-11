@@ -168,8 +168,6 @@ void gcr_jesd_init(void)
 	val = TPD_BGR_EN;
 	scm_reg_write(val, 72);
 
-	val = OHM_TERM_EN;
-	scm_reg_write(val, 75);
 	return;
 }
 EXPORT_SYMBOL_GPL(gcr_jesd_init);

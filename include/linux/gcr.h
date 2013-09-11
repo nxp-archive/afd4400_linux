@@ -10,7 +10,6 @@
 #define MOD_DEC_USE_COUNT
 
 /* GCR value to init JESD */
-#define OHM_TERM_EN		0xFFFFFFFF
 #define TPD_BGR_EN		0x00140000
 
 /* gcr 1 device is max for user app */
