@@ -91,7 +91,7 @@ extern const char gfar_driver_version[];
 
 /* These need to be powers of 2 for this driver */
 #define DEFAULT_TX_RING_SIZE	256
-#define DEFAULT_RX_RING_SIZE	256
+#define DEFAULT_RX_RING_SIZE	8
 
 #define GFAR_RX_MAX_RING_SIZE   256
 #define GFAR_TX_MAX_RING_SIZE   256
@@ -134,10 +134,10 @@ extern const char gfar_driver_version[];
 #define DEFAULT_TXCOUNT	16
 #define DEFAULT_TXTIME	21
 
-#define DEFAULT_RXTIME	21
+#define DEFAULT_RXTIME	800
 
-#define DEFAULT_RX_COALESCE 0
-#define DEFAULT_RXCOUNT	0
+#define DEFAULT_RX_COALESCE 1
+#define DEFAULT_RXCOUNT	255
 
 #define GFAR_SUPPORTED (SUPPORTED_10baseT_Half \
 		| SUPPORTED_10baseT_Full \
