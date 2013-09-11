@@ -12,6 +12,588 @@
  */
 
 #include <linux/cpri.h>
+void bd_dump(struct net_device *ndev)
+{
+	void *vaddr;
+	int i;
+	struct cpri_eth_bd_entity *bd_ptr;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_eth_tx_bd *tx_bd = priv->tx_bd;
+	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
+	struct device *dev = priv->framer->cpri_dev->dev;
+
+	vaddr = tx_bd->tx_bd_base;
+	if (vaddr == 0) {
+		dev_err(dev, "tx_bd resourses null--");
+		return;
+	}
+	bd_ptr = tx_bd->tx_bd_base;
+	for (i = 0; i < tx_bd->tx_bd_ring_size; ) {
+		if (bd_ptr != NULL)
+			dev_info(dev, "tx[%d] bdp: %p, lsts: 0x%x, bfptr: 0x%x",
+				i, bd_ptr, bd_ptr->lstatus,
+				bd_ptr->buf_ptr);
+		bd_ptr++;
+		i++;
+	}
+
+	bd_ptr = rx_bd->rx_bd_base;
+	for (i = 0; i < rx_bd->rx_bd_ring_size; i++) {
+		if (bd_ptr != NULL)
+			dev_info(dev, "rx[%d] bdp: %p, lsts: 0x%x, bfptr: 0x%x",
+				i, bd_ptr, bd_ptr->lstatus,
+				bd_ptr->buf_ptr);
+		else
+			dev_info(dev, "rx[%d] bdp: %p --- is null bug",
+				i, bd_ptr);
+		bd_ptr++;
+	}
+
+
+}
+
+static int cpri_eth_init_bd_regs(struct net_device *ndev)
+{
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer *framer = priv->framer;
+	struct cpri_framer_regs *regs = framer->regs;
+	struct cpri_eth_tx_bd *tx_bd = priv->tx_bd;
+	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
+
+	/* Rx buffer size */
+	cpri_reg_set_val(&regs->cpri_rethbufsize,
+		CPRI_ETH_RX_BUF_SZ_MASK, CPRI_ETH_DEF_RX_BUF_SIZE-1);
+
+	/* Ring size */
+	cpri_reg_set_val(&regs->cpri_tethbdringsize,
+		CPRI_ETH_TX_BD_RING_SZ_MASK, CPRI_ETH_DEF_TX_RING_SIZE);
+
+	cpri_reg_set_val(&regs->cpri_rethbdringsize,
+		CPRI_ETH_RX_BD_RING_SZ_MASK, CPRI_ETH_DEF_RX_RING_SIZE);
+
+	/* Ring Base address */
+	cpri_reg_set_val(&regs->cpri_tethbdringbaddr,
+		CPRI_ETH_TX_BD_RING_BASE_MASK, tx_bd->tx_bd_dma_base);
+
+	cpri_reg_clear(&regs->cpri_tethbdringbaddrmsb,
+		CPRI_ETH_TX_BD_RING_BASE_MSB_MASK);
+
+	cpri_reg_set_val(&regs->cpri_rethbdringbaddr,
+		CPRI_ETH_RX_BD_RING_BASE_MASK,
+		rx_bd->rx_bd_dma_base);
+
+	cpri_reg_clear(&regs->cpri_rethbdringbaddrmsb,
+		CPRI_ETH_RX_BD_RING_BASE_MSB_MASK);
+	/* Coalescing threshold */
+	cpri_reg_set_val(&regs->cpri_tethcoalthresh,
+		CPRI_ETH_TX_COAL_THRES_MASK, priv->tx_coales_thresh);
+
+	cpri_reg_set_val(&regs->cpri_rethcoalthresh,
+		CPRI_ETH_RX_COAL_THRES_MASK, priv->rx_coales_thresh);
+
+	return 0;
+}
+
+static void cpri_eth_clear_bd_regs(struct net_device *ndev)
+{
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer *framer = priv->framer;
+
+	/* Rx buffer size */
+	cpri_reg_clear(&framer->regs->cpri_rethbufsize,
+			CPRI_ETH_RX_BUF_SZ_MASK);
+
+	/* Ring size */
+	cpri_reg_clear(&framer->regs->cpri_tethbdringsize,
+			CPRI_ETH_TX_BD_RING_SZ_MASK);
+
+	cpri_reg_clear(&framer->regs->cpri_rethbdringsize,
+			CPRI_ETH_RX_BD_RING_SZ_MASK);
+
+	/* Ring Base address */
+	cpri_reg_clear(&framer->regs->cpri_tethbdringbaddr,
+			CPRI_ETH_TX_BD_RING_BASE_MASK);
+
+	cpri_reg_clear(&framer->regs->cpri_tethbdringbaddrmsb,
+			CPRI_ETH_TX_BD_RING_BASE_MSB_MASK);
+
+	cpri_reg_clear(&framer->regs->cpri_rethbdringbaddr,
+			CPRI_ETH_RX_BD_RING_BASE_MASK);
+
+	cpri_reg_clear(&framer->regs->cpri_rethbdringbaddrmsb,
+			CPRI_ETH_RX_BD_RING_BASE_MSB_MASK);
+
+	/* Coalescing threshold */
+	cpri_reg_clear(&framer->regs->cpri_tethcoalthresh,
+			CPRI_ETH_TX_COAL_THRES_MASK);
+
+	cpri_reg_clear(&framer->regs->cpri_rethcoalthresh,
+			CPRI_ETH_RX_COAL_THRES_MASK);
+
+	return;
+}
+
+static void cpri_eth_align_skb(struct sk_buff *skb)
+{
+	unsigned int reserve;
+
+	/* We need the data buffer to be aligned properly.  We will reserve
+	 * as many bytes as needed to align the data properly
+	 */
+	reserve = CPRI_ETH_RXBUF_ALIGNMENT -
+		(((unsigned long) skb->data) & (CPRI_ETH_RXBUF_ALIGNMENT - 1));
+
+	skb_reserve(skb, reserve);
+}
+
+
+static struct sk_buff *cpri_eth_new_skb(struct net_device *ndev)
+{
+	struct sk_buff *skb = NULL;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+
+	skb = netdev_alloc_skb(ndev, priv->rx_buffer_size +
+						CPRI_ETH_RXBUF_ALIGNMENT);
+	if (!skb)
+		return NULL;
+
+	cpri_eth_align_skb(skb);
+
+	return skb;
+}
+
+static void cpri_eth_free_rx_skbs(struct net_device *ndev, int limit)
+{
+	int i;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
+	struct cpri_eth_bd_entity *rx_iter;
+
+	for (i = 0, rx_iter = rx_bd->rx_bd_base;
+			i < limit;
+			i++, rx_iter++) {
+
+		dma_unmap_single(&priv->ofdev->dev, rx_iter->buf_ptr,
+				priv->rx_buffer_size, DMA_FROM_DEVICE);
+
+		dev_kfree_skb_any(rx_bd->rx_skbuff[i]);
+		rx_bd->rx_skbuff[i] = NULL;
+	}
+
+	return;
+}
+static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
+		struct cpri_eth_bd_entity *bdp,
+			    dma_addr_t buf, unsigned int bd_index)
+{
+	struct net_device *ndev = rx_bd->ndev;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer *framer = priv->framer;
+	struct cpri_eth_bd_entity rxbde_le;
+	struct cpri_reg_data data[1];
+	unsigned int bd_nxtindex;
+
+	rxbde_le.buf_ptr = buf;
+	rxbde_le.lstatus = BD_LFLAG_FSHIFT(CPRI_ETH_BD_RX_EMPTY);
+	CPRI_ETH_BD_TO_BE(bdp, &rxbde_le); /* b-endian */
+	dmb();
+	bd_nxtindex = CPRI_ETH_NEXT_INDX(bd_index, CPRI_ETH_DEF_RX_RING_SIZE);
+	data[0].val = bd_nxtindex;
+	data[0].mask = CPRI_ETH_RX_BD_R_PTR_MASK;
+	if ((!data[0].val)) {
+		/* also set the wrap bit */
+		data[0].val |= CPRI_ETH_RX_BD_W_PTR_WRAP_MASK;
+	}
+
+	cpri_reg_vset_val(&framer->regs->cpri_rethwriteptr, data);
+
+}
+
+
+static void cpri_new_rxbdp(struct cpri_eth_rx_bd *rx_bd,
+		struct cpri_eth_bd_entity *bdp,
+		struct sk_buff *skb, int i)
+{
+	struct net_device *ndev = rx_bd->ndev;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	dma_addr_t buf;
+
+	buf = dma_map_single(&priv->ofdev->dev, skb->data,
+			priv->rx_buffer_size, DMA_FROM_DEVICE);
+	cpri_init_rxbdp(rx_bd, bdp, buf, i);
+}
+
+static int cpri_eth_init_rx_skbs(struct cpri_eth_rx_bd *rx_bd)
+{
+	int i;
+	struct net_device *ndev = rx_bd->ndev;
+	struct cpri_eth_bd_entity *rx_iter;
+	struct sk_buff *skb;
+
+	rx_iter = rx_bd->rx_bd_base;
+	for (i = 0; i < rx_bd->rx_bd_ring_size; i++) {
+		skb = cpri_eth_new_skb(ndev);
+		if (!skb)
+			goto skb_cleanup;
+
+		rx_bd->rx_skbuff[i]  = skb;
+		cpri_new_rxbdp(rx_bd, rx_iter, skb, i);
+		rx_iter++;
+	}
+	return 0;
+
+skb_cleanup:
+	cpri_eth_free_rx_skbs(ndev, i);
+	return -ENOMEM;
+}
+
+static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
+{
+	int i;
+	void *vaddr;
+	dma_addr_t addr;
+	unsigned int dma_alloc_size;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_eth_tx_bd *tx_bd = priv->tx_bd;
+	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
+
+
+	dma_alloc_size = ((sizeof(struct cpri_eth_bd_entity) *
+				rx_bd->rx_bd_ring_size) +
+				(sizeof(struct cpri_eth_bd_entity) *
+				tx_bd->tx_bd_ring_size));
+
+
+	/* Allocate memory for the buffer descriptors */
+	vaddr = dma_alloc_coherent(&priv->ofdev->dev,
+			dma_alloc_size + (CPRI_ETH_BD_RING_ALIGN - 1),
+			&addr, GFP_KERNEL);
+	if (!vaddr) {
+		netdev_err(ndev, "Could not allocate bd's!\n");
+		return -ENOMEM;
+	}
+	memset(vaddr, 0, dma_alloc_size);
+	/* Check alignment */
+	vaddr = (void *)(((unsigned int)vaddr +
+		 (CPRI_ETH_BD_RING_ALIGN - 1)) & ~(CPRI_ETH_BD_RING_ALIGN - 1));
+
+	addr = (((unsigned int)addr + (CPRI_ETH_BD_RING_ALIGN - 1)) &
+				~(CPRI_ETH_BD_RING_ALIGN - 1));
+
+	/* Store the aligned pointers */
+	priv->addr = addr;
+	priv->vaddr = vaddr;
+
+	/* Initialize Tx BD */
+	tx_bd->tx_bd_base = vaddr;
+	tx_bd->tx_bd_dma_base = addr;
+	tx_bd->tx_bd_current = tx_bd->tx_bd_base;
+	tx_bd->tx_bd_dirty = tx_bd->tx_bd_current;
+
+	tx_bd->tx_skbuff = kmalloc(sizeof(*tx_bd->tx_skbuff) *
+				tx_bd->tx_bd_ring_size, GFP_KERNEL);
+	if (!tx_bd->tx_skbuff) {
+		netdev_err(ndev, "Could not allocate tx_skbuff\n");
+		goto tx_alloc_fail;
+	}
+
+	for (i = 0; i < tx_bd->tx_bd_ring_size; i++)
+		tx_bd->tx_skbuff[i] = NULL;
+
+	tx_bd->skb_curtx = tx_bd->skb_dirtytx = 0;
+	tx_bd->num_txbdfree = tx_bd->tx_bd_ring_size;
+
+	/* Initialize Rx BD */
+	addr  += sizeof(struct cpri_eth_bd_entity) * tx_bd->tx_bd_ring_size;
+	vaddr += sizeof(struct cpri_eth_bd_entity) * tx_bd->tx_bd_ring_size;
+	vaddr = (void *)(((unsigned int)vaddr +
+		 (CPRI_ETH_BD_RING_ALIGN - 1)) & ~(CPRI_ETH_BD_RING_ALIGN - 1));
+
+	addr = (((unsigned int)addr + (CPRI_ETH_BD_RING_ALIGN - 1)) &
+				~(CPRI_ETH_BD_RING_ALIGN - 1));
+
+	rx_bd->rx_bd_base = vaddr;
+	rx_bd->rx_bd_dma_base =	addr;
+	rx_bd->rx_bd_current = rx_bd->rx_bd_base;
+
+	rx_bd->rx_skbuff = kmalloc(sizeof(*rx_bd->rx_skbuff) *
+					rx_bd->rx_bd_ring_size, GFP_KERNEL);
+	if (!rx_bd->rx_skbuff) {
+		netdev_err(ndev, "Could not allocate rx_skbuff\n");
+		goto rx_alloc_fail;
+	}
+
+	rx_bd->skb_currx = 0;
+	rx_bd->ndev = ndev;
+
+	if (cpri_eth_init_rx_skbs(rx_bd))
+		goto skb_init_fail;
+
+	if (cpri_eth_init_bd_regs(ndev))
+		goto bd_init_fail;
+
+	return 0;
+
+bd_init_fail:
+	cpri_eth_clear_bd_regs(ndev);
+	cpri_eth_free_rx_skbs(ndev, priv->rx_buffer_size);
+skb_init_fail:
+	kfree(rx_bd->rx_skbuff);
+rx_alloc_fail:
+	rx_bd->rx_skbuff = 0;
+	rx_bd->rx_bd_current = 0;
+	rx_bd->rx_bd_dma_base = 0;
+	rx_bd->rx_bd_base = 0;
+	kfree(tx_bd->tx_skbuff);
+tx_alloc_fail:
+	tx_bd->tx_skbuff = 0;
+	tx_bd->tx_bd_dirty = 0;
+	tx_bd->tx_bd_current = 0;
+	tx_bd->tx_bd_dma_base = 0;
+	tx_bd->tx_bd_base = 0;
+	dma_free_coherent(&priv->ofdev->dev,
+		dma_alloc_size + CPRI_ETH_BD_RING_ALIGN, priv->vaddr,
+			priv->addr);
+	priv->addr = 0;
+	priv->vaddr = 0;
+	return -ENOMEM;
+}
+
+static void cpri_eth_free_skb_resources(struct net_device *ndev)
+{
+	unsigned int dma_alloc_size, i;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_eth_tx_bd *tx_bd = priv->tx_bd;
+	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
+
+	cpri_eth_clear_bd_regs(ndev);
+	for (i = 0; i < tx_bd->tx_bd_ring_size; i++) {
+		if (tx_bd->tx_skbuff[i])
+			dev_kfree_skb_any(tx_bd->tx_skbuff[i]);
+	}
+
+	for (i = 0; i < rx_bd->rx_bd_ring_size; i++) {
+		if (rx_bd->rx_skbuff[i])
+			dev_kfree_skb_any(rx_bd->rx_skbuff[i]);
+	}
+
+	kfree(tx_bd->tx_skbuff);
+	tx_bd->tx_skbuff = 0;
+
+	kfree(rx_bd->rx_skbuff);
+	rx_bd->rx_skbuff = 0;
+
+	dma_alloc_size = (sizeof(struct cpri_eth_bd_entity) *
+				rx_bd->rx_bd_ring_size) +
+				(sizeof(struct cpri_eth_bd_entity) *
+				tx_bd->tx_bd_ring_size);
+
+	dma_free_coherent(&priv->ofdev->dev,
+			dma_alloc_size + CPRI_ETH_BD_RING_ALIGN,
+			priv->vaddr, priv->addr);
+
+
+	tx_bd->tx_bd_base = 0;
+	tx_bd->tx_bd_dma_base = 0;
+	tx_bd->tx_bd_current = 0;
+	tx_bd->tx_bd_dirty = 0;
+	tx_bd->skb_curtx = tx_bd->skb_dirtytx = 0;
+	tx_bd->num_txbdfree = 0;
+
+	rx_bd->rx_bd_base = 0;
+	rx_bd->rx_bd_dma_base =	0;
+	rx_bd->rx_bd_current = 0;
+	rx_bd->skb_currx = 0;
+
+	priv->addr = 0;
+	priv->vaddr = 0;
+
+	return;
+}
+
+static int cpri_eth_tx_resume(struct net_device *ndev)
+{
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer *framer = priv->framer;
+
+	/* This flag needs to be enabled before 're'-enabling tx */
+	cpri_reg_set(&framer->regs->cpri_rethctrl,
+			CPRI_ETH_RX_CTRL_DISCARD_MASK);
+
+	cpri_reg_set(&framer->regs->cpri_tcr,
+			CPRI_ETH_TX_ENABLE_MASK);
+	return 0;
+}
+
+static int cpri_eth_rx_resume(struct net_device *ndev)
+{
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer *framer = priv->framer;
+
+	cpri_reg_set(&framer->regs->cpri_rcr,
+			CPRI_ETH_RX_ENABLE_MASK);
+	return 0;
+}
+
+static int cpri_eth_tx_rx_resume(struct net_device *ndev)
+{
+	cpri_eth_tx_resume(ndev);
+	cpri_eth_rx_resume(ndev);
+	return 0;
+}
+
+static int cpri_eth_tx_halt(struct net_device *ndev)
+{
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer *framer = priv->framer;
+
+	cpri_reg_clear(&framer->regs->cpri_tcr,
+			CPRI_ETH_TX_ENABLE_MASK);
+	return 0;
+}
+
+static int cpri_eth_rx_halt(struct net_device *ndev)
+{
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer *framer = priv->framer;
+
+	cpri_reg_clear(&framer->regs->cpri_rcr,
+			CPRI_ETH_RX_ENABLE_MASK);
+	return 0;
+}
+
+static int cpri_eth_tx_rx_halt(struct net_device *ndev)
+{
+	cpri_eth_tx_halt(ndev);
+	cpri_eth_rx_halt(ndev);
+	return 0;
+}
+
+static int cpri_eth_open(struct net_device *ndev)
+{
+	int err;
+	unsigned long flags;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct device *dev = priv->framer->cpri_dev->dev;
+
+
+	spin_lock_irqsave(&priv->tx_bd->txlock, flags);
+	spin_lock(&priv->rx_bd->rxlock);
+
+	err = cpri_eth_alloc_skb_resources(ndev);
+
+	spin_unlock(&priv->rx_bd->rxlock);
+	spin_unlock_irqrestore(&priv->tx_bd->txlock, flags);
+
+	if (err) {
+		dev_err(dev, "cpri skb resouces allocation failed!!\n");
+		return err;
+	}
+
+	napi_enable(&priv->napi);
+
+	cpri_eth_tx_rx_resume(ndev);
+
+	netif_start_queue(ndev);
+
+	/* prevent tx timeout */
+	ndev->trans_start = jiffies;
+	ndev->flags |= IFF_UP;
+
+	return 0;
+}
+
+static int cpri_eth_close(struct net_device *ndev)
+{
+	unsigned long flags;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+
+	cpri_eth_tx_rx_halt(ndev);
+
+	napi_disable(&priv->napi);
+	netif_stop_queue(ndev);
+
+	tasklet_disable(&priv->tasklet);
+
+	cancel_work_sync(&priv->reset_task);
+	cancel_work_sync(&priv->error_task);
+
+	spin_lock_irqsave(&priv->tx_bd->txlock, flags);
+	spin_lock(&priv->rx_bd->rxlock);
+
+	cpri_eth_free_skb_resources(ndev);
+
+	spin_unlock(&priv->rx_bd->rxlock);
+	spin_unlock_irqrestore(&priv->tx_bd->txlock, flags);
+
+	return 0;
+}
+
+static int cpri_eth_restart(struct net_device *ndev)
+{
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	unsigned long flags;
+
+	/* same sequence as cpri_eth_close() followed by cpri_eth_open() */
+
+	/* Stop */
+	cpri_eth_tx_rx_halt(ndev);
+
+	napi_disable(&priv->napi);
+	netif_stop_queue(ndev);
+
+	tasklet_disable(&priv->tasklet);
+
+	/* This fn is called from reset_task workqueue.
+	 * Dont cancel it!
+	 * cancel_work_sync(&priv->reset_task)
+	 */
+	cancel_work_sync(&priv->error_task);
+
+	netif_carrier_off(ndev);
+
+	spin_lock_irqsave(&priv->tx_bd->txlock, flags);
+	spin_lock(&priv->rx_bd->rxlock);
+
+	cpri_eth_free_skb_resources(ndev);
+
+	/* Start */
+	cpri_eth_alloc_skb_resources(ndev);
+
+	spin_unlock(&priv->rx_bd->rxlock);
+	spin_unlock_irqrestore(&priv->tx_bd->txlock, flags);
+
+	napi_enable(&priv->napi);
+
+	cpri_eth_tx_rx_resume(ndev);
+
+	netif_start_queue(ndev);
+
+	/* prevent tx timeout */
+	ndev->trans_start = jiffies;
+
+	netif_carrier_on(ndev);
+
+	return 0;
+}
+
+static inline void cpri_eth_stats_incr_val(unsigned long *sptr,
+		unsigned int val)
+{
+
+	(*sptr) += val;
+	return;
+}
+
+static void cpri_eth_bd_to_be(struct cpri_eth_bd_entity *bd_be,
+		struct cpri_eth_bd_entity *bd)
+{
+	(bd_be)->buf_ptr = cpu_to_be32((bd)->buf_ptr);
+	wmb();
+	(bd_be)->lstatus = cpu_to_be32((bd)->lstatus);
+}
+
+
 static int cpri_eth_xmit(struct sk_buff *newskb, struct net_device *ndev)
 {
 	unsigned long flags = 0;
