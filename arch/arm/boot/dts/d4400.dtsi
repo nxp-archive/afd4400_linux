@@ -25,6 +25,10 @@
                 gpio4 = &gpioE;
 		ethernet0 = &enet0;
 		ethernet1 = &enet1;
+		ethernet2 = &cp1_framer0;
+		ethernet3 = &cp1_framer1;
+		ethernet4 = &cp2_framer0;
+		ethernet5 = &cp2_framer1;
         };
 
         cpus {
@@ -361,7 +365,7 @@
 					<0 70 0x4>,
 					<0 79 0x4>;
 
-			framer0@0x0 {
+			cp1_framer0: framer0@0x0 {
 				reg = <0x0 0x8000>;
 				framer-id = <1>;
 				max-axcs = <24>;
@@ -376,7 +380,7 @@
 				serdes-handle = <&serdes3 2>;
 			};
 
-			framer1@0x8000 {
+			cp1_framer1: framer1@0x8000 {
 				reg = <0x8000 0x8000>;
 				framer-id = <2>;
 				max-axcs = <24>;
@@ -630,7 +634,7 @@
                                         <0 83 0x4>,
                                         <0 92 0x4>;
 
-                        framer0@0x0 {
+                        cp2_framer0: framer0@0x0 {
                                 reg = <0x0 0x8000>;
                                 framer-id = <1>;
                                 max-axcs = <24>;
@@ -645,7 +649,7 @@
                                 serdes-handle = <&serdes3 4>;
                         };
 
-                        framer1@0x8000 {
+                        cp2_framer1: framer1@0x8000 {
                                 reg = <0x8000 0x8000>;
                                 framer-id = <2>;
                                 max-axcs = <24>;
