@@ -118,10 +118,7 @@ static const struct of_device_id d4400_irq_match[] __initconst = {
 
 static void __init d4400_init_irq(void)
 {
-	/*
-	 * Reducing cache ways to 8
-	 */
-	l2x0_of_init(0, 0xFFFEFFFF);
+	//l2x0_of_init(0, ~0UL);
 	of_irq_init(d4400_irq_match);
 	d4400_clock_map_io();
 }
