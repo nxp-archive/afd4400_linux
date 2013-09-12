@@ -981,14 +981,7 @@ config ARCH_D4400
         select USE_OF
         select CACHE_L2X0
         select ARM_ERRATA_720789
-	select ARM_ERRATA_743622
-	select ARM_ERRATA_751472
-	select ARM_ERRATA_754322
-	select ARM_ERRATA_764369 if SMP
-	select ARM_ERRATA_775420
-	select PL310_ERRATA_588369 if CACHE_PL310
-	select PL310_ERRATA_727915 if CACHE_PL310
-	select PL310_ERRATA_769419 if CACHE_PL310
+        select PL310_ERRATA_753970 if CACHE_PL310
         select NO_IOPORT
         select ARM_AMBA
         help
