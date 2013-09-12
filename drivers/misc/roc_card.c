@@ -394,9 +394,10 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 	for (i = 0; i < count; i++) {
 		if (phy_dev == NULL && cmds[i].cmd != SPI_SET_CHANNEL)
 			continue;
+		elapsed_time = 0;
 		switch (cmds[i].cmd) {
 		case SPI_WRITE:
-			dev_dbg(dev, "SPI_WRITE addr:%x data:%x\n",
+			dev_dbg(dev, "SPI_WRITE %03X, %02X\n",
 				cmds[i].param1, cmds[i].param2);
 			/*if (cmds[i].param1 == REG_RX_CP_CONFIG) {
 				roc_read(phy_dev,
@@ -426,18 +427,18 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			 * read values, and let user space decide what to
 			 * do this value.
 			 */
-			dev_dbg(dev, "SPI_READ %x\n", cmds[i].param1);
 			ad9368_read(phy_dev, cmds[i].param1, 1, &val);
-			dev_dbg(dev, "Read from reg: %x, val %x\n",
+			dev_dbg(dev, "SPIRead %03X, %02X\n",
 				cmds[i].param1, val);
 			break;
 
 		case SPI_WAIT:
-			dev_dbg(dev, "SPI_WAIT %u\n", cmds[i].param1);
+			dev_dbg(dev, "SPI_WAIT %u RECEIVED\n", cmds[i].param1);
 			msleep_interruptible(cmds[i].param3);
 				break;
 
 		case SPI_WAIT_CALPLL_CAL:
+			dev_dbg(dev, "SPI_WAIT_CALPLL_CAL RECEIVED.\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -449,6 +450,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			break;
 
 		case SPI_WAIT_CLKPLLCP_CAL:
+			dev_dbg(dev, "SPI_WAIT_CLKPLLCP_CAL RECEIVED.\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -459,7 +461,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			break;
 
 		case SPI_WAIT_TXFILTER_CAL:
-			dev_dbg(dev, "SPI_WAIT_TXFILTER_CAL\n");
+			dev_dbg(dev, "SPI_WAIT_TXFILTER_CAL RECEIVED\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -474,7 +476,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			break;
 
 		case SPI_WAIT_RFDC_CAL:
-			dev_dbg(dev, "SPI_WAIT_RFDC_CALL\n");
+			dev_dbg(dev, "SPI_WAIT_RFDC_CAL RECEIVED\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -489,6 +491,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			break;
 
 		case SPI_WAIT_TXQUAD_CAL:
+			dev_dbg(dev, "SPI_WAIT_TXQUAD_CAL RECEIVED.\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -508,6 +511,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 		*all four registers starting from 0x41C
 		*/
 		case SPI_WAIT_MAILBOX:
+			dev_dbg(dev, "SPI_WAIT_MAILBOX RECEIVED.\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -526,6 +530,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			break;
 
 		case SPI_WAIT_ARMBUSY:
+			dev_dbg(dev, "SPI_WAIT_ARMBUSY RECEIVED.\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -560,6 +565,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			}
 			break;
 		case SPI_WAIT_INITARM_CAL:
+			dev_dbg(dev, "SPI_WAIT_INITARM_CAL RECEIVED.\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -641,6 +647,7 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			}
 			break;
 		case SPI_WAIT_RXADC_CAL:
+			dev_dbg(dev, "SPI_WAIT_RXADC_CAL RECEIVED.\n");
 			for (elapsed_time = 1; elapsed_time < cmds[i].param3;
 					elapsed_time++) {
 				msleep_interruptible(1);
@@ -650,9 +657,20 @@ int roc_run_cmds(struct roc_dev *roc_dev,
 			}
 			break;
 		default:
-			dev_dbg(dev, "Not a valid AD_PHY command\n");
+			dev_err(dev, "Unknown AD_PHY command %d\n",
+					cmds[i].cmd);
 			return -EINVAL;
 		}
+		if (elapsed_time != 0) {
+			if (elapsed_time >= cmds[i].param3)
+				dev_warn(dev, "TIMEOUT on cmd %d. Limit was %d\n",
+					cmds[i].cmd, cmds[i].param3);
+			else
+				dev_dbg(dev, "WAIT on cmd %d. Used %d, Limit was %d\n",
+					cmds[i].cmd, elapsed_time,
+					cmds[i].param3);
+		}
+
 	}
 
 	return rc;

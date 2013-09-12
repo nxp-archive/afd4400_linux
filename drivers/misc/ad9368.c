@@ -282,7 +282,6 @@ int ad9368_start(struct rf_phy_dev *phy_dev)
 	/*XXX: Nothing to do as of now*/
 	return 0;
 }
-
 EXPORT_SYMBOL(ad9368_start);
 
 int ad9368_read(struct rf_phy_dev *phy_dev, u32 start,
@@ -452,7 +451,8 @@ static int check_revision(struct rf_phy_dev *phy_dev)
 		ad9368_read(phy_dev, PRODUCT_CODE_AD93681_REG, 1, &val);
 		rev = (u8) val & REV_MASK;
 		if (rev != 1) {
-			dev_err(dev, "Unsuported AD9368-1 revision 0x%x\n", rev);
+			dev_err(dev,
+				"Unsupported AD9368-1 revision 0x%x\n", rev);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -461,7 +461,8 @@ static int check_revision(struct rf_phy_dev *phy_dev)
 		ad9368_read(phy_dev, PRODUCT_CODE_AD93682_REG, 1, &val);
 		rev = (u8) val & REV_MASK;
 		if (rev != 1) {
-			dev_err(dev, "Unsuported AD9368-2 revision 0x%x\n", rev);
+			dev_err(dev,
+				"Unsupported AD9368-2 revision 0x%x\n", rev);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -471,7 +472,8 @@ static int check_revision(struct rf_phy_dev *phy_dev)
 		ad9368_read(phy_dev, PRODUCT_CODE_AD9525_REG, 1, &val);
 		rev = (u8) val;
 		if (rev != 1) {
-			dev_err(dev, "Unsuported AD9525 revision 0x%x\n", rev);
+			dev_err(dev,
+				"Unsupported AD9525 revision 0x%x\n", rev);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -480,7 +482,7 @@ static int check_revision(struct rf_phy_dev *phy_dev)
 
 	/*product_id = (u8) val & PRODUCT_ID_MASK;
 	if (product_id != PRODUCT_ID_9368) {
-		dev_err(dev, "Unsuported product id 0x%x\n", product_id);
+		dev_err(dev, "Unsupported product id 0x%x\n", product_id);
 		rc = -ENODEV;
 		goto out;
 	}*/
