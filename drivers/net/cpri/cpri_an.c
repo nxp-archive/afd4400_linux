@@ -484,7 +484,8 @@ void cpri_setup_vendor_autoneg(struct cpri_framer *framer)
 
 /* end here */
 	/* Setup ethernet DMA here */
-	cpri_eth_enable(framer);
+	if(framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
+		cpri_eth_enable(framer);
 	cpri_state_machine(framer,
 			CPRI_STATE_AUTONEG_COMPLETE);
 }

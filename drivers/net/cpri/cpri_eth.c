@@ -192,6 +192,7 @@ static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
 	struct cpri_eth_bd_entity rxbde_le;
 	struct cpri_reg_data data[1];
 	unsigned int bd_nxtindex;
+	u32 val;
 
 	rxbde_le.buf_ptr = buf;
 	rxbde_le.lstatus = BD_LFLAG_FSHIFT(CPRI_ETH_BD_RX_EMPTY);
@@ -200,10 +201,17 @@ static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
 	bd_nxtindex = CPRI_ETH_NEXT_INDX(bd_index, CPRI_ETH_DEF_RX_RING_SIZE);
 	data[0].val = bd_nxtindex;
 	data[0].mask = CPRI_ETH_RX_BD_R_PTR_MASK;
-	if ((!data[0].val)) {
+	
+	if (data[0].val == 0) {
 		/* also set the wrap bit */
-		data[0].val |= CPRI_ETH_RX_BD_W_PTR_WRAP_MASK;
+		data[0].mask = CPRI_ETH_RX_BD_W_PTR_MASK;
+		val = cpri_read(&framer->regs->cpri_rethwriteptr);
+		if ((val  >> 8) & 0x1)
+			data[0].val &= ~CPRI_ETH_TX_BD_W_PTR_WRAP_MASK;
+		else
+			data[0].val |= CPRI_ETH_TX_BD_W_PTR_WRAP_MASK;
 	}
+
 
 	cpri_reg_vset_val(&framer->regs->cpri_rethwriteptr, data);
 
@@ -326,8 +334,10 @@ static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
 	rx_bd->skb_currx = 0;
 	rx_bd->ndev = ndev;
 
-	if (cpri_eth_init_rx_skbs(rx_bd))
+	if (cpri_eth_init_rx_skbs(rx_bd)) {
+		netdev_err(ndev, "Rx BD init failed\n");
 		goto skb_init_fail;
+	}
 
 	if (cpri_eth_init_bd_regs(ndev))
 		goto bd_init_fail;
@@ -475,7 +485,6 @@ static int cpri_eth_open(struct net_device *ndev)
 	unsigned long flags;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct device *dev = priv->framer->cpri_dev->dev;
-
 
 	spin_lock_irqsave(&priv->tx_bd->txlock, flags);
 	spin_lock(&priv->rx_bd->rxlock);
@@ -667,7 +676,7 @@ static int cpri_eth_xmit(struct sk_buff *newskb, struct net_device *ndev)
 
 	if (reg_data[0].val == 0) {
 		/* also set the wrap bit */
-		reg_data[0].mask = CPRI_ETH_RX_BD_W_PTR_MASK;
+		reg_data[0].mask = CPRI_ETH_TX_BD_W_PTR_MASK;
 		val = cpri_read(&framer->regs->cpri_tethwriteptr);
 		if ((val  >> 8) & 0x1)
 			reg_data[0].val &= ~CPRI_ETH_TX_BD_W_PTR_WRAP_MASK;
@@ -1552,8 +1561,10 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 
 	reset_eth_regs(framer);
 	err = cpri_eth_of_init(ofdev, &ndev, frnode);
-	if (err < 0)
+	if (err < 0) {
+		framer->frmr_ethflag = CPRI_ETH_NOT_SUPPORTED; 
 		return err;
+	}
 
 	priv = netdev_priv(ndev);
 
@@ -1581,12 +1592,14 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	err = register_netdev(ndev);
 	if (err) {
 		netdev_err(ndev, "Cannot register net device, aborting\n");
+		framer->frmr_ethflag = CPRI_ETH_NOT_SUPPORTED; 
 		goto register_fail;
 	}
 
 	/* TODO: cpri_eth_init_sysfs(ndev); */
 
 	framer->eth_priv = priv;
+	framer->frmr_ethflag = CPRI_ETH_SUPPORTED; 
 
 	return 0;
 
@@ -1599,6 +1612,8 @@ EXPORT_SYMBOL(cpri_eth_init);
 
 void cpri_eth_parm_init(struct cpri_framer *framer)
 {
+	if(framer->frmr_ethflag == CPRI_ETH_NOT_SUPPORTED)
+		return;
 	cpri_eth_tx_rx_halt(framer->eth_priv->ndev);
 }
 

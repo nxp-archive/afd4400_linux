@@ -516,7 +516,8 @@ static void cpri_err_tasklet(unsigned long arg)
 	do_framer_state_update(framer, err_evt);
 
 	/* Handle ethernet error if any */
-	cpri_eth_handle_error(framer);
+	if(framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
+		cpri_eth_handle_error(framer);
 
 		/* Restore the interrupt mask */
 	err_evt = mask & err_evt;
@@ -793,15 +794,14 @@ static int cpri_probe(struct platform_device *pdev)
 		INIT_WORK(&framer->allautoneg_task, cpri_autoneg_all);
 
 		if (cpri_eth_init(pdev, framer, child) < 0) {
-			dev_err(dev, "ethernet init failed\n");
-			goto err_cdev;
+			dev_err(dev, "ethernet init failed 'cpri eth is not supported'\n");
 		}
 	}
 
 	/* Setup cpri device interrupts */
 	if (cpri_register_irq(cpri_dev) < 0) {
 		dev_err(dev, "cpri dev irq init failure\n");
-		goto err_mem;
+		goto err_cdev;
 	}
 
 	/* enable interrupt here */

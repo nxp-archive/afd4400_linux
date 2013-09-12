@@ -450,6 +450,7 @@ struct cpri_framer {
 	struct timer_list l1_timer;
 	/* misc */
 	unsigned char notification_state;
+	unsigned char frmr_ethflag;
 	u32 rx_mblk_hardware_addr0;
 	u32 rx_mblk_hardware_addr1;
 	u32 tx_mblk_hardware_addr0;
@@ -763,6 +764,10 @@ enum cpri_linerate {
 #define CW_BYTE1				16
 #define CW_BYTE2				8
 #define CW_BYTE3				0
+
+
+#define CPRI_ETH_SUPPORTED			1
+#define CPRI_ETH_NOT_SUPPORTED			0
 
 static inline u32 cpri_read(const void __iomem *addr)
 {
