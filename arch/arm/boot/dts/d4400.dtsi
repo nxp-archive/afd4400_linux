@@ -25,10 +25,10 @@
                 gpio4 = &gpioE;
 		ethernet0 = &enet0;
 		ethernet1 = &enet1;
-		ethernet2 = &cp1_framer0;
-		ethernet3 = &cp1_framer1;
-		ethernet4 = &cp2_framer0;
-		ethernet5 = &cp2_framer1;
+		cpri0ethernet0 = &cp1_framer0;
+		cpri0ethernet1 = &cp1_framer1;
+		cpri1ethernet0 = &cp2_framer0;
+		cpri1ethernet1 = &cp2_framer1;
         };
 
         cpus {
