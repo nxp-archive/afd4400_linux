@@ -397,8 +397,7 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 
 
 		/* Set Tx control interrupt events */
-		cpri_reg_set(&regs->cpri_tcr,
-			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
+		cpri_reg_set(&regs->cpri_tcr, IQ_EN_MASK);
 
 
 		framer->dev_flags |= CPRI_DATA_MODE;
@@ -438,8 +437,7 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 			CONF_RX_EN_MASK);
 		mdelay(10);
 		/* Set Rx control interrupt events */
-		cpri_reg_set(&regs->cpri_rcr,
-			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
+		cpri_reg_set(&regs->cpri_rcr, IQ_EN_MASK);
 
 
 
