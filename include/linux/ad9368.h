@@ -199,6 +199,9 @@ struct roc_dev {
 	int gpio_tx_enable;
 	int gpio_srx_enable;
 	int gpio_rx_enable;
+	void *src_handle;
+	int src_tx_reset;
+	int src_rx_reset;
 	atomic_t		ref;
 };
 

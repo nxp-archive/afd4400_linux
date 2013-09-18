@@ -155,7 +155,6 @@ struct spi_ioc_transfer {
 	__u32		pad;
 };
 
-
 /*struct rf_synth_table {
 	unsigned int count;
 	unsigned long long * (*) params[NUM_SYNTH_PARAMS];
@@ -178,5 +177,6 @@ struct spi_ioc_transfer {
 #define RF_SET_GAIN_CTRL_MODE	_IOW(RF_MAGIC, 21, struct rf_gain_ctrl *)
 #define RF_SPI_IOC_TRANSFER	_IOW(RF_MAGIC, 22, struct spi_ioc_transfer *)
 #define RF_SET_SPI_STREAM_ID	_IOW(RF_MAGIC, 23, int *)
+#define RF_RESET		_IOW(RF_MAGIC, 24, int *)
 
 #endif

@@ -46,6 +46,7 @@
 #include <linux/string.h>
 #include <linux/ad9368.h>
 #include <linux/gpio.h>
+#include <mach/src.h>
 
 #define DEV_NAME "ROC"
 
@@ -154,6 +155,32 @@ static int rocdev_message(struct roc_dev *roc_dev,
 	return 0;
 }
 
+int rf_assert_reset(struct roc_dev *roc_dev, int dev_id)
+{
+	int rc = 0, reset;
+
+	if (dev_id == DEVICE_ID_AD93682) {
+		reset = roc_dev->src_tx_reset;
+	} else if (dev_id == DEVICE_ID_AD93681) {
+		reset = roc_dev->src_rx_reset;
+	} else {
+		dev_err(roc_dev->dev, "Invalid dev_id %d\n",
+			dev_id);
+		rc = -EINVAL;
+		goto out;
+	}
+
+	rc = src_assert_reset(roc_dev->src_handle, SW_RST, reset);
+	if (rc) {
+		dev_err(roc_dev->dev, "Reset Failed, dev_id %d, err %d\n",
+			dev_id, rc);
+	} else {
+		dev_info(roc_dev->dev, "Reset done, dev_id %d\n", dev_id);
+	}
+
+out:
+	return rc;
+}
 
 static long roc_ioctl(struct file *filep, unsigned int cmd,
 		unsigned long arg)
@@ -361,9 +388,14 @@ static long roc_ioctl(struct file *filep, unsigned int cmd,
 					&ioc_transfer, 1);
 		}	else
 			rc = -EFAULT;
-	break;
-
-
+		break;
+	case RF_RESET:
+		if (get_user(device_id, (int *)arg)) {
+			rc = -EFAULT;
+			break;
+		}
+		rc = rf_assert_reset(roc_dev, device_id);
+		break;
 	default:
 		rc = -ENOSYS;
 	}
@@ -803,6 +835,8 @@ static int roc_probe(struct platform_device *pdev)
 	struct device_node *rf_dev_node;
 	int ret = 0, size;
 	const struct of_device_id *id;
+	struct of_phandle_args src_phandle;
+	int resets[2], i;
 
 	if (!np || !of_device_is_available(np)) {
 		dev_err(dev, "No ROC device available\n");
@@ -820,6 +854,29 @@ static int roc_probe(struct platform_device *pdev)
 		dev_dbg(dev, "roc dev irq init failure\n");
 		goto out;
 	}*/
+
+	for (i = 0; i < 2; i++) {
+		if (of_get_named_src_reset(np, &src_phandle,
+			"src-resets", i)) {
+			dev_err(roc_dev->dev, "Failed to get SRC reset %d\n",
+				i);
+			ret = -ENODEV;
+			goto out;
+		}
+		resets[i] = src_phandle.args[0];
+	}
+
+	roc_dev->src_tx_reset = resets[0];
+	roc_dev->src_rx_reset = resets[1];
+	roc_dev->src_handle = src_get_handle(src_phandle.np);
+	if (!roc_dev->src_handle) {
+		dev_err(roc_dev->dev, "SRC not yet probed, deferring probe\n");
+		ret = -EPROBE_DEFER;
+		goto out;
+	}
+	dev_info(roc_dev->dev, " Tx reset: %d\n", roc_dev->src_tx_reset);
+	dev_info(roc_dev->dev, " Rx reset: %d\n", roc_dev->src_rx_reset);
+
 	roc_dev->ops = &roc_ops;
 	id = of_match_node(roc_match, np);
 
