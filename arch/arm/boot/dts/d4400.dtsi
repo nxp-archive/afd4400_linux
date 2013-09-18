@@ -115,6 +115,14 @@
 				reg = <0x00088000 0x4000>;
 			};
 
+			src: src@8c000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				#src-cells = <1>;
+				compatible = "fsl,src-d4400";
+				reg = <0x0008c000 0x4000>;
+			};
+
                         clks: ccm@094000 {
                                 compatible = "fsl,d4400-ccm";
                                 reg = <0x00094000 0x4000>;
