@@ -29,3 +29,9 @@ config SERDES_D4400
 	functions for high speed serial interfaces from 1.2288 Gbaud to
 	9.8304 Gbaud
 
+config SRC_D4400
+       tristate "System reset controller driver"
+       depends on SOC_D4400
+       help
+       System reset controller driver  for Freescale D4400 processor
+
