@@ -30,6 +30,8 @@
 				cs-gpios = <&gpioC 16 0>,
 					<&gpioC 18 0>,
 					<&gpioC 19 0>;
+				src-resets = <&src 3>,
+					<&src 5>;
 				9368-1-handle = <&adrx>;
 				9368-2-handle = <&adtx>;
 				9525-handle = <&clkgen>;
