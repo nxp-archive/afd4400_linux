@@ -76,6 +76,7 @@ struct tbgen_dev {
 	struct tbgen_timer tbg_tx_axrf[MAX_AXRF_ALIGNMENT_TIMERS];
 	struct tbgen_timer tbg_rxtmr[MAX_RX_ALIGNMENT_TIMERS];
 	struct tbgen_timer tbg_srxtmr[MAX_SRX_ALIGNMENT_TIMERS];
+	struct tbgen_timer tbg_gptmr[MAX_GP_EVENT_TIMERS];
 
 	struct tasklet_struct tasklet;
 	spinlock_t lock;

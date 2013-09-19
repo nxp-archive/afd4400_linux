@@ -327,6 +327,7 @@ struct lane_device {
 	struct lane_stats l_stats;
 	enum srds_lane_id serdes_lane_id;
 	u8 id;
+	u8 pll_id;
 	u32 flags;
 };
 /*Lane Flags*/

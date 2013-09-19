@@ -128,6 +128,12 @@ void tbgen_notify_sysref_recapture(struct tbgen_dev *tbg)
 			jesd_enable_sysref_capture(timer->jesd_dev_handle);
 	}
 
+	for (id = 0; id < MAX_GP_EVENT_TIMERS; id++) {
+		timer = &tbg->tbg_gptmr[id];
+		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_CAPTURE_SYSREF))
+			jesd_enable_sysref_capture(timer->jesd_dev_handle);
+	}
+
 	for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++) {
 		timer = &tbg->tbg_srxtmr[id];
 		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_CAPTURE_SYSREF))
@@ -749,6 +755,18 @@ static int tbgen_config_generic_timers(struct tbgen_dev *tbg,
 			goto out;
 		}
 		break;
+	case JESD_GP_EVENT:
+		if (timer_id < 16) {
+			timer_regs =
+			&tbg->tbgregs->gp_tmr[timer_id - MAX_GP_EVENT_TIMERS];
+			timer = &tbg->tbg_gptmr[timer_id - MAX_GP_EVENT_TIMERS];
+		} else {
+			retcode = -EINVAL;
+			dev_err(tbg->dev, "GPO timer id invalid %d\n",
+				timer_id);
+			goto out;
+		}
+		break;
 	case JESD_SRX_ALIGNMENT:
 		if (timer_id < MAX_SRX_ALIGNMENT_TIMERS) {
 			timer_regs = &tbg->tbgregs->srx_tmr[timer_id];
@@ -802,12 +820,22 @@ struct tbgen_timer *tbgen_get_timer(struct tbgen_dev *tbg,
 		timer = &tbg->tbg_tx_axrf[timer_id];
 		break;
 	case JESD_RX_ALIGNMENT:
-		if (timer_id > MAX_RX_ALIGNMENT_TIMERS) {
+		if (timer_id < MAX_RX_ALIGNMENT_TIMERS)
+			timer = &tbg->tbg_rxtmr[timer_id];
+		else {
 			dev_err(tbg->dev, "%s: Invalid timer id %d\n",
 				__func__, timer_id);
 			goto out;
 		}
-		timer = &tbg->tbg_rxtmr[timer_id];
+		break;
+	case JESD_GP_EVENT:
+		if (timer_id < 16)
+			timer = &tbg->tbg_gptmr[timer_id - MAX_GP_EVENT_TIMERS];
+		else {
+			dev_err(tbg->dev, "%s: Invalid timer id %d\n",
+				__func__, timer_id);
+			goto out;
+		}
 		break;
 	case JESD_SRX_ALIGNMENT:
 		if (timer_id > MAX_SRX_ALIGNMENT_TIMERS) {
@@ -931,14 +959,30 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		osethi_reg = &tx_timer_regs->osethi;
 		break;
 	case JESD_RX_ALIGNMENT:
-		if (timer_id > MAX_RX_ALIGNMENT_TIMERS) {
+		if (timer_id < MAX_RX_ALIGNMENT_TIMERS) {
+			timer = &tbg->tbg_rxtmr[timer_id];
+			generic_timer_regs = &tbg->tbgregs->rx_tmr[timer_id];
+		} else {
 			dev_err(tbg->dev, "%s: Invalid timer id %d\n",
 				__func__, timer_id);
 			retcode = -EINVAL;
 			goto out;
 		}
-		timer = &tbg->tbg_rxtmr[timer_id];
-		generic_timer_regs = &tbg->tbgregs->rx_tmr[timer_id];
+		ctrl_reg = &generic_timer_regs->ctrl;
+		osetlo_reg = &generic_timer_regs->osetlo;
+		osethi_reg = &generic_timer_regs->osethi;
+		break;
+	case JESD_GP_EVENT:
+		if (timer_id < 16) {
+			timer = &tbg->tbg_gptmr[timer_id - MAX_GP_EVENT_TIMERS];
+			generic_timer_regs =
+			&tbg->tbgregs->gp_tmr[timer_id - MAX_GP_EVENT_TIMERS];
+		} else {
+			dev_err(tbg->dev, "%s: Invalid timer id %d\n",
+				__func__, timer_id);
+			retcode = -EINVAL;
+			goto out;
+		}
 		ctrl_reg = &generic_timer_regs->ctrl;
 		osetlo_reg = &generic_timer_regs->osetlo;
 		osethi_reg = &generic_timer_regs->osethi;
@@ -1039,6 +1083,7 @@ int config_alignment_timers(struct tbgen_dev *tbg,
 		retcode = tbgen_config_tx_timers(tbg, timer_params);
 		break;
 	case JESD_RX_ALIGNMENT:
+	case JESD_GP_EVENT:
 	case JESD_SRX_ALIGNMENT:
 		retcode = tbgen_config_generic_timers(tbg, timer_params);
 		break;
@@ -1075,6 +1120,12 @@ static int tbgen_change_state(struct tbgen_dev *tbg,
 		if ((new_state == TBG_STATE_PLL_FAILED) ||
 				(new_state == TBG_STATE_RFG_FAILED))
 			retcode = 0;
+		break;
+	case TBG_STATE_READY:
+		/* Change state only if both PLL and RFG are configured*/
+		if (new_state == TBG_STATE_CONFIGURED)
+			if (TBG_CHCK_CONFIG_MASK(tbg, TBG_CONFIGURED_MASK))
+				retcode = 0;
 		break;
 	case TBG_STATE_PLL_FAILED:
 	case TBG_STATE_RFG_FAILED:
@@ -1388,6 +1439,14 @@ static int tbgen_of_probe(struct platform_device *pdev)
 		timer->type = JESD_RX_ALIGNMENT;
 	}
 
+	for (id = MAX_GP_EVENT_TIMERS; id < (2*MAX_GP_EVENT_TIMERS); id++) {
+		timer = &tbg->tbg_gptmr[id - MAX_GP_EVENT_TIMERS];
+		spin_lock_init(&timer->lock);
+		timer->tbg = tbg;
+		timer->id = id;
+		timer->type = JESD_GP_EVENT;
+	}
+
 	for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++) {
 		timer = &tbg->tbg_srxtmr[id];
 		spin_lock_init(&timer->lock);
@@ -1432,6 +1491,9 @@ static int tbgen_of_remove(struct platform_device *pdev)
 
 	for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++)
 		tbgen_timer_ctrl(tbg, JESD_SRX_ALIGNMENT, id, 0);
+
+	for (id = 0; id < MAX_GP_EVENT_TIMERS; id++)
+		tbgen_timer_ctrl(tbg, JESD_GP_EVENT, id, 0);
 
 	/*XXX: Disable IRQ and RFG */
 
