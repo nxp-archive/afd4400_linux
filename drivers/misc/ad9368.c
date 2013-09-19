@@ -63,15 +63,20 @@ static const struct rf_device_id ad9368_spi_id[] = {
 struct rf_phy_dev *get_attached_phy_dev(struct device_node *rf_dev_node)
 {
 	struct rf_phy_dev *phy_dev = NULL;
+	int found_node = 0;
 	if (list_empty(&phy_dev_list))
 		return NULL;
 
 	list_for_each_entry(phy_dev, &phy_dev_list, list) {
-		if (rf_dev_node == phy_dev->rf_dev_node)
+		if (rf_dev_node == phy_dev->rf_dev_node) {
+			found_node = 1;
 			break;
+		}
 	}
-
-	return phy_dev;
+	if (found_node == 1)
+		return phy_dev;
+	else
+		return NULL;
 }
 EXPORT_SYMBOL(get_attached_phy_dev);
 

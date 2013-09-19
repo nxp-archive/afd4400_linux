@@ -128,24 +128,31 @@
 #define MEDUSA_DEV_ID           0
 #define DFE_DEV_ID              1
 
-extern struct rf_phy_dev *get_attached_phy_dev(struct device_node *rf_dev_node);
-extern struct roc_dev *get_attached_roc_dev(struct device_node **dev_node);
-extern int ad9368_read(struct rf_phy_dev *phy_dev, u32 start, u32 count,
-		u32 *buff);
-extern int ad9368_write(struct rf_phy_dev *phy_dev, u32 reg,
-		 u32 data, u8 probe);
-extern int ad9368_run_cmds(struct rf_phy_dev *phy_dev,
-		struct rf_phy_cmd *cmds,
-		int count);
-extern int rfdev_message(struct rf_phy_dev *rf_dev,
-	struct spi_ioc_transfer *u_xfers, unsigned n_xfers);
+#define BAD_DIS					(1 << 7)
+#define NOT_IN_TABLE				(1 << 6)
+#define UNEXP_K_CHARS				(1 << 5)
+#define BAD_CS					(1 << 2)
 
-extern int ad_init(struct rf_phy_dev *phy, struct rf_init_params *params);
-extern int ad9368_start(struct rf_phy_dev *phy_dev);
-extern int check_cal_done(struct rf_phy_dev *phy_dev, u32 reg, u32 mask,
-		u32 bitval);
+#define CLEAR_ERROR_IRQ				(1 << 7)
+#define DISABLE_ERROR_COUNTER			(1 << 6)
+#define RESET_ERROR_COUNTER			(1 << 5)
 
-extern int check_cal_done_4regs(struct rf_phy_dev *phy_dev, u32 reg, u32 mask);
+#define JESD_ERR_EVT_ALL	(BAD_DIS \
+				| NOT_IN_TABLE \
+				| UNEXP_K_CHARS \
+				| BAD_CS)
+
+#define REG_SUB_JESD_ADDR	0x09C
+#define REG_SUB_JESD_DATA	0x09D
+#define REG_WRITE_EN_JESD	0x09E
+#define REG_INT_EN_JESD		0x7A
+#define REG_BAD_CS_JESD		0x72
+#define REG_BAD_DIS_JESD	0x6D
+#define REG_NOT_IN_TABLE_JESD	0x6E
+#define REG_UNEXP_K_CHARS_JESD	0x6F
+#define REG_READ_COUNTER_JESD	0x6B
+
+
 
 struct rf_device_id {
 	char name[RF_NAME_SIZE];
@@ -156,6 +163,13 @@ enum band_config_mode {
 	GPIO_MODE,
 	FPGA_MODE,
 	INVALID_MODE
+};
+
+struct jesd_dev_stats {
+	unsigned int bad_disparity_err_count;
+	unsigned int not_in_table_err_count;
+	unsigned int unexpected_k_chars_err_count;
+	unsigned int bad_checksum_err_count;
 };
 
 struct ad_dev_info {
@@ -196,6 +210,9 @@ struct roc_dev {
 	struct cdev		cdev;
 	int			*cs_gpios;
 	unsigned int		irq_gen1;
+	unsigned int		err_status;
+	struct work_struct      err_task;
+	struct jesd_dev_stats	stats[2];
 	int gpio_tx_enable;
 	int gpio_srx_enable;
 	int gpio_rx_enable;
@@ -231,4 +248,21 @@ struct rf_phy_ops {
 			struct spi_ioc_transfer *u_xfers, unsigned n_xfers);
 };
 
+extern struct rf_phy_dev *get_attached_phy_dev(struct device_node *rf_dev_node);
+extern struct roc_dev *get_attached_roc_dev(struct device_node **dev_node);
+extern int ad9368_read(struct rf_phy_dev *phy_dev, u32 start, u32 count,
+		u32 *buff);
+extern int ad9368_write(struct rf_phy_dev *phy_dev, u32 reg,
+		 u32 data, u8 probe);
+extern int ad9368_run_cmds(struct rf_phy_dev *phy_dev,
+		struct rf_phy_cmd *cmds,
+		int count);
+extern int rfdev_message(struct rf_phy_dev *rf_dev,
+	struct spi_ioc_transfer *u_xfers, unsigned n_xfers);
+
+extern int ad_init(struct rf_phy_dev *phy, struct rf_init_params *params);
+extern int ad9368_start(struct rf_phy_dev *phy_dev);
+extern int check_cal_done(struct rf_phy_dev *phy_dev, u32 reg, u32 mask,
+		u32 bitval);
+extern int check_cal_done_4regs(struct rf_phy_dev *phy_dev, u32 reg, u32 mask);
 #endif /* __AD9368_H__ */

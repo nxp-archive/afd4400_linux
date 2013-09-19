@@ -32,9 +32,12 @@
 #include <linux/kernel.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
+#include <linux/workqueue.h>
+#include <linux/interrupt.h>
 #include <linux/spi/spi.h>
 #include <linux/param.h>
 #include <linux/delay.h>
+#include <linux/of_irq.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 
@@ -720,7 +723,13 @@ int rf_init(struct roc_dev *roc_dev,
 
 int roc_stop(struct roc_dev *roc_dev)
 {
+	struct rf_phy_dev *phy_dev;
 
+	phy_dev = roc_dev->phy_dev[roc_dev->device_id];
+
+	gpio_set_value(roc_dev->gpio_rx_enable, 0);
+	gpio_set_value(roc_dev->gpio_tx_enable, 0);
+	gpio_set_value(roc_dev->gpio_srx_enable, 0);
 	return 0;
 }
 
@@ -772,6 +781,7 @@ static int roc_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct roc_dev *roc_dev = dev_get_drvdata(&pdev->dev);
 
+	cancel_work_sync(&roc_dev->err_task);
 	gpio_free(roc_dev->gpio_rx_enable);
 	gpio_free(roc_dev->gpio_tx_enable);
 	gpio_free(roc_dev->gpio_srx_enable);
@@ -826,6 +836,119 @@ out:
 	return rc;
 }
 
+/* Stats update during error events */
+static void do_err_stats_update(struct roc_dev *rocdev,
+			unsigned int mask)
+{
+	struct rf_phy_dev *phy_dev;
+	struct device *dev = rocdev->dev;
+	u32 val;
+	phy_dev = rocdev->phy_dev[rocdev->device_id];
+	if (mask & BAD_DIS) {
+		ad9368_write(phy_dev, REG_SUB_JESD_ADDR, REG_BAD_DIS_JESD, 0);
+		ad9368_read(phy_dev, REG_SUB_JESD_DATA, 1, &val);
+		if (val & 1)
+			rocdev->stats[0].bad_disparity_err_count++;
+		if (val & 2)
+			rocdev->stats[1].bad_disparity_err_count++;
+		val |= CLEAR_ERROR_IRQ | RESET_ERROR_COUNTER;
+		/* Reset the BAD CS IRQ */
+		ad9368_write(phy_dev, REG_SUB_JESD_DATA, val, 0);
+		ad9368_write(phy_dev, REG_WRITE_EN_JESD, 1, 0);
+	}
+	if (mask & NOT_IN_TABLE) {
+		ad9368_write(phy_dev, REG_SUB_JESD_ADDR,
+			REG_NOT_IN_TABLE_JESD, 0);
+		ad9368_read(phy_dev, REG_SUB_JESD_DATA, 1, &val);
+		if (val & 1)
+			rocdev->stats[0].not_in_table_err_count++;
+		if (val & 2)
+			rocdev->stats[1].not_in_table_err_count++;
+		val |= CLEAR_ERROR_IRQ | RESET_ERROR_COUNTER;
+		/* Reset the BAD CS IRQ */
+		ad9368_write(phy_dev, REG_SUB_JESD_DATA, val, 0);
+		ad9368_write(phy_dev, REG_WRITE_EN_JESD, 1, 0);
+	}
+	if (mask & UNEXP_K_CHARS) {
+		ad9368_write(phy_dev, REG_SUB_JESD_ADDR,
+			REG_UNEXP_K_CHARS_JESD, 0);
+		ad9368_read(phy_dev, REG_SUB_JESD_DATA, 1, &val);
+		if (val & 1)
+			rocdev->stats[0].unexpected_k_chars_err_count++;
+		if (val & 2)
+			rocdev->stats[1].unexpected_k_chars_err_count++;
+		val |= CLEAR_ERROR_IRQ | RESET_ERROR_COUNTER;
+		/* Reset the BAD CS IRQ */
+		ad9368_write(phy_dev, REG_SUB_JESD_DATA, val, 0);
+		ad9368_write(phy_dev, REG_WRITE_EN_JESD, 1, 0);
+	}
+	if (mask & BAD_CS) {
+		ad9368_write(phy_dev, REG_SUB_JESD_ADDR, REG_BAD_CS_JESD, 0);
+		ad9368_read(phy_dev, REG_SUB_JESD_DATA, 1, &val);
+		if (val & 1)
+			rocdev->stats[0].bad_checksum_err_count++;
+		if (val & 2)
+			rocdev->stats[1].bad_checksum_err_count++;
+		val |= CLEAR_ERROR_IRQ;
+		/* Reset the BAD CS IRQ */
+		ad9368_write(phy_dev, REG_SUB_JESD_DATA, val, 0);
+		ad9368_write(phy_dev, REG_WRITE_EN_JESD, 1, 0);
+	} else
+		dev_err(dev, "Invalid mask during stats update\n");
+}
+
+
+void roc_jesdtx_error_monitor(struct work_struct *work)
+{
+	struct rf_phy_dev *phy_dev;
+	struct roc_dev *rocdev;
+	u32 err_status;
+	u32 temp;
+
+	rocdev = container_of(work, struct roc_dev, err_task);
+	if ((phy_dev = rocdev->phy_dev[rocdev->device_id]) == NULL)
+		return;
+
+	ad9368_write(phy_dev, REG_SUB_JESD_ADDR, REG_INT_EN_JESD, 0);
+	ad9368_read(phy_dev, REG_SUB_JESD_DATA, 1, &err_status);
+	if (!(err_status & JESD_ERR_EVT_ALL)) {
+		dev_err(rocdev->dev,
+			"Spurious error interrupt:%d\n",
+				err_status);
+		return;
+	}
+	rocdev->err_status = err_status;
+	temp = err_status;
+	temp &= ~JESD_ERR_EVT_ALL;
+	/* Disable the error interrupt mask */
+	ad9368_write(phy_dev, REG_SUB_JESD_DATA, temp, 0);
+	ad9368_write(phy_dev, REG_WRITE_EN_JESD, 1, 0);
+	/* Update stats */
+	do_err_stats_update(rocdev, rocdev->err_status);
+
+	temp = rocdev->err_status;
+	temp &= JESD_ERR_EVT_ALL;
+	/* Restore the error interrupt mask */
+	ad9368_write(phy_dev, REG_SUB_JESD_DATA, temp, 0);
+	ad9368_write(phy_dev, REG_WRITE_EN_JESD, 1, 0);
+	enable_irq(rocdev->irq_gen1);
+}
+
+
+static irqreturn_t roc_jesdtx_isr(int irq, void *dev_id)
+{
+	struct rf_phy_dev *phy_dev;
+	struct roc_dev *rocdev = dev_id;
+	phy_dev = rocdev->phy_dev[rocdev->device_id];
+	if (phy_dev == NULL)
+		return IRQ_NONE;
+
+	dev_info(rocdev->dev, "JESD Tx interrupt received");
+	disable_irq_nosync(rocdev->irq_gen1);
+	schedule_work(&rocdev->err_task);
+	return IRQ_HANDLED;
+}
+
 static int roc_probe(struct platform_device *pdev)
 {
 	struct roc_dev *roc_dev;
@@ -833,7 +956,7 @@ static int roc_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	struct rf_phy_dev	*phy_dev;
 	struct device_node *rf_dev_node;
-	int ret = 0, size;
+	int ret = 0, size, irq;
 	const struct of_device_id *id;
 	struct of_phandle_args src_phandle;
 	int resets[2], i;
@@ -849,11 +972,39 @@ static int roc_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	roc_dev->dev = dev;
-	roc_dev->irq_gen1 = irq_of_parse_and_map(np, 0);
-/*	if (roc_register_irq(roc_dev) < 0) {
-		dev_dbg(dev, "roc dev irq init failure\n");
-		goto out;
-	}*/
+	rf_dev_node = of_parse_phandle(np, "9368-1-handle", 0);
+	roc_dev->rf_dev_node[roc_dev->phy_devs] = rf_dev_node;
+
+	phy_dev = get_attached_phy_dev(rf_dev_node);
+	if (IS_ERR_OR_NULL(phy_dev)) {
+		kfree(roc_dev);
+		return -EPROBE_DEFER;
+	}
+	roc_dev->phy_dev[roc_dev->phy_devs] = phy_dev;
+
+	roc_dev->phy_devs++;
+
+	rf_dev_node = of_parse_phandle(np, "9525-handle", 0);
+	roc_dev->rf_dev_node[roc_dev->phy_devs] = rf_dev_node;
+	phy_dev = get_attached_phy_dev(rf_dev_node);
+	if (IS_ERR_OR_NULL(phy_dev)) {
+		kfree(roc_dev);
+		return -EPROBE_DEFER;
+	}
+	roc_dev->phy_dev[roc_dev->phy_devs] = phy_dev;
+
+	roc_dev->phy_devs++;
+
+	rf_dev_node = of_parse_phandle(np, "9368-2-handle", 0);
+	roc_dev->rf_dev_node[roc_dev->phy_devs] = rf_dev_node;
+	phy_dev = get_attached_phy_dev(rf_dev_node);
+	if (IS_ERR_OR_NULL(phy_dev)) {
+		kfree(roc_dev);
+		return -EPROBE_DEFER;
+	}
+	roc_dev->phy_dev[roc_dev->phy_devs] = phy_dev;
+
+	roc_dev->phy_devs++;
 
 	for (i = 0; i < 2; i++) {
 		if (of_get_named_src_reset(np, &src_phandle,
@@ -887,26 +1038,11 @@ static int roc_probe(struct platform_device *pdev)
 			roc_dev->device_flag = DFE_DEV_ID;
 	}
 
-	if (drv_priv->minor > drv_priv->minor_max) {
-		dev_dbg(dev, "ROC:abort probe, devices more than max [%d]\n",
-				drv_priv->minor_max);
-		goto out;
-	}
-
-	roc_dev->dev_t = MKDEV(MAJOR(drv_priv->dev_t), drv_priv->minor);
-	drv_priv->minor++;
-	cdev_init(&roc_dev->cdev, &roc_fops);
-	ret = cdev_add(&roc_dev->cdev, roc_dev->dev_t, 1);
-	if (ret) {
-		dev_err(dev, "ROC: Failed to add cdev\n");
-		goto out;
-	}
-
-
 	roc_dev->gpio_rx_enable = of_get_named_gpio(np, "cs-gpios", 0);
 	roc_dev->gpio_tx_enable = of_get_named_gpio(np, "cs-gpios", 1);
 	roc_dev->gpio_srx_enable = of_get_named_gpio(np, "cs-gpios", 2);
 
+	/*Setting up GPIOs*/
 	ret = roc_setup_gpio(roc_dev, roc_dev->gpio_rx_enable);
 	if (ret) {
 		dev_err(dev, "Failed to setup rx_enable gpio\n");
@@ -926,31 +1062,41 @@ static int roc_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	rf_dev_node = of_parse_phandle(np, "9368-1-handle", 0);
-	roc_dev->rf_dev_node[roc_dev->phy_devs] = rf_dev_node;
 
-	phy_dev = get_attached_phy_dev(rf_dev_node);
-	roc_dev->phy_dev[roc_dev->phy_devs] = phy_dev;
+	if (drv_priv->minor > drv_priv->minor_max) {
+		dev_dbg(dev, "ROC:abort probe, devices more than max [%d]\n",
+				drv_priv->minor_max);
+		goto out;
+	}
 
-	roc_dev->phy_devs++;
-
-	rf_dev_node = of_parse_phandle(np, "9525-handle", 0);
-	roc_dev->rf_dev_node[roc_dev->phy_devs] = rf_dev_node;
-	phy_dev = get_attached_phy_dev(rf_dev_node);
-	roc_dev->phy_dev[roc_dev->phy_devs] = phy_dev;
-
-	roc_dev->phy_devs++;
-
-	rf_dev_node = of_parse_phandle(np, "9368-2-handle", 0);
-	roc_dev->rf_dev_node[roc_dev->phy_devs] = rf_dev_node;
-	phy_dev = get_attached_phy_dev(rf_dev_node);
-	roc_dev->phy_dev[roc_dev->phy_devs] = phy_dev;
-
-	roc_dev->phy_devs++;
+	roc_dev->dev_t = MKDEV(MAJOR(drv_priv->dev_t), drv_priv->minor);
+	drv_priv->minor++;
+	cdev_init(&roc_dev->cdev, &roc_fops);
+	ret = cdev_add(&roc_dev->cdev, roc_dev->dev_t, 1);
+	if (ret) {
+		dev_err(dev, "ROC: Failed to add cdev\n");
+		goto out;
+	}
 
 	roc_dev->dev = device_create(drv_priv->class, &pdev->dev,
 			roc_dev->dev_t, roc_dev, "roc_dev%d", drv_priv->minor);
 	ret = IS_ERR(roc_dev->dev) ? PTR_ERR(roc_dev->dev) : 0;
+
+	INIT_WORK(&roc_dev->err_task, roc_jesdtx_error_monitor);
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0) {
+		dev_err(&pdev->dev, "can't get irq number\n");
+		return -ENOENT;
+	}
+	/* Request IRQ */
+	ret = devm_request_irq(&pdev->dev, irq, roc_jesdtx_isr, 0,
+			pdev->name, roc_dev);
+	if (ret) {
+		dev_err(&pdev->dev, "can't claim irq %d\n", irq);
+		return ret;
+	}
+	roc_dev->irq_gen1 = irq;
+	dev_info(dev, "IRQ Read:%d", irq);
 
 	if (ret == 0) {
 		dev_info(dev, "roc probe passed\n");
