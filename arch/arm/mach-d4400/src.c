@@ -33,8 +33,7 @@ static int src_assert_sw_reset(struct src_priv *src_priv, int idx)
 
 	if ((idx < SW_RST_MIN) || (idx > SW_RST_MAX)) {
 		dev_err(src_priv->dev, "Invalid SW RST idx %d\n", idx);
-		rc = -EINVAL;
-		goto out;
+		return -EINVAL;
 	}
 
 	reg = &src_regs->sscr;
