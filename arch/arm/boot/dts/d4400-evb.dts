@@ -150,7 +150,8 @@
                                 compatible = "cfi-flash";
                                 bank-width = <2>;
 				/* 256MB of NOR Flash memory*/
-                                reg = <0x0 0x10000000>;
+                                reg = <0x00000000 0x08000000
+					0x08000000 0x08000000>;
                                 #address-cells = <1>;
                                 #size-cells = <1>;
                                 status = "okay";
@@ -173,24 +174,26 @@
                                         label = "redundant-environment";
                                 };
                                 partition@000C0000 {
-                                        /* 4 MB for Linux Kernel Image */
-                                        reg = <0x000C0000 0x00400000>;
+                                        /* This location must not be altered */
+                                        /* U-Boot Redundant Image-512KB */
+                                        reg = <0x000C0000 0x00080000>;
+                                        label = "bootloader";
+                                        read-only;
+                                };
+                                partition@00140000 {
+                                        /* 63 MB for Linux Kernel FIT Image */
+                                        reg = <0x00140000 0x03F00000>;
                                         label = "kernel";
                                 };
-                                partition@004C0000 {
-                                        /* 40MB for JFFS2 based Root file System */
-                                        reg = <0x004c0000 0x02800000>;
+                                partition@04040000 {
+                                        /* 63 MB for Linux Kernel FIT Redundant Image */
+                                        reg = <0x04040000 0x03F00000>;
+                                        label = "kernel";
+                                };
+                                partition@08000000 {
+                                        /* 128MB for JFFS2 based Root file System */
+                                        reg = <0x08000000 0x08000000>;
                                         label = "filesystem";
-                                };
-                                partition@02cc0000 {
-                                        /* 1MB of Device Tree */
-                                        reg = <0x02cc0000 0x00100000>;
-                                        label = "devicetree";
-                                };
-                                partition@02dc0000 {
-                                        /* 210MB User Space*/
-                                        reg = <0x02dc0000 0x0d240000>;
-                                        label = "user_space";
                                 };
 			};
                 };
