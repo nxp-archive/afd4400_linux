@@ -356,8 +356,6 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 
 		cpri_reg_set_val(&regs->cpri_tstartoffset,
 			MAP_OFFSET_Z_MASK, map_sync_offset.tx_start_offset_hf);
-		cpri_reg_set_val(&regs->cpri_tstartoffset,
-			MAP_OFFSET_Z_MASK, map_sync_offset.tx_start_offset_hf);
 		cpri_reg_set_val(&regs->cpri_map_config, AXC_MODE_MASK, 0x1);
 		/* enable axc transmit control reg */
 		cpri_reg_set(&regs->cpri_tcr, AXC_ENABLE_MASK);
@@ -372,10 +370,6 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 			loop++;
 			cpri_reg_set(&regs->cpri_taccr,
 					(AXC_ENABLE_MASK << axc->id));
-#if 0 /* this is to debug if thresold events occuring or not */
-			cpri_reg_set(&regs->cpri_taxciqthreshinten,
-					(AXC_ENABLE_MASK << axc->id));
-#endif
 			cpri_reg_set(&regs->cpri_taxciqvspthreshinten,
 					(AXC_ENABLE_MASK << axc->id));
 		}
@@ -424,10 +418,6 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 			loop++;
 			cpri_reg_set(&regs->cpri_raccr,
 					(AXC_ENABLE_MASK << axc->id));
-#if 0
-			cpri_reg_set(&regs->cpri_raxciqthreshinten,
-					(AXC_ENABLE_MASK << axc->id));
-#endif
 			cpri_reg_set(&regs->cpri_raxciqvspthreshinten,
 					(AXC_ENABLE_MASK << axc->id));
 		}

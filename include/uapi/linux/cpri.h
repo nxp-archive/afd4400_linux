@@ -350,8 +350,8 @@ enum mapping_method {
 };
 
 struct axc_pos {
-	__u8 axc_start_W;
-	__u8 axc_start_B;
+	__u8 axc_start_w;
+	__u8 axc_start_b;
 };
 
 struct axc_info {
@@ -362,11 +362,11 @@ struct axc_info {
 #define READ_ALL_AXCS				(1 << 3)
 #define AXC_DATA_TYPE_IQ			(1 << 4)
 #define AXC_DATA_TYPE_VSS			(1 << 5)
-#define AXC_OVERSAMPLING_2X			(1 << 6)
+#define AXC_OVERSAMPLING_2X			(1 << 12)
 #define AXC_CONVERSION_9E2_EN			(1 << 7)
-#define AXC_TX_ROUNDING_EN			(1 << 8)
-#define AXC_INTERLEAVING_EN			(1 << 9)
-#define AXC_IQ_FORMAT_2				(1 << 10)
+#define AXC_TX_ROUNDING_EN			(1 << 14)
+#define AXC_INTERLEAVING_EN			(1 << 30)
+#define AXC_IQ_FORMAT_2				(1 << 31)
 #define AXC_FLEXI_POSITION_EN			(1 << 11)
 	enum mapping_method map_method;
 	unsigned int buffer_size;
@@ -374,8 +374,8 @@ struct axc_info {
 	unsigned int sampling_freq;
 	unsigned int S;
 	unsigned int K;
-	unsigned int Na;
-	unsigned int Ns;
+	unsigned int na;
+	unsigned int ns;
 	__u8 sample_width;
 	struct axc_pos *pos;
 	__u32 axc_dma_ptr;

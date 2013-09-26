@@ -37,8 +37,8 @@ struct axc {
 	unsigned int buffer_threshold;
 	unsigned int S;
 	unsigned char K;
-	unsigned int Na;
-	unsigned int Nst;
+	unsigned int na;
+	unsigned int nst;
 	struct axc_buf *axc_buf;
 	struct axc_pos *pos;
 };
@@ -78,7 +78,6 @@ struct axc_mem_blk {
 	u32 base;
 	u32 size;
 	u32 next_free_addr;
-	u32 rxtx_busy_flag;
 };
 
 struct axc_buf_head {
@@ -167,7 +166,7 @@ struct cpri_framer_regs {
 	u32 reserved2[3];
 	u32 cpri_cmconfig;	/* 0x3C - Control & Management Config */
 	u32 cpri_cmstatus;	/* 0x40 - Control & Management Status */
-	u32 reserved3;
+	u32 cpri_rdelay_ctrl;	/* 0x44 - Rx Delay */
 	u32 cpri_rdelay;	/* 0x48 - Rx Delay */
 	u32 cpri_rnddelay;	/* 0x4C - Round Trip Delay */
 	u32 cpri_exdelaycfg;	/* 0x50 - Extended Delay Measur Conf */

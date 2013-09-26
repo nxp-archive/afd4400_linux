@@ -52,14 +52,13 @@
 #define NUM_SUBSEG				3
 #define INVALIDE_MBLK_ADDR			0xffffffff
 
-#define SEG_NUM(word, byte, size) (((word * size) + byte) / SEG_SIZE)
-#define BYTE_POS(word, byte, size) (((word * size) + byte) % SEG_SIZE)
+#define CEIL_FUNC(val, count) ((((val / count) * count) == val) ? \
+	(val / count) : ((val / count) + 1))
+#define BIT_POS(word, size, bit) ((((word - 1) * size) + bit) % SEG_SIZE)
 #define K_POS(seg) ((seg > (SEG_SIZE - 1)) ? (seg - (SEG_SIZE - 1)) : seg)
 #define K_MASK(seg) (0x1 << ((seg > (SEG_SIZE - 1)) ? (seg - (SEG_SIZE - 1)) :\
 			seg))
 #define K_OFFSET(seg) ((seg < (SEG_SIZE - 1)) ? 0 : 1)
-#define CEIL_FUNC(val, count) ((((val / count) * count) == val) ? \
-	(val / count) : ((val / count) + 1))
 
 struct segment_param {
 	struct segment *segment;
