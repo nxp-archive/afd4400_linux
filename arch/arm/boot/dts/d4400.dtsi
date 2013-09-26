@@ -383,8 +383,8 @@
 				reg = <0x0 0x8000>;
 				framer-id = <1>;
 				max-axcs = <24>;
-				memblk-rx = <0x83000000 0x1800 0x83801800 0x1800>;
-				memblk-tx = <0x83000000 0x1800 0x83801800 0x1800>;
+				memblk-rx = <0x83000000 0x1800 0x83800000 0x1800>;
+				memblk-tx = <0x83000000 0x1800 0x83800000 0x1800>;
 				local-mac-address = [ 00 00 AB CD 21 AB ];
 				interrupts = <0 71 0x04>,
 					 <0 73 0x04>,
@@ -398,8 +398,8 @@
 				reg = <0x8000 0x8000>;
 				framer-id = <2>;
 				max-axcs = <24>;
-				memblk-rx = <0x84000000 0x1800 0x84801800 0x1800>;
-				memblk-tx = <0x84000000 0x1800 0x84801800 0x1800>;
+				memblk-rx = <0x84000000 0x1800 0x84800000 0x1800>;
+				memblk-tx = <0x84000000 0x1800 0x84800000 0x1800>;
 				local-mac-address = [ 00 00 AB CD 21 CD ];
 				interrupts = <0 72 0x4>,
 					 <0 74 0x4>,
@@ -854,8 +854,8 @@
                                 reg = <0x0 0x8000>;
                                 framer-id = <1>;
                                 max-axcs = <24>;
-                                memblk-rx = <0x85000000 0x1800 0x85801800 0x1800>;
-                                memblk-tx = <0x85000000 0x1800 0x85801800 0x1800>;
+                                memblk-rx = <0x85000000 0x1800 0x85800000 0x1800>;
+                                memblk-tx = <0x85000000 0x1800 0x85800000 0x1800>;
                                 local-mac-address = [ 00 00 AB CD 21 EF ];
                                 interrupts = <0 84 0x04>,
                                          <0 86 0x04>,
@@ -869,8 +869,8 @@
                                 reg = <0x8000 0x8000>;
                                 framer-id = <2>;
                                 max-axcs = <24>;
-                                memblk-rx = <0x86000000 0x1800 0x86801800 0x1800>;
-                                memblk-tx = <0x86000000 0x1800 0x86801800 0x1800>;
+                                memblk-rx = <0x86000000 0x1800 0x86800000 0x1800>;
+                                memblk-tx = <0x86000000 0x1800 0x86800000 0x1800>;
                                 local-mac-address = [ 00 00 AB CD 22 AB ];
                                 interrupts = <0 85 0x4>,
                                          <0 87 0x4>,
