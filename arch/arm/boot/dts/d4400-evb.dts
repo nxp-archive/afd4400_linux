@@ -21,21 +21,6 @@
         };
 
         soc@0 {
-			roc1 {
-				#address-cells = <1>;
-				#size-cells = <1>;
-				compatible = "adi,roc-card";
-				interrupt-parent = <&gpioA>;
-				interrupts = <16 0x04>;
-				cs-gpios = <&gpioC 16 0>,
-					<&gpioC 18 0>,
-					<&gpioC 19 0>;
-				src-resets = <&src 3>,
-					<&src 5>;
-				9368-1-handle = <&adrx>;
-				9368-2-handle = <&adtx>;
-				9525-handle = <&clkgen>;
-			};
                 aips-bus@1000000 { /* AIPS1 */
                         uart4: serial@f8000 {
                                 pinctrl-names = "default";
@@ -50,17 +35,42 @@
 				pinctrl-0 = <&pinctrl_ecspi1_1>;
 				fsl,spi-num-chipselects = <3>;
 
-				adrx: ad9368-1@2 {
+				adrx1: ad9368-1@2 {
 					compatible = "adi,ad9368-1";
 					spi-max-frequency = <20000000>;
 					reg = <2>;
 				};
-				adtx: ad9368-2@2 {
+				adtx1: ad9368-2@0 {
 					compatible = "adi,ad9368-2";
 					spi-max-frequency = <20000000>;
 					reg = <0>;
 				};
-				clkgen: ad9525@5 {
+				clkgen1: ad9525@1 {
+					compatible = "adi,ad9525";
+					spi-max-frequency = <20000000>;
+					reg = <1>;
+				};
+			};
+
+			ecspi@AC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi3_1>;
+				fsl,spi-num-chipselects = <3>;
+
+				adrx2: ad9368-1@2 {
+					compatible = "adi,ad9368-1";
+					spi-max-frequency = <20000000>;
+					reg = <2>;
+				};
+				adtx2: ad9368-2@0 {
+					compatible = "adi,ad9368-2";
+					spi-max-frequency = <20000000>;
+					reg = <0>;
+				};
+				clkgen2: ad9525@1 {
 					compatible = "adi,ad9525";
 					spi-max-frequency = <20000000>;
 					reg = <1>;
@@ -184,6 +194,36 @@
                                 };
 			};
                 };
+		roc1 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "adi,roc-card";
+			interrupt-parent = <&gpioA>;
+			interrupts = <16 0x04>;
+			cs-gpios = <&gpioC 16 0>,
+				<&gpioC 18 0>,
+				<&gpioC 19 0>;
+			src-resets = <&src 3>,
+				<&src 5>;
+			9368-1-handle = <&adrx1>;
+			9368-2-handle = <&adtx1>;
+			9525-handle = <&clkgen1>;
+		};
+		roc2 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "adi,roc-card";
+			interrupt-parent = <&gpioA>;
+			interrupts = <18 0x04>;
+			cs-gpios = <&gpioC 20 0>,
+				<&gpioC 22 0>,
+				<&gpioC 23 0>;
+			src-resets = <&src 4>,
+				<&src 6>;
+			9368-1-handle = <&adrx2>;
+			9368-2-handle = <&adtx2>;
+			9525-handle = <&clkgen2>;
+		};
         };
 
 	landshark@0xc000000 { /* LandShark */
