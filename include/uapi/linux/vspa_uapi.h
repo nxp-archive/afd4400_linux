@@ -25,4 +25,7 @@
 /* mmap offset argument for dbg regsiter */
 #define VSPA_DBG_OFFSET	4096
 
+/* mmap offset argument for vspa device context memory */
+#define VSPA_DS_OFFSET	8192
+
 #endif

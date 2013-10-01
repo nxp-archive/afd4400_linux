@@ -1,7 +1,7 @@
 /*
  * drivers/misc/vspa.c
  * VSPA device driver
- * Author: Vineet Sharma b44341@freescale.co
+ * Author: Vineet Sharma b44341@freescale.com
  *
  * Copyright 2013 Freescale Semiconductor, Inc.
  *
@@ -38,11 +38,13 @@
 #include <linux/vspa_dev.h>
 #include <mach/gpc.h>
 
-#define MAX_VSPA_PER_SOC	11
+/* Number of minor number allocation required */
+#define MAX_VSPA 11
+
 #define VSPA_DEVICE_NAME "vspa"
 
 
-/* Number of VSPA devices */
+/* Number of VSPA devices probed on system */
 static int vspa_devs;
 static s32 vspa_major;
 
@@ -61,19 +63,20 @@ static int vspa_open(struct inode *inode, struct file *fp)
 {
 	struct vspa_device *vspadev = NULL;
 	int rc = 0;
-	int vspa_id;
 
-	vspa_id = iminor(inode);
 	vspadev = container_of(inode->i_cdev, struct vspa_device, cdev);
 	if (vspadev != NULL) {
 		if (vspadev->state < VSPA_OPENED) {
 			vspadev->state = VSPA_OPENED;
 			fp->private_data = vspadev;
 			vspa_configure_irq_events(vspadev);
-		} else {
-				rc = -EBUSY;
+		} else if (vspadev->state >= VSPA_OPENED) {
+			fp->private_data = vspadev;
 		}
 	} else {
+		dev_err(vspadev->dev, "No device context found for %s %d\n",
+					VSPA_DEVICE_NAME, iminor(inode));
+
 		rc = -ENODEV;
 	}
 
@@ -82,12 +85,15 @@ static int vspa_open(struct inode *inode, struct file *fp)
 
 static int vspa_release(struct inode *inode, struct file *fp)
 {
-	struct vspa_device *device = (struct vspa_device *)fp->private_data;
+	struct vspa_device *vspadev = (struct vspa_device *)fp->private_data;
 
-	if (!device)
+	if (!vspadev) {
+		dev_err(vspadev->dev, "No device context found for %s %d\n",
+					VSPA_DEVICE_NAME, iminor(inode));
 		return -ENODEV;
+	}
+	vspadev->state = VSPA_CLOSED;
 
-	device->state =	VSPA_CLOSED;
 	return 0;
 }
 
@@ -99,9 +105,9 @@ static irqreturn_t vspa_irq_handler(int irq, void *dev)
 	vspadev->status_reg =
 		vspa_reg_read(vspadev->regs + STATUS_REG_OFFSET);
 	if (vspadev->status_reg > 0) {
-		wake_up_interruptible(&vspadev->irq_wait_q);
 		/* disable irqs */
 		vspa_reg_write(vspadev->regs + IRQEN_REG_OFFSET, 0);
+		wake_up_interruptible(&vspadev->irq_wait_q);
 	}
 	spin_unlock(&vspadev->lock);
 	return IRQ_HANDLED;
@@ -111,27 +117,6 @@ static int vspa_register_irqs(struct vspa_device *vspadev)
 {
 	int rc = 0;
 
-#ifdef FSL_MEDUSA
-	rc = request_irq(vspadev->irq_vspa_done, vspa_irq_handler,
-		0, VSPA_DEVICE_NAME, vspadev);
-	if (rc < 0)
-		return rc;
-
-	rc = request_irq(vspadev->irq_vspa_msg , vspa_irq_handler,
-		0, VSPA_DEVICE_NAME, vspadev);
-	if (rc < 0)
-		return rc;
-
-	rc = request_irq(vspadev->irq_dma_cmp, vspa_irq_handler,
-		0, VSPA_DEVICE_NAME, vspadev);
-	if (rc < 0)
-		return rc;
-
-	rc = request_irq(vspadev->irq_dma_err, vspa_irq_handler,
-		0, VSPA_DEVICE_NAME, vspadev);
-	if (rc < 0)
-		return rc;
-#else
 	if (!vspadev->irq_enabled) {
 		rc = request_irq(vspadev->vspa_irq_no, vspa_irq_handler,
 		0, VSPA_DEVICE_NAME, vspadev);
@@ -139,25 +124,24 @@ static int vspa_register_irqs(struct vspa_device *vspadev)
 			return rc;
 		vspadev->irq_enabled = 1;
 	}
-#endif
 	return 0;
 }
 
 static long vspa_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 {
 	int rc = 0;
-	struct vspa_device *dev = (struct vspa_device *)filp->private_data;
+	struct vspa_device *vspadev = (struct vspa_device *)filp->private_data;
 
 	switch (cmd) {
 	case IOCTL_REQ_IRQ:
-		rc = vspa_register_irqs(dev);
+		rc = vspa_register_irqs(vspadev);
 		return rc;
 
 	case IOCTL_REQ_PDN:
-		return d4400_gpc_vspa_full_pow_gate(dev->id);
+		return d4400_gpc_vspa_full_pow_gate(vspadev->id);
 
 	case IOCTL_REQ_PUP:
-		return d4400_gpc_vspa_full_pow_up(dev->id);
+		return d4400_gpc_vspa_full_pow_up(vspadev->id);
 
 	default:
 		return -EINVAL;
@@ -167,10 +151,10 @@ static long vspa_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 static unsigned int vspa_poll(struct file *filp, poll_table *wait)
 {
 	unsigned int mask = 0;
-	struct vspa_device *dev = (struct vspa_device *)filp->private_data;
+	struct vspa_device *vspadev = (struct vspa_device *)filp->private_data;
 
-	poll_wait(filp, &dev->irq_wait_q, wait);
-	if (vspa_reg_read(dev->regs + STATUS_REG_OFFSET) > 0)
+	poll_wait(filp, &vspadev->irq_wait_q, wait);
+	if (vspa_reg_read(vspadev->regs + STATUS_REG_OFFSET) > 0)
 		mask = (POLLIN | POLLRDNORM);
 
 	return mask;
@@ -180,37 +164,78 @@ static int vspa_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	unsigned long off = 0, phy_addr = 0;
 	int rc = 0;
-	struct vspa_device *dev = filp->private_data;
+	struct vspa_device *vspadev = filp->private_data;
 	unsigned long start  = 0, len = 0;
 
-	if (NULL == dev)
+	if (NULL == vspadev)
 		return -ENODEV;
 
 	/* Based on Offset we decide, if we map the vspa registers
-	 * or vspa DBG registers */
+	 * (VSPA_DBG_OFFSET) 0: VSPA debugg resister set
+	 * (VSPA_REG_OFFSET) 4096: VSPA IP register set
+	 * (VSPA_DS_OFFSET) 8192: Persiatnt memory allocted by the driver for
+	 * meta data
+	 * */
 	if (vma->vm_pgoff == (VSPA_DBG_OFFSET >> PAGE_SHIFT)) {
 
-		phy_addr = (unsigned long)dev->dbg_regs;
+		phy_addr = (unsigned long)vspadev->dbg_regs;
 
 		/* Align the start address */
 		start = phy_addr & PAGE_MASK;
 
 		/* Align the size to PAGE Size */
-		len = PAGE_ALIGN((start & ~PAGE_MASK) + dev->dbg_size);
+		len = PAGE_ALIGN((start & ~PAGE_MASK) + vspadev->dbg_size);
 
+		/* These are IO addresses */
+		vma->vm_flags |= VM_IO;
+
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	} else if (vma->vm_pgoff == (VSPA_REG_OFFSET >> PAGE_SHIFT)) {
 
-		phy_addr = (unsigned long)dev->mem_regs;
+		phy_addr = (unsigned long)vspadev->mem_regs;
 
 		/* Align the start address */
 		start = phy_addr & PAGE_MASK;
 
 		/* Align the size to PAGE Size */
-		len = PAGE_ALIGN((start & ~PAGE_MASK) + dev->mem_size);
+		len = PAGE_ALIGN((start & ~PAGE_MASK) + vspadev->mem_size);
+
+		/* These are IO addresses */
+		vma->vm_flags |= VM_IO;
+
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+	} else if (vma->vm_pgoff == (VSPA_DS_OFFSET >> PAGE_SHIFT)) {
+
+
+		/* Calculate the length */
+		len = vma->vm_end - vma->vm_start;
+
+		/* We allocate memory for metadata once only */
+		if (vspadev->mem_context == NULL) {
+
+			vspadev->mem_context = kmalloc(len, GFP_KERNEL);
+
+			if (vspadev->mem_context == NULL) {
+				dev_err(vspadev->dev, "No memory for device context %s\n",
+					VSPA_DEVICE_NAME);
+				return -ENOMEM;
+			}
+		}
+
+		phy_addr = virt_to_phys((void *)vspadev->mem_context);
+
+		/* Align the start address */
+		start = phy_addr & PAGE_MASK;
+
+		/* Align the size to PAGE Size */
+		len = PAGE_ALIGN((start & ~PAGE_MASK) + len);
+
 	} else {
 		return -EINVAL;
 	}
 
+	/* Reset it, as the pg_off is used as index for the type of memory */
 	vma->vm_pgoff = 0;
 
 	off = vma->vm_pgoff << PAGE_SHIFT;
@@ -221,17 +246,13 @@ static int vspa_mmap(struct file *filp, struct vm_area_struct *vma)
 	off += start;
 	vma->vm_pgoff = off >> PAGE_SHIFT;
 
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-
-	vma->vm_flags |= VM_IO;
-
 	rc = io_remap_pfn_range(vma, vma->vm_start, off >> PAGE_SHIFT,
 			vma->vm_end - vma->vm_start,
 			vma->vm_page_prot);
 	if (rc < 0)
 		return -EAGAIN;
 
-	dev->state = VSPA_MMAPED;
+	vspadev->state = VSPA_MMAPED;
 	return 0;
 }
 
@@ -245,7 +266,7 @@ static const struct file_operations vspa_fops = {
 };
 
 static int
-vspa_getdts_properties(struct device_node *np, struct vspa_device *data)
+vspa_getdts_properties(struct device_node *np, struct vspa_device *vsapdev)
 {
 	u32 prop  = 0;
 
@@ -254,120 +275,111 @@ vspa_getdts_properties(struct device_node *np, struct vspa_device *data)
 
 	if (of_property_read_u32(np, "vspadev-id", &prop) < 0)
 			return -EINVAL;
-		data->id = prop;
+		vsapdev->id = prop;
 
-#ifndef FSL_MEDUSA
 	if (of_property_read_u32(np, "dbgregstart", &prop) < 0) {
-		pr_err("dbgregstart attribute not found for %s%d\n",
-				VSPA_DEVICE_NAME, data->id);
+		dev_err(vsapdev->dev, "dbgregstart attribute not found for %s%d\n",
+				VSPA_DEVICE_NAME, vsapdev->id);
 		return -EINVAL;
 	}
 
-	data->dbg_regs = (u32 *)prop;
+	vsapdev->dbg_regs = (u32 *)prop;
 
 	if (of_property_read_u32(np, "dbgreglen", &prop) < 0) {
-		pr_err("dbgreglen attribute not found for %s%d\n",
-				VSPA_DEVICE_NAME, data->id);
+		dev_err(vsapdev->dev, "dbgreglen attribute not found for %s%d\n",
+				VSPA_DEVICE_NAME, vsapdev->id);
 		return -EINVAL;
 	}
 
-	data->dbg_size = prop;
+	vsapdev->dbg_size = prop;
 
 	if (of_get_property(np, "interrupts", NULL)) {
-		data->vspa_irq_no = irq_of_parse_and_map(np, 0);
+		vsapdev->vspa_irq_no = irq_of_parse_and_map(np, 0);
 	} else {
-		pr_err("Interrupt number not found for %s%d\n",
-				 VSPA_DEVICE_NAME, data->id);
+		dev_err(vsapdev->dev, "Interrupt number not found for %s%d\n",
+				 VSPA_DEVICE_NAME, vsapdev->id);
 		return -EINVAL;
 	}
 
-#else
-	data->irq_dma_cmp = irq_of_parse_and_map(np, 0);
-	data->irq_dma_err = irq_of_parse_and_map(np, 1);
-	data->irq_vspa_done = irq_of_parse_and_map(np, 2);
-	data->irq_vspa_msg = irq_of_parse_and_map(np, 3);
-
-	pr_info("irq_dma_cmp %d\n", data->irq_dma_cmp);
-	pr_info("irq_dma_err %d\n", data->irq_dma_err);
-	pr_info("irq_vspa_done %d\n", data->irq_vspa_done);
-	pr_info("irq_vspa_msg %d\n", data->irq_vspa_msg);
-#endif
 	return 0;
 }
 
 static int
-vspa_construct_device(struct vspa_device *dev, int minor)
+vspa_construct_device(struct vspa_device *vspadev, int minor)
 {
 	int rc = 0;
 	dev_t devno = MKDEV(vspa_major, minor);
 
-	BUG_ON(dev == NULL);
+	BUG_ON(vspadev == NULL);
 
-	cdev_init(&dev->cdev, &vspa_fops);
-	dev->cdev.owner = THIS_MODULE;
-	rc = cdev_add(&dev->cdev, devno, 1);
+	cdev_init(&vspadev->cdev, &vspa_fops);
+	vspadev->cdev.owner = THIS_MODULE;
+	rc = cdev_add(&vspadev->cdev, devno, 1);
 	if (rc < 0) {
-		pr_err("[target] Error %d while trying to add %s%d",
+		dev_err(vspadev->dev, "[target] Error %d while trying to add %s%d",
 			rc, VSPA_DEVICE_NAME, minor);
-		return rc;
 	}
-	return 0;
+	return rc;
 }
 
 static int vspa_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
-	struct vspa_device *vdev = NULL;
+	struct vspa_device *vspadev = NULL;
 	struct resource res;
 	dev_t dev;
 	int result = 0;
 
 	/* Allocate vspa device structure */
-	 vdev = kzalloc(sizeof(struct vspa_device), GFP_KERNEL);
-	 if (!vdev) {
+	vspadev = kzalloc(sizeof(struct vspa_device), GFP_KERNEL);
+
+	if (!vspadev) {
 		pr_err("Failed to allocate vspa_dev\n");
-	    result = -ENOMEM;
-	    return result;
-	 }
-	if (vspa_getdts_properties(np, vdev) < 0) {
-		pr_err("VSPA DTS entry parse failed.\n");
+		result = -ENOMEM;
+		return result;
+	}
+
+	vspadev->dev = &pdev->dev;
+
+	if (vspa_getdts_properties(np, vspadev) < 0) {
+		dev_err(vspadev->dev, "VSPA DTS entry parse failed.\n");
 		result = -EINVAL;
 		goto prop_fail;
 	}
 
 	/* Register our major, and accept a dynamic number. */
 	if (vspa_major) {
-		dev = MKDEV(vspa_major, vdev->id);
+		dev = MKDEV(vspa_major, vspadev->id);
 	} else {
 
 		/* Register our major, and accept a dynamic number. */
 		result = alloc_chrdev_region(&dev, 0,
-				MAX_VSPA_PER_SOC, VSPA_DEVICE_NAME);
+				MAX_VSPA, VSPA_DEVICE_NAME);
 		if (result < 0) {
-			pr_err("Device fsl-vspa allocation failed %d\n",
+			dev_err(vspadev->dev, "Device fsl-vspa allocation failed %d\n",
 					result);
 			goto reg_fail;
 		}
 		vspa_major = MAJOR(dev);
 	}
 
-	result = vspa_construct_device(vdev, vdev->id);
+	result = vspa_construct_device(vspadev, vspadev->id);
 	if (result == 0) {
 		if (of_address_to_resource(np, 0, &res)) {
 			result = -EINVAL;
 			goto prop_fail;
 		}
 
-		vdev->mem_regs = (u32 __iomem *)res.start;
-		vdev->mem_size =  resource_size(&res);
-		vdev->regs = ioremap((unsigned int)vdev->mem_regs,
-				vdev->mem_size);
+		vspadev->mem_regs = (u32 __iomem *)res.start;
+		vspadev->mem_size =  resource_size(&res);
+		vspadev->regs = ioremap((unsigned int)vspadev->mem_regs,
+				vspadev->mem_size);
 
-		spin_lock_init(&vdev->lock);
-		init_waitqueue_head(&(vdev->irq_wait_q));
-		vdev->state = VSPA_PROBED;
+		spin_lock_init(&vspadev->lock);
+		init_waitqueue_head(&(vspadev->irq_wait_q));
+		vspadev->state = VSPA_PROBED;
 		vspa_devs++;
-		pr_info("vspa probe successful, id:%d\n", vdev->id);
+		dev_dbg(vspadev->dev, "vspa probe successful, id:%d\n", vspadev->id);
 		return 0;
 	} else {
 		goto cons_fail;
@@ -377,30 +389,32 @@ cons_fail:
 	unregister_chrdev_region(dev, 1);
 reg_fail:
 prop_fail:
-	kfree(vdev);
+	kfree(vspadev);
 	return result;
 }
 
 static int vspa_remove(struct platform_device *ofpdev)
 {
-	struct  vspa_device *device = dev_get_drvdata(&ofpdev->dev);
+	struct  vspa_device *vspadev = dev_get_drvdata(&ofpdev->dev);
 
-	BUG_ON(device == NULL);
+	BUG_ON(vspadev == NULL);
+
+	/* Disbale all irqs of VSPA */
+	vspa_configure_irq_events(vspadev);
 
 	dev_set_drvdata(&ofpdev->dev, NULL);
-	iounmap(device->regs);
-#ifdef FSL_MEDUSA
-	free_irq(device->irq_dma_cmp, device);
-	free_irq(device->irq_dma_err, device);
-	free_irq(device->irq_vspa_done, device);
-	free_irq(device->irq_vspa_msg, device);
-#else
-	free_irq(device->vspa_irq_no, device);
-#endif
-	kfree(device);
+
+	iounmap(vspadev->regs);
+
+	if (vspadev->mem_context != NULL)
+		kfree(vspadev->mem_context);
+
+	free_irq(vspadev->vspa_irq_no, vspadev);
 
 	unregister_chrdev(vspa_major, VSPA_DEVICE_NAME);
-	cdev_del(&device->cdev);
+	cdev_del(&vspadev->cdev);
+	kfree(vspadev);
+
 	return 0;
 }
 

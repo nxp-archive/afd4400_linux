@@ -21,10 +21,10 @@
 #include <linux/vspa_uapi.h>
 
 
-#define MAX_VSPA_PER_SOC    11
+/* IP register offset for the registers used by the driver */
+#define IRQEN_REG_OFFSET 3
 
-#define IRQEN_REG_OFFSET	3
-#define STATUS_REG_OFFSET	4
+#define STATUS_REG_OFFSET 4
 
 /* These state are only for debug purpose only */
 enum vspa_state {
@@ -63,9 +63,11 @@ struct vspa_device {
 	/* Physical address of the IP registers */
 	u32 __iomem *mem_regs;
 
+	/* Physical address of the device context memory */
+	u32 __iomem *mem_context;
+
 	/* Size of IP register map of vspa */
 	resource_size_t mem_size;
-
 
 	/* Lock to prevent multiple access */
 	spinlock_t lock;
@@ -87,7 +89,6 @@ struct vspa_device {
 	/* Wait queue for irq event notifications*/
 	wait_queue_head_t irq_wait_q;
 
-#ifndef FSL_MEDUSA
 	uint32_t vspa_irq_no;
 
 	/* Physical address of the vspa dbg registers */
@@ -99,12 +100,6 @@ struct vspa_device {
 	/*Interrupt enabled for this device*/
 
 	int irq_enabled;
-#else
-	uint32_t irq_dma_cmp;
-	uint32_t irq_dma_err;
-	uint32_t irq_vspa_done;
-	uint32_t irq_vspa_msg;
-#endif
 
 	/* Current state of the device */
 	enum vspa_state state;
