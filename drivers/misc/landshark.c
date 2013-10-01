@@ -12,13 +12,8 @@
  * under  the terms of  the GNU General  Public License as published by the
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
- *
- *  Theory of operation
- *
- *  The driver reads DTS entry and provides this information to user LANDSHARK
- *  library. It also implements mmap() functionality for the physical memory
- *  available from kernel.
  *  */
+
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
 #include <linux/module.h>
@@ -29,15 +24,23 @@
 #include <linux/io.h>
 #include <linux/mman.h>
 #include <linux/of.h>
+#include <linux/slab.h>
 #include "landshark.h"
 
 static s32 major;
 
+/* Information regarding the buffer pool and size */
 struct phys_mem_info landshark_phys_mem = {
-	.physical_addr = 0,
-	.physical_addr_len = 0,
+	.dmaregion_addr = 0,
+	.dmaregion_addr_len = 0,
 };
 
+/* Information regarding the metadata and its size */
+struct pinit_info landshark_pinit_info = {
+	.nondma_memory	= 0,
+	.pinit_done = 0,
+	.pinit_size = 0,
+};
 static const struct file_operations landshark_fops = {
 	.owner		=	THIS_MODULE,
 	.llseek		=	NULL,
@@ -58,14 +61,52 @@ static const struct file_operations landshark_fops = {
 long landshark_ioctl(struct file *file,	unsigned int cmd, unsigned long arg)
 {
 	int result = 0;
+	struct pinit_info ls_pinit_info = { 0, 0, 0};
+
 	switch (cmd) {
+
 	case LANDSHARK_MEM_INFO_GET:/* for writing data to arg */
 		result = copy_to_user((struct phys_mem_info *)arg,
 				&landshark_phys_mem,
 				sizeof(landshark_phys_mem));
+		break;
+
+	/* This IOCTL is used to set the information regarding
+	 * the process intialization of the pool information, it is only
+	 * intialized once,and cleared on final exit of the process.
+	 * On final exit allocated memory (for metadata) is free'd
+	 */
+	case LANDSHARK_INIT_INFO_SET:
+		result = copy_from_user(
+				(struct pinit_info *)&ls_pinit_info,
+				(struct pinit_info *)arg,
+				sizeof(struct pinit_info));
 		if (result < 0)
 			return result;
+
+		landshark_pinit_info.pinit_done = ls_pinit_info.pinit_done;
+
+		/* If the request is to release the metadata ? */
+		if ((ls_pinit_info.pinit_done == 0)
+				&& (ls_pinit_info.pinit_size == 0)) {
+
+			kfree((void *)landshark_pinit_info.nondma_memory);
+
+			landshark_pinit_info.pinit_size = 0;
+			landshark_pinit_info.nondma_memory = 0;
+		}
 		break;
+
+	/* This IOCTL is used by the user library to get the size
+	 * of the metadata memory and accordingly the process can
+	 * invoke mmap to map the metadata into its address space
+	 */
+	case LANDSHARK_INIT_INFO_GET:
+		result = copy_to_user((struct pinit_info *)arg,
+				(struct pinit_info *)&landshark_pinit_info,
+				sizeof(struct pinit_info));
+		break;
+
 	default:
 		result = -EINVAL;
 	}
@@ -75,23 +116,58 @@ long landshark_ioctl(struct file *file,	unsigned int cmd, unsigned long arg)
 static s32 landshark_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	int result = 0;
-	if (landshark_phys_mem.physical_addr_len <
-			(vma->vm_end - vma->vm_start)) {
-		result = -EINVAL;
-		goto return_result;
+	unsigned long phy_addr = 0;
+	unsigned long start  = 0, len = 0;
+
+
+	if (vma->vm_pgoff == 0) {
+
+		if (landshark_phys_mem.dmaregion_addr_len <
+				(vma->vm_end - vma->vm_start)) {
+			result = -ENOMEM;
+			goto return_result;
+		}
+
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+		result = remap_pfn_range(vma,
+				vma->vm_start,
+				landshark_phys_mem.dmaregion_addr >> PAGE_SHIFT,
+				vma->vm_end - vma->vm_start,
+				vma->vm_page_prot);
+
+	} else /* Allocate and mmap persistent metadata memory */ {
+
+		len = vma->vm_end - vma->vm_start;
+
+		/* Memory for metadat is allocated only once,
+		 * and all process refer to the same allocated memory */
+		if ((void *)landshark_pinit_info.nondma_memory == NULL) {
+
+			landshark_pinit_info.nondma_memory =
+				(unsigned int) kmalloc(len, GFP_KERNEL);
+
+			if ((void *)landshark_pinit_info.nondma_memory == NULL) {
+				pr_err("No memory for storing landshark meta data\n");
+				return -ENOMEM;
+			}
+			landshark_pinit_info.pinit_size = len;
+		}
+
+		phy_addr = virt_to_phys((void *)landshark_pinit_info.nondma_memory);
+
+		/* Align the start address */
+		start = phy_addr & PAGE_MASK;
+
+		/* Align the size to PAGE Size */
+		len = PAGE_ALIGN((start & ~PAGE_MASK) + landshark_pinit_info.pinit_size);
+
+		result = remap_pfn_range(vma,
+				vma->vm_start,
+				(landshark_pinit_info.nondma_memory >> PAGE_SHIFT),
+				vma->vm_end - vma->vm_start,
+				vma->vm_page_prot);
 	}
-
-	/* Marking page as non cached */
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-
-	result = remap_pfn_range(vma,
-			vma->vm_start,
-			landshark_phys_mem.physical_addr >> PAGE_SHIFT,
-			vma->vm_end - vma->vm_start,
-			vma->vm_page_prot);
-
-	if (result != 0)
-		result = -EAGAIN;
 return_result:
 	return result;
 }
@@ -134,32 +210,32 @@ static s32 landshark_probe(struct platform_device *ofdev)
 	int result = 0;
 	long page_size = PAGE_SIZE;
 
-	/*registering LANDSHARK driver*/
+	/* registering LANDSHARK driver*/
 	major = register_chrdev(LANDSHARK_MAJOR, MOD_NAME, &landshark_fops);
 	if (major < 0) {
 		pr_err("LANDSHARK driver registration failed: err %x\n", major);
 		result = major;
 		goto return_result;
 	}
-	/*Read DTS entry*/
+	/* Read DTS entry*/
 	if (of_property_read_u32(np, "length",
-				&landshark_phys_mem.physical_addr_len) < 0) {
+				&landshark_phys_mem.dmaregion_addr_len) < 0) {
 		pr_err("LANDSHARK length not found in Device Tree.\n");
 		result = -EINVAL;
 		goto return_result;
 	}
 	if (of_property_read_u32(np, "address",
-				&landshark_phys_mem.physical_addr) < 0) {
+				&landshark_phys_mem.dmaregion_addr) < 0) {
 		pr_err("LANDSHARK address not found in Device Tree.\n");
 		result = -EINVAL;
 		goto return_result;
 	}
-	/*Alingning length and address to PAGE_SIZE boundaries*/
-	landshark_phys_mem.physical_addr =
-		(((int) landshark_phys_mem.physical_addr + page_size - 1)
+	/* Alingning length and address to PAGE_SIZE boundaries*/
+	landshark_phys_mem.dmaregion_addr =
+		(((int) landshark_phys_mem.dmaregion_addr + page_size - 1)
 		& ~(page_size - 1));
-	landshark_phys_mem.physical_addr_len =
-		(((int) landshark_phys_mem.physical_addr_len)
+	landshark_phys_mem.dmaregion_addr_len =
+		(((int) landshark_phys_mem.dmaregion_addr_len)
 		 & ~(page_size - 1));
 
 return_result:

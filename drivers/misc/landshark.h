@@ -13,31 +13,28 @@
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
  *
- *  Theory of operation
- *
- *  The driver reads DTS entry and provides this information to user LANDSHARK
- *  library. It also implements mmap() functionality for the physical memory
- *  available from kernel.
- *  */
+**/
 
 #ifndef __LANDSHARK_H
 #define __LANDSHARK_H
 
-
-#define LANDSHARK_MAGIC_NUM 'M'
-#define LANDSHARK_MEM_INFO_GET _IOW(LANDSHARK_MAGIC_NUM, 1, int)
+#include <linux/landshark_uapi.h>
 
 #define MOD_INC_USE_COUNT
 #define MOD_DEC_USE_COUNT
 
 #define MOD_NAME "landshark"
-#define MOD_VERSION "0.1"
+#define MOD_VERSION "0.2"
 
 #define LANDSHARK_MAJOR 0
 
 struct phys_mem_info {
-	unsigned int physical_addr;
-	unsigned int physical_addr_len;
+
+	/* Physical address of the memory pool */
+	unsigned int dmaregion_addr;
+
+	/* size of the physical memory pool */
+	unsigned int dmaregion_addr_len;
 };
 
 long landshark_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
@@ -48,4 +45,4 @@ static s32 landshark_release(struct inode *inode, struct file *filp);
 static s32 landshark_probe(struct platform_device *ofdev);
 static s32 landshark_remove(struct platform_device *ofdev);
 
-#endif/*__LANDSHARK_H*/
+#endif /*__LANDSHARK_H*/
