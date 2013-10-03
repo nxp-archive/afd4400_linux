@@ -194,10 +194,10 @@
                                 };
 			};
                 };
-		roc1 {
+		xcvr1 {
 			#address-cells = <1>;
 			#size-cells = <1>;
-			compatible = "adi,roc-card";
+			compatible = "adi,xcvr-card";
 			interrupt-parent = <&gpioA>;
 			interrupts = <16 0x04>;
 			cs-gpios = <&gpioC 16 0>,
@@ -209,10 +209,10 @@
 			9368-2-handle = <&adtx1>;
 			9525-handle = <&clkgen1>;
 		};
-		roc2 {
+		xcvr2 {
 			#address-cells = <1>;
 			#size-cells = <1>;
-			compatible = "adi,roc-card";
+			compatible = "adi,xcvr-card";
 			interrupt-parent = <&gpioA>;
 			interrupts = <18 0x04>;
 			cs-gpios = <&gpioC 20 0>,
