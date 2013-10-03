@@ -556,8 +556,8 @@ config AD9368
 	 Support for AD9368-1 (RF reciever) AD9368-2 (RF tranceiver) RFICs
 	 from Analog devices.
 
-config ROC
-	tristate "ROC driver"
+config XCVR
+	tristate "XCVR driver"
 	depends on SPI
 	help
 	Support for AD9368-1 (RF reciever) AD9368-2 (RF tranceiver),

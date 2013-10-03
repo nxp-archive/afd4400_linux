@@ -52,5 +52,5 @@ obj-$(CONFIG_INTEL_MEI)		+= mei/
 obj-$(CONFIG_HWLAT_DETECTOR)	+= hwlat_detector.o
 obj-$(CONFIG_LANDSHARK)		+= landshark.o
 obj-$(CONFIG_VSPA)		+= vspa.o
-obj-$(CONFIG_ROC)		+= roc_card.o
+obj-$(CONFIG_XCVR)		+= xcvr_card.o
 obj-$(CONFIG_AD9368)		+= ad9368.o
