@@ -192,12 +192,12 @@ struct rf_phy_dev {
 	struct device *dev;
 	struct device_node	*rf_dev_node;
 	u32	phy_id;
-	struct roc_dev	*roc_dev;
+	struct xcvr_dev	*xcvr_dev;
 	struct	list_head list;
 	void	*priv;
 };
 
-struct roc_dev {
+struct xcvr_dev {
 	struct device		*dev;
 	struct list_head	list;
 	int			device_id;
@@ -223,33 +223,33 @@ struct roc_dev {
 };
 
 struct rf_phy_ops {
-	int	(*init)(struct roc_dev *phy,
+	int	(*init)(struct xcvr_dev *phy,
 				struct rf_init_params *params);
 
-	int	(*run_cmds)(struct roc_dev *phy,
+	int	(*run_cmds)(struct xcvr_dev *phy,
 				struct rf_phy_cmd *cmds, int count);
 
-	int	(*read_regs)(struct roc_dev *phy, u32 start,
+	int	(*read_regs)(struct xcvr_dev *phy, u32 start,
 				u32 count, u32 *buff);
 
-	int	(*write_reg)(struct roc_dev *phy, u32 reg,
+	int	(*write_reg)(struct xcvr_dev *phy, u32 reg,
 			 u32 data, u8 probe);
-	int	(*set_tx_atten)(struct roc_dev *phy, u32 reg, u32 data);
-	int	(*en_dis_tx)(struct roc_dev *phy, u32 tx_if, u32 cmd);
-	int	(*get_rx_gain)(struct roc_dev *phy,
+	int	(*set_tx_atten)(struct xcvr_dev *phy, u32 reg, u32 data);
+	int	(*en_dis_tx)(struct xcvr_dev *phy, u32 tx_if, u32 cmd);
+	int	(*get_rx_gain)(struct xcvr_dev *phy,
 			struct rf_rx_gain *rx_gain);
-	int	(*set_rx_gain)(struct roc_dev *phy,
+	int	(*set_rx_gain)(struct xcvr_dev *phy,
 			struct rf_rx_gain *rx_gain);
-	int	(*start)(struct roc_dev *phy);
-	int	(*stop)(struct roc_dev *phy);
-	int	(*set_gain_ctrl_mode)(struct roc_dev *phy,
+	int	(*start)(struct xcvr_dev *phy);
+	int	(*stop)(struct xcvr_dev *phy);
+	int	(*set_gain_ctrl_mode)(struct xcvr_dev *phy,
 			struct rf_gain_ctrl *gain_ctrl);
-	int	(*spi_ioc_transfer)(struct roc_dev *phy,
+	int	(*spi_ioc_transfer)(struct xcvr_dev *phy,
 			struct spi_ioc_transfer *u_xfers, unsigned n_xfers);
 };
 
 extern struct rf_phy_dev *get_attached_phy_dev(struct device_node *rf_dev_node);
-extern struct roc_dev *get_attached_roc_dev(struct device_node **dev_node);
+extern struct xcvr_dev *get_attached_xcvr_dev(struct device_node **dev_node);
 extern int ad9368_read(struct rf_phy_dev *phy_dev, u32 start, u32 count,
 		u32 *buff);
 extern int ad9368_write(struct rf_phy_dev *phy_dev, u32 reg,

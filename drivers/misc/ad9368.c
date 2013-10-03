@@ -603,7 +603,7 @@ static int ad9368_probe(struct spi_device *spi)
 	if (ad_init_gpio(np, dev, phy_info))
 		goto out;
 
-	phy_dev->roc_dev = get_attached_roc_dev(&phy_dev->rf_dev_node);
+	phy_dev->xcvr_dev = get_attached_xcvr_dev(&phy_dev->rf_dev_node);
 	ad_reset_phy(phy_info, dev);
 	dev_set_drvdata(&spi->dev, phy_dev);
 	dev_set_drvdata(dev, phy_dev);
