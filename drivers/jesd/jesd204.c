@@ -2207,7 +2207,7 @@ static struct jesd_transport_dev *
 	}
 
 	get_device_name(tdev);
-	dev_info(tdev->dev, "%s: Regs %p\n", tdev->name, base);
+	dev_dbg(tdev->dev, "%s: Regs %p\n", tdev->name, base);
 
 	rc = of_property_read_u32(dev_node, "max-lanes", &max_lanes);
 
@@ -2216,7 +2216,7 @@ static struct jesd_transport_dev *
 		tdev->max_lanes = 1;
 	} else {
 		tdev->max_lanes = max_lanes;
-		dev_info(tdev->dev, "%s: max_lanes %d\n", tdev->name,
+		dev_dbg(tdev->dev, "%s: max_lanes %d\n", tdev->name,
 			tdev->max_lanes);
 	}
 	if (tdev->max_lanes > jdev->max_lanes) {
@@ -2410,7 +2410,7 @@ static int jesd204_of_probe(struct platform_device *pdev)
 			NULL, tdev->name);
 		tdev->state = JESD_STATE_STANDBY;
 		jdev->transports[i] = tdev;
-		dev_info(jdev->dev, "%s JESD device created\n", tdev->name);
+		dev_dbg(jdev->dev, "%s JESD device created\n", tdev->name);
 		enable_transport(tdev);
 		jesd_minor++;
 		i++;
