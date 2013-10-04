@@ -18,7 +18,7 @@
 #define PHYGASKET_INIT_SUCCESS 1
 
 #define MAX_PHYGASKET_IP 3
-
+#define MAX_PHYGASKET_LANES	7
 
 #define GASKET0 0
 #define GASKET1 1

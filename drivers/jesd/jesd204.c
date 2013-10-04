@@ -83,6 +83,40 @@ void jesd_read_reg(u32 *reg)
 	ioread32(reg);
 }
 
+static int jesd_get_tx_lane_swap_en(struct jesd_transport_dev *tdev,
+	struct lane_device *lane)
+{
+	int swap_enable = 0;
+
+	if ((lane->flags & LANE_FLAGS_PRIMARY) && (tdev->active_lanes == 2))
+		swap_enable = 1;
+
+	return swap_enable;
+}
+
+static int jesd_get_rx_lane_swap_en(struct jesd_transport_dev *tdev,
+	struct lane_device *lane)
+{
+	int swap_enable = 0;
+
+	if ((lane->flags & LANE_FLAGS_PRIMARY) && (tdev->active_lanes == 2))
+		swap_enable = 1;
+
+	return swap_enable;
+}
+static int jesd_get_lane_swap_en(struct jesd_transport_dev *tdev,
+	struct lane_device *lane)
+{
+	int swap_enable = 0;
+
+	if ((tdev->type == JESD_DEV_TX))
+		swap_enable = jesd_get_tx_lane_swap_en(tdev, lane);
+	else
+		swap_enable = jesd_get_rx_lane_swap_en(tdev, lane);
+
+	return swap_enable;
+}
+
 static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 {
 	int rc = 0, i, swap_enable = 0;
@@ -115,16 +149,12 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 
 	for (i = 0; i < tdev->active_lanes; i++) {
 		lane = tdev->lane_devs[i];
-		if ((tdev->type == JESD_DEV_TX) &&
-			(lane->flags & LANE_FLAGS_PRIMARY)) {
-			if ((tdev->active_lanes == 2))
-				swap_enable = 1;
+		swap_enable = jesd_get_lane_swap_en(tdev, lane);
 
-			dev_info(tdev->dev, "%s: [%d] lane_swap %d\n",
-				tdev->name, lane->id, swap_enable);
-			phy_gasket_swap_lanes(tdev->phy, lane->id,
+		dev_info(tdev->dev, "%s: [%d] lane_swap %d\n",
+			tdev->name, lane->id, swap_enable);
+		phy_gasket_swap_lanes(tdev->phy, lane->id,
 				swap_enable, tdev->type);
-		}
 		rc = phy_gasket_lane_ctrl(tdev->phy, phy_data_src, lane->id);
 		if (rc) {
 			dev_err(tdev->dev, "%s: Phy init Failed, lane %d\n",
@@ -942,6 +972,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 	int rc = 0, i;
 	struct lane_device *lane;
 	struct jesd204_dev *jdev = tdev->parent;
+
 	if (tdev->active_lanes > 0) {
 		jdev->used_lanes = 0;
 		for (i = 0; i < tdev->active_lanes; i++)
@@ -985,6 +1016,12 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 			lane->flags |= LANE_FLAGS_FIRST_LANE;
 		else
 			lane->flags |= LANE_FLAGS_PRIMARY;
+
+		/* JESD RX/Tx 0 - 7 -> phygasket1 lanes 0 - 7
+		 * JESD Rx/TX 8 - 11 -> phygasket2/3 lanes 0 - 3
+		 */
+		if (lane->id > MAX_PHYGASKET_LANES)
+			lane->id -= MAX_PHYGASKET_LANES;
 
 		tdev->lane_devs[i] = lane;
 		jdev->used_lanes++;
@@ -2212,6 +2249,8 @@ static struct jesd_transport_dev *
 		val = 0;
 		mask = RX_IRQS_EN_MASK;
 		iowrite32(0, &tdev->rx_regs->rx_irq_ve_msk);
+
+		iowrite32(0, &tdev->rx_regs->rx_lane_en);
 	}
 	/* clear any stray interrupts*/
 	irq_status = ioread32(irq_status_reg);
@@ -2342,6 +2381,7 @@ static int jesd204_of_probe(struct platform_device *pdev)
 		tdev->phy_node = of_parse_phandle(child,
 						"phy-gasket", 0);
 		tdev->phy = map_phygasket(tdev->phy_node);
+
 
 		if (tdev->phy == NULL) {
 			dev_err(jdev->dev, "phy gasket is not mapped\n");
