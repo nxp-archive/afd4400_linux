@@ -11,6 +11,7 @@
 
 /* GCR value to init JESD */
 #define TPD_BGR_EN		0x00140000
+#define TBGEN_E0_E1_EN		0x30
 
 /* gcr 1 device is max for user app */
 #define GCR_DEV_MAX    1

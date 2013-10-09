@@ -167,6 +167,8 @@ void gcr_jesd_init(void)
 
 	val = TPD_BGR_EN;
 	scm_reg_write(val, 72);
+	val = TBGEN_E0_E1_EN;
+	scm_reg_write(val, 7);
 
 	return;
 }
