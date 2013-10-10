@@ -99,11 +99,12 @@ static int jesd_get_rx_lane_swap_en(struct jesd_transport_dev *tdev,
 {
 	int swap_enable = 0;
 
-	if ((lane->flags & LANE_FLAGS_PRIMARY) && (tdev->active_lanes == 2))
+	if ((lane->flags & LANE_FLAGS_PRIMARY) && (tdev->active_lanes == 2) && (tdev->id != 4))
 		swap_enable = 1;
 
 	return swap_enable;
 }
+
 static int jesd_get_lane_swap_en(struct jesd_transport_dev *tdev,
 	struct lane_device *lane)
 {
