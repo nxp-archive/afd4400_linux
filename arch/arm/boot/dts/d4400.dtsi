@@ -639,7 +639,7 @@
 
 				transport0@0x0{
 					reg = <0x00000000 0x3FF>;
-					transport-type = <1>;
+					transport-type = <2>;
 					transport-id = <4>;
 					timer-id = <2>;
 					pll-id = <0>;
@@ -652,7 +652,7 @@
 
 				transport1@0x400{
 					reg = <0x00000400 0x3FF>;
-					transport-type = <1>;
+					transport-type = <2>;
 					transport-id = <5>;
 					timer-id = <3>;
 					pll-id = <0>;
