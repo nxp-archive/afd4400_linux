@@ -142,7 +142,32 @@
 					};
 			};
 
-		};
+			i2c11: i2c@F4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c11_1>;
+
+				pca9547: pca9547@70 {
+					compatible = "nxp,pca9547";
+					reg = <0x70>;
+                    #address-cells = <1>;
+                    #size-cells = <0>;
+
+                    i2c@0 {
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                        reg = <0>;
+
+                        rtc:rtc@68{
+                            compatible = "dallas,ds3232";
+                            reg = <0x68>;
+                        };
+                    };
+                };
+		    };
+	    };
 
 
                 weim-bus@30000000 {
