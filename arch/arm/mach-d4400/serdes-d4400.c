@@ -420,6 +420,41 @@ static void serdes_disable_all_lanes(enum srds_pll_id pll_id,
 	return;
 }
 
+void serdes_jcpll_enable(void *sdev_handle,
+	struct serdes_lane_params *lane_param, struct serdes_pll_params *pll)
+{
+	u32 *reg, val = 0;
+	int lane_id = lane_param->lane_id;
+	struct serdes_dev *sdev = (struct serdes_dev *)sdev_handle;
+	struct serdes_regs *base_reg = sdev->regs;
+
+	reg = (u32 *) (&base_reg->lane_csr[lane_id].TTL_cr0);
+	val = srds_read_reg(reg);
+
+	if (lane_param->gen_conf.bit_rate_kbps == 1228800)
+		val |= SRDS_LN_7_TTLCR_FLT_SEL_BITS;
+	else
+		val &= ~SRDS_LN_7_TTLCR_FLT_SEL_BITS;
+	srds_write_reg(reg, val);
+	reg = (u32 *) (&base_reg->lane_csr[lane_id].TTL_cr1);
+	val = srds_read_reg(reg);
+	val &= ~SRDS_LN_TTLCR_DIV_RCVCLK_BIT;
+	if (pll->vco_type == SERDES_RING_VCO)
+		val |= SRDS_LN_TTLCR_DIV25_RCVCLK_BIT;
+	else
+		val |= SRDS_LN_TTLCR_DIV40_RCVCLK_BIT;
+	srds_write_reg(reg, val);
+
+	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_ctl_reg4);
+	val = srds_read_reg(reg);
+	val &= ~(SRDS_PLLCR_RCLKEN_MASK | SRDS_PLLCR_LANE_MASK);
+	val |= (SRDS_PLLCR_RCLKEN_MASK | lane_param->lane_id);
+	srds_write_reg(reg, val);
+
+}
+EXPORT_SYMBOL_GPL(serdes_jcpll_enable);
+
+
 /* default:PLL on (POFF == 0)
  * for both SRDSxPLL1RSTCTL  & SRDSxPLL2RSTCTL register
  * PLL reset sequence in progress.
@@ -429,6 +464,7 @@ int serdes_init_pll(void *sdev_handle,
 {
 	int rc = 0;
 	struct serdes_dev *sdev = (struct serdes_dev *)sdev_handle;
+
 
 	if ((!sdev) || !(sdev->regs)) {
 		dev_err(sdev->dev, "Invalid dev info\n");
@@ -451,12 +487,14 @@ int serdes_init_pll(void *sdev_handle,
 		goto out;
 	}
 #endif
+
 	/* PLL configuration */
 	rc = serdes_set_pll_config(sdev, pll, sdev->regs);
 	if (rc < 0) {
 		dev_err(sdev->dev, "Invalid PLL config\n");
 		goto out;
 	}
+
 
 	/* Update PLL initialized state */
 	srds_update_reg(&sdev->cflag,

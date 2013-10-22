@@ -57,6 +57,7 @@
 /* SRDSx PLL Control Register 4 (SRDSxPLLnCR4) */
 #define SRDS_PLLCR_RCLKEN_BIT		27
 #define SRDS_PLLCR_RCLKEN_MASK		(0x1 << SRDS_PLLCR_RCLKEN_BIT)
+#define SRDS_PLLCR_LANE_MASK			0x7
 
 /* SerDes General Control and Status Registers
  * SRDSx Transmit Calibration Control Register (SRDSxTCALCR)
@@ -239,6 +240,8 @@
 
 /* Transition Tracking Loop Control Register 1 (SRDSxLNmTTLCR1) */
 #define SRDS_LN_TTLCR_DIV_RCVCLK_BIT	0x7
+#define SRDS_LN_TTLCR_DIV40_RCVCLK_BIT	0x6
+#define SRDS_LN_TTLCR_DIV25_RCVCLK_BIT	0x3
 
 /* SRDS  Lane m Test Control/Status Register 3 (SRDSxLNmTCSR3) */
 #define SRDS_LN_TCS_LOOPBACK_BIT		28

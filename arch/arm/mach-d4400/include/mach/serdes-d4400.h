@@ -428,4 +428,19 @@ int serdes_lane_power_down(void *sdev_handle, enum srds_lane_id lane_id);
 /* --------------------------------------------------------------------------*/
 int serdes_lane_power_up(void *sdev_handle, enum srds_lane_id lane_id);
 
+/* --------------------------------------------------------------------------*/
+/**
+ *@Synopsis serdes jcpll clock routing
+ *
+ * @Param sdev_handle
+ *@Param lane
+ *@Param pll
+ *
+ * @Returns 0: On success
+ *     Error code: On failure
+ */
+/* --------------------------------------------------------------------------*/
+
+void serdes_jcpll_enable(void *sdev_handle,
+	struct serdes_lane_params *lane_param, struct serdes_pll_params *pll);
 #endif
