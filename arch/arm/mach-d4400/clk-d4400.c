@@ -10,6 +10,8 @@
  */
 
 #include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/types.h>
 #include <linux/clk.h>
 #include <linux/clkdev.h>
@@ -23,6 +25,7 @@
 
 #include "clk.h"
 #include "common.h"
+
 
 DEFINE_SPINLOCK(d4400_ccm_lock);
 static void __iomem *ccm_base;
@@ -73,6 +76,21 @@ static const char *sync_ref_sels[] = {"sync_ref_src_1", "sync_ref_src_2"};
 
 static struct clk *clk[clk_max];
 static struct clk_onecell_data clk_data;
+
+void d4400_rev_clk_select(u8 cpri_id, u8 clk_dev)
+{
+	u32 val;
+
+	val = readl(ccm_base + CCM_CCDR2_OFFSET);
+	val &= (~CCM_REV_CLK_DEV_MASK) << 16;
+	val |= clk_dev << 16;
+	if (cpri_id == 1) /* select recover clock from cpri1 else 2 */
+		val &= ~CCM_REV_CLK_SEL;
+	else
+		val |= CCM_REV_CLK_SEL;
+	writel(val, ccm_base + CCM_CCDR2_OFFSET);
+}
+EXPORT_SYMBOL(d4400_rev_clk_select);
 
 int d4400_ccm_vspa_full_pow_gate(u8 vspa_id)
 {
