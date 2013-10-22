@@ -117,6 +117,13 @@ struct cpri_dev {
 	struct cpri_framer **framer;
 };
 
+enum d4400_rev_clk_dev {
+	REV_CLK_DIV_1,
+	REV_CLK_DIV_2,
+	REV_CLK_DIV_4,
+	REV_CLK_DIV_8,
+};
+
 struct sfp_dev {
 	u32 id;
 	struct device_node *dev_node;
@@ -911,6 +918,7 @@ extern int sfp_raw_write(struct sfp_dev *sfp, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
 int sfp_raw_read(struct sfp_dev *sfp, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
+extern void d4400_rev_clk_select(u8 cpri_id, u8 clk_dev);
 
 /* AxC mapping functions */
 int cpri_axc_ioctl(struct cpri_framer *framer, unsigned long arg,

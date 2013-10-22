@@ -503,7 +503,7 @@ static void cpri_err_tasklet(unsigned long arg)
 
 	mask = (RX_IQ_OVERRUN | TX_IQ_UNDERRUN |
 		TX_VSS_UNDERRUN | RX_VSS_OVERRUN |
-		ECC_CONFIG_MEM | ECC_DATA_MEM);
+		ECC_CONFIG_MEM | ECC_DATA_MEM | TX_ETH_UNDERRUN);
 	if (err_evt && mask) {
 		cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_errevent,

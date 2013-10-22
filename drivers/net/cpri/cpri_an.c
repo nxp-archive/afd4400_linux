@@ -75,12 +75,26 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 	lane_param.gen_conf.bit_rate_kbps = line_rate[linerate];
 	lane_param.gen_conf.cflag = (SERDES_20BIT_EN |  SERDES_TPLL_LES |
 			SERDES_RPLL_LES | SERDES_FIRST_LANE);
+	if ((framer->cpri_dev->dev_id == 1) && (framer->id == 1))
+		lane_param.lane_id = LANE_C;
+	else if ((framer->cpri_dev->dev_id == 1) && (framer->id == 2))
+		lane_param.lane_id = LANE_D;
+	else if ((framer->cpri_dev->dev_id == 2) && (framer->id == 1))
+		lane_param.lane_id = LANE_E;
+	else if ((framer->cpri_dev->dev_id == 2) && (framer->id == 2))
+		lane_param.lane_id = LANE_F;
+
 	if (framer->autoneg_param.flags & CPRI_SERDES_LOOPBACK)
 		lane_param.gen_conf.cflag |= SERDES_LOOPBACK_EN;
 
 	if (serdes_init_lane(framer->serdes_handle, &lane_param))
 		return -EINVAL;
-
+	if (framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) {
+		serdes_jcpll_enable(framer->serdes_handle, &lane_param,
+				&pll_param);
+		gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
+		d4400_rev_clk_select(framer->cpri_dev->dev_id, REV_CLK_DIV_1);
+	}
 
 	return 0;
 }
@@ -117,6 +131,9 @@ static void cpri_init_framer(struct cpri_framer *framer)
 {
 	struct cpri_dev_init_params *param = &framer->framer_param;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
+
+	cpri_reg_set_val(&regs->cpri_rdelay_ctrl,
+				MASK_ALL, 0x20);
 
 	/* Rx scrambler setting */
 	if (framer->autoneg_param.flags & CPRI_RX_SCRAMBLER_EN)
