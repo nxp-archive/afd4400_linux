@@ -20,6 +20,7 @@ enum timer_type {
 	JESD_TX_AXRF,
 	JESD_RX_ALIGNMENT,
 	JESD_SRX_ALIGNMENT,
+	JESD_TITC_ALIGNMENT,
 	JESD_GP_EVENT,
 };
 /** \enum TBGEN device states enum.

@@ -12,7 +12,6 @@
  * option) any later version.
  */
 #include <uapi/linux/tbgen.h>
-
 #define TBGEN_DRIVER_NAME "tbgen"
 
 /* a total of 10 timers are supported now */
@@ -76,9 +75,12 @@ struct tbgen_dev {
 	struct tbgen_timer tbg_tx_axrf[MAX_AXRF_ALIGNMENT_TIMERS];
 	struct tbgen_timer tbg_rxtmr[MAX_RX_ALIGNMENT_TIMERS];
 	struct tbgen_timer tbg_srxtmr[MAX_SRX_ALIGNMENT_TIMERS];
+	struct tbgen_timer tbg_titc_tmr[MAX_TIMED_INTERRUPT_TIMER_CTRLS];
 	struct tbgen_timer tbg_gptmr[MAX_GP_EVENT_TIMERS];
 
 	struct tasklet_struct tasklet;
+	raw_spinlock_t          wait_q_lock;
+	wait_queue_head_t       wait_q;
 	spinlock_t lock;
 	u32 ien;
 	u8 mon_rfg_isr;
@@ -237,10 +239,11 @@ struct tbg_regs {
 /* ctrl_1 & INTSTAT */
 #define IRQ_RFGER			(1 << 4)
 #define IRQ_FS				(1 << 5)
+#define IRQ_TI				(1 << 6)
 #define IRQ_SSR				(1 << 7)
 #define IRQ_SER				(1 << 24)
 #define IRQ_RESYNC			(1 << 25)
-#define IRQ_EN_MASK			(IRQ_FS)
+#define IRQ_EN_MASK			(IRQ_FS | IRQ_TI)
 
 struct tbgen_dev *get_tbgen_device(void);
 u32 get_ref_clock(struct tbgen_dev *tbg);

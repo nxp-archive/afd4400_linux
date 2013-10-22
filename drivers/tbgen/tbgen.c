@@ -30,10 +30,10 @@
 #include <linux/module.h>
 #include <linux/input.h>
 #include <linux/interrupt.h>
+#include <linux/sched.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
 #include <linux/delay.h>
-
 #include <linux/tbgen.h>
 #include <linux/jesd204.h>
 
@@ -52,6 +52,34 @@ static u64 tbgen_get_l10_mcntr(struct tbgen_dev *tbg);
 static irqreturn_t tbgen_isr(int irq, void *dev);
 static int tbgen_reset(struct tbgen_dev *tbg);
 static void tbgen_tasklet(unsigned long data);
+static ssize_t tbgen_read(struct file *, char __user *, size_t, loff_t *);
+
+
+static ssize_t tbgen_read(struct file *filep, char __user *buf, size_t size,
+			loff_t *offset)
+{
+	struct tbgen_dev *tbg;
+	wait_queue_t 	wait;
+	unsigned long flags;
+	int rc = 0;
+
+	tbg = filep->private_data;
+	init_waitqueue_entry(&wait, current);
+
+	raw_spin_lock_irqsave(&tbg->wait_q_lock, flags);
+	add_wait_queue_exclusive(&tbg->wait_q, &wait);
+	raw_spin_unlock_irqrestore(&tbg->wait_q_lock, flags);
+	set_current_state(TASK_INTERRUPTIBLE);
+	/*Now wait here, tti notificaion will wake us up*/
+	schedule();
+	set_current_state(TASK_RUNNING);
+	raw_spin_lock_irqsave(&tbg->wait_q_lock, flags);
+	remove_wait_queue(&tbg->wait_q, &wait);
+	raw_spin_unlock_irqrestore(&tbg->wait_q_lock, flags);
+
+	rc = put_user(0, (int *)buf);
+	return rc;
+}
 
 static void tbgen_write_reg(u32 *reg, u32 val)
 {
@@ -144,6 +172,16 @@ void tbgen_notify_sysref_recapture(struct tbgen_dev *tbg)
 static void tbgen_update_last_10ms_counter(struct tbgen_dev *tbg)
 {
 	tbg->last_10ms_counter = tbgen_get_l10_mcntr(tbg);
+}
+
+static int tbgen_notify_ti_irq(struct tbgen_dev *tbg)
+
+{
+	int disable_ti_irq = 1;
+	raw_spin_lock(&tbg->wait_q_lock);
+	wake_up_locked(&tbg->wait_q);
+	raw_spin_unlock(&tbg->wait_q_lock);
+	return disable_ti_irq;
 }
 
 static int tbgen_handle_rfg_irq(struct tbgen_dev *tbg)
@@ -531,21 +569,31 @@ static void tbgen_tasklet(unsigned long data)
 {
 	struct tbgen_dev *tbg = (struct tbgen_dev *)data;
 	struct tbg_regs *tbgregs = tbg->tbgregs;
-	u32 int_stat = 0;
+	u32 int_stat = 0, val = 0;
 	unsigned long flags;
 
 	spin_lock_irqsave(&tbg->lock, flags);
 	int_stat = tbgen_read_reg(&tbgregs->int_stat);
+	val = int_stat;
 	/* Clear the IRQs which we serviced*/
 	if (int_stat & IRQ_FS) {
 		if (tbgen_handle_rfg_irq(tbg)) {
 			/* Disable FS IRQ */
-			int_stat &= ~IRQ_FS;
+			val &= ~IRQ_FS;
 		}
+	tbgen_update_reg(&tbgregs->cntrl_1, (val & IRQ_FS), IRQ_FS);
+	}
+	val = int_stat;
+	if (int_stat & IRQ_TI) {
+		if (tbgen_notify_ti_irq(tbg)) {
+			/* Enable TI IRQ */
+			val &= IRQ_TI;
+		}
+	tbgen_update_reg(&tbgregs->cntrl_1, (val & IRQ_TI), IRQ_TI);
 	}
 
-	/* Enable IRQs which we serviced */
-	tbgen_write_reg(&tbgregs->cntrl_1, (int_stat & IRQ_EN_MASK));
+	/* Clear IRQs which we serviced */
+	tbgen_write_reg(&tbgregs->int_stat, int_stat);
 	spin_unlock_irqrestore(&tbg->lock, flags);
 }
 
@@ -557,7 +605,7 @@ static irqreturn_t tbgen_isr(int irq, void *dev)
 
 	int_stat = tbgen_read_reg(&tbgregs->int_stat);
 	if (!int_stat) {
-		dev_info(tbg->dev, "%s: Spurious IRQ\n", __func__);
+		dev_info(tbg->dev, "%s: Spurious IRQ status:%x\n", __func__, int_stat);
 		return IRQ_NONE;
 	}
 	spin_lock(&tbg->lock);
@@ -743,6 +791,7 @@ static int tbgen_config_generic_timers(struct tbgen_dev *tbg,
 	int retcode = 0, timer_id = align_timer_params->id;
 	struct gen_timer_regs *timer_regs;
 	struct tbgen_timer *timer;
+	u32 val, *reg, mask;
 
 	switch (align_timer_params->type) {
 	case JESD_RX_ALIGNMENT:
@@ -774,6 +823,20 @@ static int tbgen_config_generic_timers(struct tbgen_dev *tbg,
 		} else {
 			retcode = -EINVAL;
 			dev_err(tbg->dev, "Rx timer id invalid %d\n", timer_id);
+			goto out;
+		}
+		break;
+	case JESD_TITC_ALIGNMENT:
+		if (timer_id < MAX_TIMED_INTERRUPT_TIMER_CTRLS) {
+			timer_regs = &tbg->tbgregs->titc_tmr[timer_id];
+			timer = &tbg->tbg_titc_tmr[timer_id];
+			reg = &tbg->tbgregs->cntrl_1;
+			val = IRQ_TI;
+			mask = IRQ_TI;
+			tbgen_update_reg(reg, val, mask);
+		} else {
+			retcode = -EINVAL;
+			dev_err(tbg->dev, "Titc timer id invalid %d\n", timer_id);
 			goto out;
 		}
 		break;
@@ -844,6 +907,14 @@ struct tbgen_timer *tbgen_get_timer(struct tbgen_dev *tbg,
 			goto out;
 		}
 		timer = &tbg->tbg_srxtmr[timer_id];
+		break;
+	case JESD_TITC_ALIGNMENT:
+		if (timer_id > MAX_TIMED_INTERRUPT_TIMER_CTRLS) {
+			dev_err(tbg->dev, "%s: Invalid timer id %d\n",
+				__func__, timer_id);
+			goto out;
+		}
+		timer = &tbg->tbg_titc_tmr[timer_id];
 		break;
 	default:
 		dev_err(tbg->dev, "%s: Invalid timer type %d\n", __func__,
@@ -1000,6 +1071,19 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		osetlo_reg = &generic_timer_regs->osetlo;
 		osethi_reg = &generic_timer_regs->osethi;
 		break;
+	case JESD_TITC_ALIGNMENT:
+		if (timer_id > MAX_TIMED_INTERRUPT_TIMER_CTRLS) {
+			dev_err(tbg->dev, "%s: Invalid timer id %d\n",
+				__func__, timer_id);
+			retcode = -EINVAL;
+			goto out;
+		}
+		timer = &tbg->tbg_titc_tmr[timer_id];
+		generic_timer_regs = &tbg->tbgregs->titc_tmr[timer_id];
+		ctrl_reg = &generic_timer_regs->ctrl;
+		osetlo_reg = &generic_timer_regs->osetlo;
+		osethi_reg = &generic_timer_regs->osethi;
+		break;
 	default:
 		dev_err(tbg->dev, "%s: Invalid timer type %d\n", __func__,
 			type);
@@ -1085,6 +1169,7 @@ int config_alignment_timers(struct tbgen_dev *tbg,
 	case JESD_RX_ALIGNMENT:
 	case JESD_GP_EVENT:
 	case JESD_SRX_ALIGNMENT:
+	case JESD_TITC_ALIGNMENT:
 		retcode = tbgen_config_generic_timers(tbg, timer_params);
 		break;
 	default:
@@ -1360,6 +1445,7 @@ int tbgen_release(struct inode *inode, struct file *pfile)
 static const struct file_operations tbg_fops = {
 	.owner = THIS_MODULE,
 	.open = tbgen_open,
+	.read = tbgen_read,
 	.unlocked_ioctl = tbgen_ioctl,
 	.release = tbgen_release
 };
@@ -1386,7 +1472,6 @@ static int tbgen_of_probe(struct platform_device *pdev)
 		retcode = -ENOMEM;
 		goto out;
 	}
-
 	tbg->node = pdev->dev.of_node;
 	tbg->dev = &pdev->dev;
 	atomic_set(&tbg->ref, 0);
@@ -1439,7 +1524,7 @@ static int tbgen_of_probe(struct platform_device *pdev)
 		timer->type = JESD_RX_ALIGNMENT;
 	}
 
-	for (id = MAX_GP_EVENT_TIMERS; id < (2*MAX_GP_EVENT_TIMERS); id++) {
+	for (id = MAX_GP_EVENT_TIMERS; id < ( 2 * MAX_GP_EVENT_TIMERS); id++) {
 		timer = &tbg->tbg_gptmr[id - MAX_GP_EVENT_TIMERS];
 		spin_lock_init(&timer->lock);
 		timer->tbg = tbg;
@@ -1455,6 +1540,16 @@ static int tbgen_of_probe(struct platform_device *pdev)
 		timer->type = JESD_SRX_ALIGNMENT;
 	}
 
+	for (id = 0; id < MAX_TIMED_INTERRUPT_TIMER_CTRLS; id++) {
+		timer = &tbg->tbg_titc_tmr[id];
+		spin_lock_init(&timer->lock);
+		timer->tbg = tbg;
+		timer->id = id;
+		timer->type = JESD_TITC_ALIGNMENT;
+	}
+
+	init_waitqueue_head(&tbg->wait_q);
+	raw_spin_lock_init(&tbg->wait_q_lock);
 	dev_set_drvdata(tbg->dev, tbg);
 	tbg->state = TBG_STATE_STANDBY;
 	tbg->sync_state = SYNC_INVALID;
@@ -1491,6 +1586,9 @@ static int tbgen_of_remove(struct platform_device *pdev)
 
 	for (id = 0; id < MAX_SRX_ALIGNMENT_TIMERS; id++)
 		tbgen_timer_ctrl(tbg, JESD_SRX_ALIGNMENT, id, 0);
+
+	for (id = 0; id < MAX_TIMED_INTERRUPT_TIMER_CTRLS; id++)
+		tbgen_timer_ctrl(tbg, JESD_TITC_ALIGNMENT, id, 0);
 
 	for (id = 0; id < MAX_GP_EVENT_TIMERS; id++)
 		tbgen_timer_ctrl(tbg, JESD_GP_EVENT, id, 0);
