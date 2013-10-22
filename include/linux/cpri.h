@@ -768,6 +768,9 @@ enum cpri_linerate {
 #define CPRI_ETH_SUPPORTED			1
 #define CPRI_ETH_NOT_SUPPORTED			0
 
+#define CLEAR_LINE_RATE	0
+#define SET_LINE_RATE	1
+
 static inline u32 cpri_read(const void __iomem *addr)
 {
 	u32 val;

@@ -119,7 +119,8 @@ static inline u32 scm_reg_read(u32 gcr_id)
 	return data;
 }
 
-void gcr_set_cpri_line_rate(unsigned char cpri_id, enum cpri_link_rate linerate)
+void gcr_config_cpri_line_rate(unsigned char cpri_id,
+		enum cpri_link_rate linerate, unsigned char cmd)
 {
 	struct gcr_reg_map *gcr;
 	u32 value = 0;
@@ -133,14 +134,16 @@ void gcr_set_cpri_line_rate(unsigned char cpri_id, enum cpri_link_rate linerate)
 		gcr_id = GCR6_CPRI_CTRL;
 
 	gcr = priv->gcr_reg;
-	rate = line_rate[linerate];
+	value = scm_reg_read(gcr_id);
+	if (cmd == SET_LINE_RATE) {
+		rate = line_rate[linerate];
+		value |= rate << 1;
+	} else if (cmd == CLEAR_LINE_RATE)
+		value &= CPRI_PHY_LINK_RESET;
 
-	value = scm_reg_read(gcr_id);
-	value |= rate << 1;
 	scm_reg_write(value, gcr_id);
-	value = scm_reg_read(gcr_id);
 }
-EXPORT_SYMBOL_GPL(gcr_set_cpri_line_rate);
+EXPORT_SYMBOL_GPL(gcr_config_cpri_line_rate);
 
 void gcr_linkrate_autoneg_reset(unsigned char cpri_id)
 {
@@ -159,6 +162,21 @@ void gcr_linkrate_autoneg_reset(unsigned char cpri_id)
 	scm_reg_write(value, gcr_id);
 }
 EXPORT_SYMBOL_GPL(gcr_linkrate_autoneg_reset);
+
+void gcr_sync_update(u32 mask, u32 val)
+{
+	struct gcr_reg_map *gcr;
+	u32 value = 0;
+	unsigned char gcr_id;
+
+	gcr_id = GCR72_SYNC_CTRL;
+	gcr = priv->gcr_reg;
+	value = scm_reg_read(gcr_id);
+	value &= ~mask;
+	value |= val;
+	scm_reg_write(value, gcr_id);
+}
+EXPORT_SYMBOL_GPL(gcr_sync_update);
 
 
 void gcr_jesd_init(void)

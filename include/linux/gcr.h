@@ -119,8 +119,14 @@
 #define GCR_MSK1 0x3
 #define GCR_MSK2 0x1
 
+#define GCR72_SYNC_CTRL	72
+#define BGR_EN_TX10_SYNC 0x100000
+
 #define GCR4_CPRI_CTRL	4
 #define GCR6_CPRI_CTRL	6
+#define CPRI_PHY_LINK_RESET	0xFFFFFFC1
+#define SET_LINE_RATE	1
+#define CLEAR_LINE_RATE	0
 #define GCR0_PLL_SYS_DEV_CLK_OFFSET     19
 #define GCR0_PLL_SYS_DEV_CLK_MASK       (1<<GCR0_PLL_SYS_DEV_CLK_OFFSET)
 #define GCR0_PLL_SYS_RGMII_CLK_OFFSET   20
@@ -166,9 +172,10 @@ struct gcr_priv {
 	dev_t dev_t;
 };
 
-extern void gcr_set_cpri_line_rate(unsigned char cpri_id,
-		enum cpri_link_rate linerate);
+extern void gcr_config_cpri_line_rate(unsigned char cpri_id,
+		enum cpri_link_rate linerate, unsigned char cmd);
 extern void gcr_linkrate_autoneg_reset(unsigned char cpri_id);
+void gcr_sync_update(u32 mask, u32 val);
 void *get_scm_priv(void);
 extern u32 gcr_read_set(u32 gcr_id);
 extern void gcr_write_set(struct gcr_ctl_parm *param,
