@@ -59,6 +59,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 	 */
 	if (pair_framer->framer_state <
 			CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS) {
+		gcr_clear_cpri_line_rate(framer->cpri_dev->dev_id);
 		gcr_set_cpri_line_rate(framer->cpri_dev->dev_id, linerate);
 		gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
 		serdes_init = serdes_init_pll(framer->serdes_handle,
@@ -1192,15 +1193,30 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 			err = -EFAULT;
 			goto out;
 		}
+		autoneg_param.flags = param->flags;
+		autoneg_param.l1_setup_timeout = param->l1_setup_timeout;
+		autoneg_param.tx_on_time = param->tx_on_time;
+		autoneg_param.tx_off_time = param->tx_off_time;
+		autoneg_param.linerate_timeout = param->linerate_timeout;
+		autoneg_param.link_rate_low = param->link_rate_low;
+		autoneg_param.link_rate_high = param->link_rate_high;
+		autoneg_param.cnm_timeout = param->cnm_timeout;
+		autoneg_param.cm_mode = param->cm_mode;
+		autoneg_param.hdlc_rate_low = param->hdlc_rate_low;
+		autoneg_param.hdlc_rate_high = param->hdlc_rate_high;
+		autoneg_param.eth_rates_count = param->eth_rates_count;
+		autoneg_param.proto_timeout = param->proto_timeout;
+		autoneg_param.tx_prot_ver = param->tx_prot_ver;
+		autoneg_param.tx_scr_seed = param->tx_scr_seed;
 
-		if (copy_to_user((struct cpri_autoneg_params *)ioargp, param,
-				sizeof(struct cpri_autoneg_params))) {
+		if (copy_to_user(autoneg_param.eth_rates, param->eth_rates,
+			(sizeof(unsigned int) * param->eth_rates_count))) {
 			err = -EFAULT;
 			goto out;
 		}
 
-		if (copy_to_user(autoneg_param.eth_rates, param->eth_rates,
-			(sizeof(unsigned int) * param->eth_rates_count))) {
+		if (copy_to_user((struct cpri_autoneg_params *)ioargp,
+			&autoneg_param, sizeof(struct cpri_autoneg_params))) {
 			err = -EFAULT;
 			goto out;
 		}
