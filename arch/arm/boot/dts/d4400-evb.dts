@@ -202,7 +202,8 @@
 			#size-cells = <1>;
 			compatible = "adi,xcvr-card";
 			interrupt-parent = <&gpioA>;
-			interrupts = <16 0x04>;
+			interrupts = <16 0x04>,
+				<17 0x04>;
 			cs-gpios = <&gpioC 16 0>,
 				<&gpioC 18 0>,
 				<&gpioC 19 0>;
@@ -217,7 +218,8 @@
 			#size-cells = <1>;
 			compatible = "adi,xcvr-card";
 			interrupt-parent = <&gpioA>;
-			interrupts = <18 0x04>;
+			interrupts = <18 0x04>,
+				<19 0x04>;
 			cs-gpios = <&gpioC 20 0>,
 				<&gpioC 22 0>,
 				<&gpioC 23 0>;
