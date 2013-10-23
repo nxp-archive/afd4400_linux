@@ -799,17 +799,23 @@ struct xcvr_dev *get_attached_xcvr_dev(struct device_node **dev_node)
 {
 	struct xcvr_dev *xcvr_dev = NULL;
 	struct rf_phy_dev *phy_dev = NULL;
-	int i;
+	int i, found_node = 0;
+	if (list_empty(&drv_priv->dev_list))
+		return NULL;
 
 	list_for_each_entry(xcvr_dev, &drv_priv->dev_list, list) {
 		for (i = 0; i < xcvr_dev->phy_devs; i++) {
 			phy_dev = xcvr_dev->phy_dev[i];
-			if (*dev_node == phy_dev->rf_dev_node)
+			if (*dev_node == phy_dev->rf_dev_node) {
+				found_node = 1;
 				break;
+			}
 		}
 	}
-
-return xcvr_dev;
+	if (found_node == 1)
+		return xcvr_dev;
+	else
+		return NULL;
 }
 EXPORT_SYMBOL(get_attached_xcvr_dev);
 
@@ -906,7 +912,7 @@ void xcvr_jesdtx_error_monitor(struct work_struct *work)
 	u32 temp;
 
 	xcvrdev = container_of(work, struct xcvr_dev, err_task);
-	if ((phy_dev = xcvrdev->phy_dev[xcvrdev->device_id]) == NULL)
+	if ((phy_dev = xcvrdev->phy_dev[DEVICE_ID_AD93682]) == NULL)
 		return;
 
 	ad9368_write(phy_dev, REG_SUB_JESD_ADDR, REG_INT_EN_JESD, 0);
@@ -931,7 +937,7 @@ void xcvr_jesdtx_error_monitor(struct work_struct *work)
 	/* Restore the error interrupt mask */
 	ad9368_write(phy_dev, REG_SUB_JESD_DATA, temp, 0);
 	ad9368_write(phy_dev, REG_WRITE_EN_JESD, 1, 0);
-	enable_irq(xcvrdev->irq_gen1);
+	enable_irq(xcvrdev->irq_tx);
 }
 
 
@@ -939,18 +945,33 @@ static irqreturn_t xcvr_jesdtx_isr(int irq, void *dev_id)
 {
 	struct rf_phy_dev *phy_dev;
 	struct xcvr_dev *xcvrdev = dev_id;
-	phy_dev = xcvrdev->phy_dev[xcvrdev->device_id];
+	phy_dev = xcvrdev->phy_dev[DEVICE_ID_AD93682];
+	dev_info(xcvrdev->dev, "JESD Tx interrupt received");
 	if (phy_dev == NULL)
 		return IRQ_NONE;
 
-	dev_info(xcvrdev->dev, "JESD Tx interrupt received");
-	disable_irq_nosync(xcvrdev->irq_gen1);
+	disable_irq_nosync(xcvrdev->irq_tx);
+	schedule_work(&xcvrdev->err_task);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t xcvr_jesdrx_isr(int irq, void *dev_id)
+{
+	struct rf_phy_dev *phy_dev;
+	struct xcvr_dev *xcvrdev = dev_id;
+	phy_dev = xcvrdev->phy_dev[DEVICE_ID_AD93681];
+	dev_info(xcvrdev->dev, "JESD Rx interrupt received");
+	if (phy_dev == NULL)
+		return IRQ_NONE;
+
+	disable_irq_nosync(xcvrdev->irq_rx);
 	schedule_work(&xcvrdev->err_task);
 	return IRQ_HANDLED;
 }
 
 static int xcvr_probe(struct platform_device *pdev)
 {
+
 	struct xcvr_dev *xcvr_dev;
 	struct device *dev = &pdev->dev;
 	struct device_node *np = pdev->dev.of_node;
@@ -975,6 +996,7 @@ static int xcvr_probe(struct platform_device *pdev)
 	rf_dev_node = of_parse_phandle(np, "9368-1-handle", 0);
 	xcvr_dev->rf_dev_node[xcvr_dev->phy_devs] = rf_dev_node;
 
+	drv_priv->minor++;
 	phy_dev = get_attached_phy_dev(rf_dev_node);
 	if (IS_ERR_OR_NULL(phy_dev)) {
 		kfree(xcvr_dev);
@@ -1025,8 +1047,6 @@ static int xcvr_probe(struct platform_device *pdev)
 		ret = -EPROBE_DEFER;
 		goto out;
 	}
-	dev_info(xcvr_dev->dev, " Tx reset: %d\n", xcvr_dev->src_tx_reset);
-	dev_info(xcvr_dev->dev, " Rx reset: %d\n", xcvr_dev->src_rx_reset);
 
 	xcvr_dev->ops = &xcvr_ops;
 	id = of_match_node(xcvr_match, np);
@@ -1049,7 +1069,6 @@ static int xcvr_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-
 	ret = xcvr_setup_gpio(xcvr_dev, xcvr_dev->gpio_tx_enable);
 	if (ret) {
 		dev_err(dev, "Failed to setup tx_enable gpio\n");
@@ -1063,14 +1082,13 @@ static int xcvr_probe(struct platform_device *pdev)
 	}
 
 
-	if (drv_priv->minor > drv_priv->minor_max) {
+	if (drv_priv->minor - 2 > drv_priv->minor_max) {
 		dev_dbg(dev, "XCVR:abort probe, devices more than max [%d]\n",
 				drv_priv->minor_max);
 		goto out;
 	}
 
-	xcvr_dev->dev_t = MKDEV(MAJOR(drv_priv->dev_t), drv_priv->minor);
-	drv_priv->minor++;
+	xcvr_dev->dev_t = MKDEV(MAJOR(drv_priv->dev_t), drv_priv->minor - 2);
 	cdev_init(&xcvr_dev->cdev, &xcvr_fops);
 	ret = cdev_add(&xcvr_dev->cdev, xcvr_dev->dev_t, 1);
 	if (ret) {
@@ -1079,11 +1097,13 @@ static int xcvr_probe(struct platform_device *pdev)
 	}
 
 	xcvr_dev->dev = device_create(drv_priv->class, &pdev->dev,
-			xcvr_dev->dev_t, xcvr_dev, "xcvr_dev%d", drv_priv->minor);
+			xcvr_dev->dev_t, xcvr_dev, "xcvr_dev%d", drv_priv->minor - 2);
 	ret = IS_ERR(xcvr_dev->dev) ? PTR_ERR(xcvr_dev->dev) : 0;
 
 	INIT_WORK(&xcvr_dev->err_task, xcvr_jesdtx_error_monitor);
+
 	irq = platform_get_irq(pdev, 0);
+	xcvr_dev->irq_tx = irq;
 	if (irq < 0) {
 		dev_err(&pdev->dev, "can't get irq number\n");
 		return -ENOENT;
@@ -1095,21 +1115,34 @@ static int xcvr_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "can't claim irq %d\n", irq);
 		return ret;
 	}
-	xcvr_dev->irq_gen1 = irq;
-	dev_info(dev, "IRQ Read:%d", irq);
+	dev_info(dev, "IRQ Tx Read:%d", irq);
 
+	irq = platform_get_irq(pdev, 1);
+	xcvr_dev->irq_rx = irq;
+	if (irq < 0) {
+		dev_err(&pdev->dev, "can't get irq number\n");
+		return -ENOENT;
+	}
+	/* Request IRQ */
+	ret = devm_request_irq(&pdev->dev, irq, xcvr_jesdrx_isr, 0,
+			pdev->name, xcvr_dev);
+	if (ret) {
+		dev_err(&pdev->dev, "can't claim irq %d\n", irq);
+		return ret;
+	}
+	dev_info(dev, "IRQ Rx Read:%d", irq);
 	if (ret == 0) {
-		dev_info(dev, "xcvr probe passed\n");
 		list_add(&xcvr_dev->list, &drv_priv->dev_list);
 		dev_set_drvdata(dev, xcvr_dev);
+		dev_info(dev, "xcvr probe passed\n");
 	}
 	return ret;
 out:
-	kfree(xcvr_dev->phy_dev);
-	kfree(xcvr_dev);
 	gpio_free(xcvr_dev->gpio_tx_enable);
 	gpio_free(xcvr_dev->gpio_srx_enable);
 	gpio_free(xcvr_dev->gpio_rx_enable);
+	kfree(xcvr_dev->phy_dev);
+	kfree(xcvr_dev);
 	return ret;
 }
 

@@ -209,7 +209,8 @@ struct xcvr_dev {
 	dev_t			dev_t;
 	struct cdev		cdev;
 	int			*cs_gpios;
-	unsigned int		irq_gen1;
+	unsigned int		irq_tx;
+	unsigned int		irq_rx;
 	unsigned int		err_status;
 	struct work_struct      err_task;
 	struct jesd_dev_stats	stats[2];
