@@ -214,7 +214,7 @@ static int vspa_mmap(struct file *filp, struct vm_area_struct *vma)
 		/* We allocate memory for metadata once only */
 		if (vspadev->mem_context == NULL) {
 
-			vspadev->mem_context = kmalloc(len, GFP_KERNEL);
+			vspadev->mem_context = kzalloc(len, GFP_KERNEL);
 
 			if (vspadev->mem_context == NULL) {
 				dev_err(vspadev->dev, "No memory for device context %s\n",

@@ -145,7 +145,7 @@ static s32 landshark_mmap(struct file *filp, struct vm_area_struct *vma)
 		if ((void *)landshark_pinit_info.nondma_memory == NULL) {
 
 			landshark_pinit_info.nondma_memory =
-				(unsigned int) kmalloc(len, GFP_KERNEL);
+				(unsigned int) kzalloc(len, GFP_KERNEL);
 
 			if ((void *)landshark_pinit_info.nondma_memory == NULL) {
 				pr_err("No memory for storing landshark meta data\n");
