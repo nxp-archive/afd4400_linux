@@ -13,11 +13,6 @@
 
 #include <linux/cpri.h>
 
-static void cw_write(u32 *addr, u8 data, u32 mask)
-{
-	cpri_reg_set_val(addr, (u32) data, mask);
-}
-
 static void set_cw_data(u8 *cw_word, u32 data)
 {
 	*(cw_word + 0) = ((data >> CW_BYTE0) & BYTE_MASK);
@@ -65,7 +60,8 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 	struct device *dev = framer->cpri_dev->dev;
 	unsigned int i, j;
 	u32 mask = 0, *addr;
-	u8 cw, idx, data;
+	u32 cw, idx;
+	u32 data = 0;
 	int err = 0;
 
 	count = hf_channels->channel_count;
@@ -76,6 +72,8 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 			TX_CW_INSERT_EN_MASK);
 
 	for (i = 0; i < count; i++) {
+
+		cpri_reg_clear(&regs->cpri_tctrlattrib, MASK_ALL);
 		mask = 0;
 		/* Find control word and select it in CPRInTCTIE */
 		cw = FIND_CW_NUM(channels[i].chan, channels[i].word_bitmap);
@@ -117,11 +115,11 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 		idx = channels[i].word_bitmap;
 		mask = 24;
 		for (j = 1; j <= MAX_CWBYTES; j++) {
-			data = channels[i].words[idx][j-1];
-			mask = BYTE_MASK << mask;
-			cw_write(addr, data, mask);
+			data |= channels[i].words[idx][j-1] << mask;
 			mask -= SIZE_BYTE;
 			if (j % SIZE_REGBYTES == 0) {
+				cpri_reg_set_val(addr, MASK_ALL, data);
+				data = 0;
 				addr++;
 				mask = 24;
 			}
@@ -129,17 +127,12 @@ static int cpri_write_txctrlword(struct cpri_framer *framer)
 
 		/* Write cw address in CPRInTCA */
 		cpri_reg_set_val(&regs->cpri_tctrlattrib,
-				TCT_ADDR_MASK, (u32) cw);
+				MASK_ALL, ((cw << TCTA_ADDR_OFFSET) |
+					TCT_WRITE_MASK));
 
-		/* Write command in CPRInTCA */
-		cpri_reg_set(&regs->cpri_tctrlattrib,
-				TCT_WRITE_MASK);
 	}
 
 out:
-	/* Disable cw insertion */
-	cpri_reg_clear(&regs->cpri_config,
-			TX_CW_INSERT_EN_MASK);
 
 	/* TBD: we need to check with IP team do we have to wait for 1
 	 * or 2 HF before disabling sot that all words from table are
