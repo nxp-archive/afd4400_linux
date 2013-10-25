@@ -134,8 +134,8 @@ static void cpri_init_framer(struct cpri_framer *framer)
 
 	clear_axc_buff(framer);
 	cpri_reg_set_val(&regs->cpri_rdelay_ctrl,
-				MASK_ALL, 0x20);
-
+				 MASK_ALL, 0x20);
+	init_eth(framer);
 	/* Rx scrambler setting */
 	if (framer->autoneg_param.flags & CPRI_RX_SCRAMBLER_EN)
 		cpri_reg_set(&regs->cpri_rscrseed,
@@ -289,40 +289,151 @@ static void set_delay_config(struct cpri_framer *framer)
 				cfg->rx_ex_delay_period);
 }
 
-static void interface_reconfig(struct cpri_framer *framer)
+static void vss_reconfig(struct interface_reconf_param *recnf_parm,
+			struct cpri_framer *framer)
 {
-	struct cpri_framer_regs __iomem  *regs = framer->regs;
-
-	/* Disable Tx and Rx */
-	cpri_reg_clear(&regs->cpri_config,
-			CONF_TX_EN_MASK|CONF_RX_EN_MASK);
-
-	/* Reset CPRIn_RACCR, CPRIn_TACCR, CPRIn_RCR & CPRIn_TCR */
-	cpri_reg_clear(&regs->cpri_raccr, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_taccr, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_rcr, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_tcr, 0xFFFFFFFF);
-
-	/* Reset CPRIn_MAP_CONFIG and CPRIn_MAP_TBL_CONFIG */
-	cpri_reg_clear(&regs->cpri_map_config, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_map_tbl_config, 0xFFFFFFFF);
+	return;
 }
-
-static void link_reconfig(struct cpri_framer *framer)
+static s32 axc_reconfig(struct interface_reconf_param *recnf_parm,
+			struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem  *regs = framer->regs;
 	struct device *dev = framer->cpri_dev->dev;
 	u32 rsr = 1, tsr = 1;
-	int i;
+	u8 i = 0;
+
+	/*Change state to CPRI_STATE_AUTONEG_COMPLETE*/
+	cpri_state_machine(framer, CPRI_STATE_AUTONEG_COMPLETE);
+
+	if (cpri_axc_map_tbl_flush(framer, UL_AXCS) < 0)
+		return -EFAULT;
+
+	if (cpri_axc_map_tbl_flush(framer, DL_AXCS) < 0)
+		return -EFAULT;
+
+	/* Clear IQ data path in CPRIn_RCR & CPRIn_TCR */
+	cpri_reg_clear(&regs->cpri_rcr, IQ_EN_MASK);
+	cpri_reg_clear(&regs->cpri_tcr, IQ_EN_MASK);
+	/* wait for IQ status bit in CPRInRSR and CPRInTSR registers to clear */
+	for (i = 0; i < 10; i++) {
+		rsr = cpri_reg_get_val(&regs->cpri_rstatus, IQ_EN_MASK);
+		tsr = cpri_reg_get_val(&regs->cpri_tstatus, IQ_EN_MASK);
+		if ((rsr && tsr) == 0)
+			break;
+		schedule_timeout_interruptible(msecs_to_jiffies(100));
+		dev_info(dev, "waiting for IQ status bit to clear\n");
+	}
+	/* Reset CPRIn_RACCR, CPRIn_TACCR */
+	cpri_reg_clear(&regs->cpri_raccr, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_taccr, MASK_ALL);
+	/* Reset CPRIn_MAP_CONFIG and CPRIn_MAP_TBL_CONFIG */
+	cpri_reg_clear(&regs->cpri_map_config, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_map_tbl_config, MASK_ALL);
+
+	return 0;
+}
+
+static s32 eth_reconfig(struct interface_reconf_param *recnf_parm,
+			struct cpri_framer *framer)
+{
+	struct cpri_autoneg_params *param = &framer->autoneg_param;
+
+	u32 *buf = NULL;
+	u32 count = 0;
+
+	if (param->eth_rates != NULL) {
+		kfree(param->eth_rates);
+		param->eth_rates = NULL;
+	}
+
+	count = recnf_parm->params.eth_rates_count;
+	buf = kzalloc((sizeof(u32) * count), GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (copy_from_user(buf, (u32 *)recnf_parm->params.eth_rates,
+		     sizeof(u32) * count) != 0) {
+		kfree(buf);
+		return -EFAULT;
+	}
+	param->eth_rates = buf;
+
+	/* Change state to CPRI_STATE_PROT_VER_AUTONEG */
+	cpri_state_machine(framer, CPRI_STATE_PROT_VER_AUTONEG);
+	init_eth(framer);
+
+	return 0;
+}
+
+static void link_reconfig(struct interface_reconf_param *recnf_parm,
+		struct cpri_framer *framer)
+{
+	struct cpri_framer_regs __iomem  *regs = framer->regs;
+	struct device *dev = framer->cpri_dev->dev;
+	struct cpri_autoneg_params *param = &framer->autoneg_param;
+	struct cpri_autoneg_output *output = &(framer->autoneg_output);
+	u32 rsr = 1, tsr = 1;
+	u32 i = 0;
+	u32 mask = 0;
+
+	/* Rx scrambler setting */
+	if (param->flags & CPRI_RX_SCRAMBLER_EN)
+		cpri_reg_clear(&regs->cpri_rscrseed,
+				RX_SCR_EN_MASK);
+
+	/* Clear bf data */
+	output->cpri_bf_word_size = 0;
+	output->cpri_bf_iq_datablock_size = 0;
+
+	param->linerate_timeout = recnf_parm->params.linerate_timeout;
+	param->proto_timeout = recnf_parm->params.proto_timeout;
+	param->link_rate_low = recnf_parm->params.link_rate_low;
+	param->link_rate_high = recnf_parm->params.link_rate_high;
+	param->cnm_timeout = recnf_parm->params.cnm_timeout;
+
+	memset(&framer->serdesspec, 0, sizeof(struct of_phandle_args));
+	framer->serdes_handle = NULL;
+
+	/* disable timing interrupt events */
+	cpri_reg_clear(&regs->cpri_rctrltiminginten,
+			BFN_TIMING_EVENT_EN_MASK
+			| HFN_TIMING_EVENT_EN_MASK);
+
+	cpri_reg_clear(&regs->cpri_tctrltiminginten,
+			BFN_TIMING_EVENT_EN_MASK
+			| HFN_TIMING_EVENT_EN_MASK);
+
+	/* Disable framer interrupt */
+	mask = ETH_EVENT_EN_MASK  | CONTROL_INT_LEVEL_MASK;
+
+	cpri_reg_write(&framer->regs_lock,
+			&framer->regs->cpri_rctrltiminginten,
+			mask, 0);
+	cpri_reg_write(&framer->regs_lock,
+			&framer->regs->cpri_tctrltiminginten,
+			mask, 0);
+
+	mask = 0;
+	mask = (RX_IQ_OVERRUN | TX_IQ_UNDERRUN |
+		TX_VSS_UNDERRUN | RX_VSS_OVERRUN |
+		ECC_CONFIG_MEM | ECC_DATA_MEM | RX_ETH_MEM_OVERRUN |
+		TX_ETH_UNDERRUN | RX_ETH_BD_UNDERRUN | RX_ETH_DMA_OVERRUN |
+		ETH_FORWARD_REM_FIFO_FULL);
+	cpri_reg_write(&framer->regs_lock,
+		 &framer->regs->cpri_errinten, mask, 0);
+
+	/* clear protocol version and scr seed value */
+	cpri_reg_clear(&regs->cpri_tprotver, PROTO_VER_MASK);
+	cpri_reg_clear(&regs->cpri_tscrseed, SCR_SEED_MASK);
 
 	/* Disable Tx and Rx*/
 	cpri_reg_clear(&regs->cpri_config, CONF_RX_EN_MASK);
 	cpri_reg_clear(&regs->cpri_config, CONF_TX_EN_MASK);
 	/* Reset CPRIn_RACCR, CPRIn_TACCR, CPRIn_RCR & CPRIn_TCR */
-	cpri_reg_clear(&regs->cpri_raccr, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_taccr, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_rcr, 0xFFFFFFFF);
-	cpri_reg_clear(&regs->cpri_tcr, 0xFFFFFFFF);
+	cpri_reg_clear(&regs->cpri_raccr, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_taccr, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_rcr, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_tcr, MASK_ALL);
 	/* max 1 sec wait for CPRInRSR and CPRInTSR registers to clear */
 	for (i = 0; i < 10; i++) {
 		rsr = cpri_read(&regs->cpri_rstatus);
@@ -332,6 +443,9 @@ static void link_reconfig(struct cpri_framer *framer)
 		schedule_timeout_interruptible(msecs_to_jiffies(100));
 		dev_info(dev, "waiting for RSR and TSR to clear\n");
 	}
+
+	/* change state to configured*/
+	cpri_state_machine(framer, CPRI_STATE_CONFIGURED);
 }
 
 void link_monitor(unsigned long ptr)
@@ -505,10 +619,11 @@ void cpri_setup_vendor_autoneg(struct cpri_framer *framer)
 
 /* end here */
 	/* Setup ethernet DMA here */
-	if(framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
+	if (framer->frmr_ethflag & CPRI_ETH_SUPPORTED)
 		cpri_eth_enable(framer);
+
 	cpri_state_machine(framer,
-			CPRI_STATE_AUTONEG_COMPLETE);
+		CPRI_STATE_AUTONEG_COMPLETE);
 }
 
 static int check_ethrate(struct cpri_framer *framer)
@@ -606,7 +721,6 @@ void cpri_eth_autoneg(struct work_struct *work)
 	/* Turn ON Tx */
 	cpri_reg_set(&regs->cpri_config, CONF_TX_EN_MASK);
 
-
 	framer->timer_expiry_events = 0;
 
 	for (i = param->eth_rates_count; i >= 1 ; i--) {
@@ -640,9 +754,12 @@ out_pass:
 			IEVENT_ETH_MASK);
 	del_timer_sync(&eth_setup_timer);
 	/* do vendor config autoneg */
-	cpri_state_machine(framer,
-			CPRI_STATE_ETH_RATE_AUTONEG);
-	cpri_setup_vendor_autoneg(framer);
+	if ((framer->framer_state == CPRI_STATE_PROT_VER_AUTONEG) ||
+		framer->framer_state == CPRI_STATE_LINK_ERROR) {
+		cpri_state_machine(framer,
+				CPRI_STATE_ETH_RATE_AUTONEG);
+		cpri_setup_vendor_autoneg(framer);
+	}
 	/* Set framer state */
 }
 
@@ -1040,38 +1157,51 @@ out:
 	del_timer_sync(&framer->l1_timer);
 }
 
-static int process_reconfig_cmd(enum recfg_cmd cmd, struct cpri_framer *framer)
+static s32 process_recnfg(struct interface_reconf_param *recnf_parm,
+			struct cpri_framer *framer)
 {
-	int retval = 0;
+	s32 retval = 0;
 	struct device *dev = framer->cpri_dev->dev;
+	enum interface_recfg_cmd recnfg_cmd = recnf_parm->recnfg_cmd;
 
-	switch (cmd) {
+	if (recnfg_cmd == CPRI_LINK_RECONFIG_INIT_REQ ||
+			recnfg_cmd == CPRI_ETH_INTERFACE_RECONFIG_INIT_REQ ||
+			recnfg_cmd == CPRI_AXC_INTERFACE_RECONFIG_INIT_REQ) {
+		clear_axc_buff(framer);
+	}
+
+	switch (recnfg_cmd) {
 	case CPRI_LINK_RECONFIG_INIT_REQ:
-		link_reconfig(framer);
-		/* TODO: Notify user-link is now ready for link reconfig
+		link_reconfig(recnf_parm, framer);
+		/* TODO: Notify user-link is now ready for link reconfig.
+		 * This will be updated once the new notification mechanism
+		 * implemented
+		 */
+		break;
+	case CPRI_ETH_INTERFACE_RECONFIG_INIT_REQ:
+		retval = eth_reconfig(recnf_parm, framer);
+		/* TODO: Notify user-link is now ready for interface reconfig.
+		 * This will be updated once the new notification mechanism
+		 * implemented
+		 */
+		break;
+	case CPRI_VSS_INTERFACE_RECONFIG_INIT_REQ:
+		vss_reconfig(recnf_parm, framer);
+		/* TODO: Notify user-link is now ready for vendor specific
+		 * reconfig. this will be updated once the new notification
+		 * mechanism implemented
+		 */
+		break;
+	case CPRI_AXC_INTERFACE_RECONFIG_INIT_REQ:
+		retval = axc_reconfig(recnf_parm, framer);
+		/* TODO: Notify user-link is now ready for axc reconfig,
 		 * this will be updated once the new notification mechanism
 		 * implemented
 		 */
 		break;
-	case CPRI_INTERFACE_RECONFIG_INIT_REQ:
-		interface_reconfig(framer);
-		/* TODO: Notify user-link is now ready for interface &
-		 * vendor specific reconfig. this will be updated once
-		 * the new notification mechanism implemented
-		 */
-		break;
-	case CPRI_INTERFACE_RECONFIG_SETUP_REQ:
-		/* TODO: To be updated after merging AxC code */
-		break;
-	case CPRI_AXC_MAPPING_RECONFIG_INIT_REQ:
-		/* TODO: To be updated after merging AxC code */
-		break;
-	case CPRI_AXC_MAPPING_RECONFIG_SETUP_REQ:
-		/* TODO: To be updated after merging AxC code */
-		break;
 	default:
 		retval = -EINVAL;
-		dev_info(dev, "got invalid reconfig cmd: %d\n", cmd);
+		dev_info(dev, "got invalid reconfig cmd: %d\n", recnfg_cmd);
 	}
 
 	return retval;
@@ -1111,7 +1241,7 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 	struct cpri_autoneg_params autoneg_param;
 	struct cpri_autoneg_output *output = &framer->autoneg_output;
 	enum autoneg_cmd an_cmd;
-	enum recfg_cmd recfg_cmd;
+	struct interface_reconf_param interface_recfg_param;
 	struct device *dev = framer->cpri_dev->dev;
 	void __user *ioargp = (void __user *)arg;
 	unsigned long timer_dur;
@@ -1134,13 +1264,14 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 		break;
 
 	case CPRI_START_RECONFIG:
-		if (copy_from_user(&recfg_cmd, (enum recfg_cmd *)ioargp,
-				sizeof(enum recfg_cmd)) != 0) {
+		if (copy_from_user(&interface_recfg_param,
+				(struct interface_reconf_param *)ioargp,
+				sizeof(struct interface_reconf_param)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
 
-		err = process_reconfig_cmd(recfg_cmd, framer);
+		err = process_recnfg(&interface_recfg_param, framer);
 		if (err != 0)
 			goto out;
 

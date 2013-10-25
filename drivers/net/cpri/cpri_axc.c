@@ -1529,18 +1529,23 @@ void delete_axc(struct cpri_framer *framer, unsigned char axc_id,
 	return;
 }
 
-int clear_axc_buff(struct cpri_framer *framer)
+void clear_axc_buff(struct cpri_framer *framer)
 {
 	struct axc_buf_head *tx_mblk;
 	struct axc_buf_head *rx_mblk;
 
 	tx_mblk = &framer->tx_buf_head;
 	rx_mblk = &framer->rx_buf_head;
+
+	cpri_axc_map_tbl_flush(framer, UL_AXCS);
+	cpri_axc_map_tbl_flush(framer, DL_AXCS);
+
 	tx_mblk->blocks[0].next_free_addr = tx_mblk->blocks[0].base;
 	tx_mblk->blocks[1].next_free_addr = tx_mblk->blocks[1].base;
 	rx_mblk->blocks[0].next_free_addr = rx_mblk->blocks[0].base;
 	rx_mblk->blocks[1].next_free_addr = rx_mblk->blocks[1].base;
-	return 0;
+
+	return;
 }
 
 int cpri_axc_param_ctrl(struct cpri_framer *framer, unsigned long arg)
@@ -1957,12 +1962,11 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction)
 {
 	unsigned int loop;
-	struct axc **axcs;
-	struct axc *axc;
-	struct axc_map_table *map_table;
+	struct axc **axcs = NULL;
+	struct axc *axc = NULL;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
-	u32 *reg_cr;
-	u32 *reg_accr;
+	u32 *reg_cr = NULL;
+	u32 *reg_accr = NULL;
 	unsigned int max_axc_count = framer->framer_param.max_axc_count;
 
 
@@ -1982,13 +1986,14 @@ int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction)
 		reg_accr = &regs->cpri_taccr;
 		reg_cr = &regs->cpri_tcr;
 		axcs = framer->ul_axcs;
-		map_table = &framer->ul_map_table;
 	} else {
 		reg_cr = &regs->cpri_rcr;
 		reg_accr = &regs->cpri_raccr;
 		axcs = framer->dl_axcs;
-		map_table = &framer->dl_map_table;
 	}
+
+	if (axcs == NULL)
+		return 0;
 
 	loop = 0;
 	while (loop < max_axc_count) {

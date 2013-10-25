@@ -338,7 +338,6 @@ static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
 		netdev_err(ndev, "Rx BD init failed\n");
 		goto skb_init_fail;
 	}
-
 	if (cpri_eth_init_bd_regs(ndev))
 		goto bd_init_fail;
 
@@ -362,7 +361,7 @@ tx_alloc_fail:
 	tx_bd->tx_bd_dma_base = 0;
 	tx_bd->tx_bd_base = 0;
 	dma_free_coherent(&priv->ofdev->dev,
-		dma_alloc_size + CPRI_ETH_BD_RING_ALIGN, priv->vaddr,
+		dma_alloc_size + (CPRI_ETH_BD_RING_ALIGN - 1), priv->vaddr,
 			priv->addr);
 	priv->addr = 0;
 	priv->vaddr = 0;
@@ -392,16 +391,16 @@ static void cpri_eth_free_skb_resources(struct net_device *ndev)
 
 	kfree(rx_bd->rx_skbuff);
 	rx_bd->rx_skbuff = 0;
-
-	dma_alloc_size = (sizeof(struct cpri_eth_bd_entity) *
+	if (priv->vaddr) {
+		dma_alloc_size = (sizeof(struct cpri_eth_bd_entity) *
 				rx_bd->rx_bd_ring_size) +
 				(sizeof(struct cpri_eth_bd_entity) *
 				tx_bd->tx_bd_ring_size);
 
-	dma_free_coherent(&priv->ofdev->dev,
-			dma_alloc_size + CPRI_ETH_BD_RING_ALIGN,
+		dma_free_coherent(&priv->ofdev->dev,
+			dma_alloc_size + (CPRI_ETH_BD_RING_ALIGN - 1),
 			priv->vaddr, priv->addr);
-
+	}
 
 	tx_bd->tx_bd_base = 0;
 	tx_bd->tx_bd_dma_base = 0;
@@ -459,6 +458,9 @@ static int cpri_eth_tx_halt(struct net_device *ndev)
 
 	cpri_reg_clear(&framer->regs->cpri_tcr,
 			CPRI_ETH_TX_ENABLE_MASK);
+	cpri_reg_write(&framer->regs_lock,
+				&framer->regs->cpri_rethctrl,
+				MASK_ALL, 0x1);
 	return 0;
 }
 
@@ -485,7 +487,10 @@ static int cpri_eth_open(struct net_device *ndev)
 	unsigned long flags;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct device *dev = priv->framer->cpri_dev->dev;
-
+	if (priv->framer->frmr_ethflag & CPRI_ETH_AUTONEG_REQ) {
+		cpri_eth_autoneg(&priv->framer->ethautoneg_task);
+		priv->framer->frmr_ethflag &= ~CPRI_ETH_AUTONEG_REQ;
+	}
 	spin_lock_irqsave(&priv->tx_bd->txlock, flags);
 	spin_lock(&priv->rx_bd->rxlock);
 
@@ -493,7 +498,7 @@ static int cpri_eth_open(struct net_device *ndev)
 
 	spin_unlock(&priv->rx_bd->rxlock);
 	spin_unlock_irqrestore(&priv->tx_bd->txlock, flags);
-
+	netif_carrier_on(ndev);
 	if (err) {
 		dev_err(dev, "cpri skb resouces allocation failed!!\n");
 		return err;
@@ -507,33 +512,32 @@ static int cpri_eth_open(struct net_device *ndev)
 
 	/* prevent tx timeout */
 	ndev->trans_start = jiffies;
-	ndev->flags |= IFF_UP;
 
 	return 0;
 }
 
-static int cpri_eth_close(struct net_device *ndev)
+int cpri_eth_close(struct net_device *ndev)
 {
-	unsigned long flags;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer *framer = priv->framer;
+	struct cpri_framer_regs __iomem  *regs = framer->regs;
+
+	/* Reset ethernet configuration regs */
+	/* Flush all bd */
 
 	cpri_eth_tx_rx_halt(ndev);
-
 	napi_disable(&priv->napi);
 	netif_stop_queue(ndev);
-
-	tasklet_disable(&priv->tasklet);
-
-	cancel_work_sync(&priv->reset_task);
-	cancel_work_sync(&priv->error_task);
-
-	spin_lock_irqsave(&priv->tx_bd->txlock, flags);
-	spin_lock(&priv->rx_bd->rxlock);
-
+	netif_carrier_off(ndev);
 	cpri_eth_free_skb_resources(ndev);
 
-	spin_unlock(&priv->rx_bd->rxlock);
-	spin_unlock_irqrestore(&priv->tx_bd->txlock, flags);
+	/* Reset control word */
+	cpri_reg_set_val(&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK, 0);
+
+	/* Reset write ptr */
+	cpri_reg_clear(&framer->regs->cpri_rethwriteptr, MASK_ALL);
+	cpri_reg_clear(&framer->regs->cpri_tethwriteptr, MASK_ALL);
+	priv->framer->frmr_ethflag |= CPRI_ETH_AUTONEG_REQ;
 
 	return 0;
 }
@@ -548,7 +552,8 @@ static int cpri_eth_restart(struct net_device *ndev)
 	/* Stop */
 	cpri_eth_tx_rx_halt(ndev);
 
-	napi_disable(&priv->napi);
+	if (netif_running(ndev))
+		napi_disable(&priv->napi);
 	netif_stop_queue(ndev);
 
 	tasklet_disable(&priv->tasklet);
@@ -908,9 +913,9 @@ static void cpri_eth_set_rx_mode(struct net_device *ndev)
 	u32 val;
 
 	if (ndev->flags & IFF_PROMISC)
-		cpri_eth_config(ndev, priv->flags | CPRI_ETH_MAC_CHECK);
-	else
 		cpri_eth_config(ndev, priv->flags & ~CPRI_ETH_MAC_CHECK);
+	else
+		cpri_eth_config(ndev, priv->flags | CPRI_ETH_MAC_CHECK);
 
 	if (ndev->flags & IFF_ALLMULTI) {
 		/* Enable all multicast */
@@ -992,7 +997,6 @@ static struct net_device_stats *cpri_eth_get_stats(struct net_device *ndev)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct device *dev = priv->framer->cpri_dev->dev;
 	unsigned long rx_errors = 0;
-
 
 	memcpy(&ndev->stats, &priv->stats, sizeof(struct net_device_stats));
 
@@ -1195,6 +1199,10 @@ static int cpri_eth_rx_pkt(struct net_device *ndev, unsigned int skb_currx)
 
 	CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
 	pkt_len = BD_LSTATUS_LSHIFT(rxbde_le.lstatus);
+	if (!rxbde_le.buf_ptr) {
+		dev_err(dev, "rxbde_le.buf_ptr got corrupted\n");
+		goto SKIP;
+	}
 	dma_unmap_single(&priv->ofdev->dev, rxbde_le.buf_ptr,
 			priv->rx_buffer_size, DMA_FROM_DEVICE);
 
@@ -1242,7 +1250,7 @@ static int cpri_eth_rx_pkt(struct net_device *ndev, unsigned int skb_currx)
 		}
 	}
 
-
+SKIP:
 	rx_bd->rx_skbuff[skb_currx] = newskb;
 
 	cpri_new_rxbdp(rx_bd, rxbde, newskb, skb_currx);
@@ -1258,13 +1266,11 @@ static int cpri_eth_clean_rx_ring(struct net_device *ndev, int budget)
 	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
 	struct cpri_eth_bd_entity rxbde_le;
 
-
 	spin_lock(&priv->rx_bd->rxlock);
 	base = (struct cpri_eth_bd_entity *)rx_bd->rx_bd_base;
 	rxbde = rx_bd->rx_bd_current;
 	CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
 	skb_currx = rx_bd->skb_currx;
-
 
 	/* No LE conversion here. Ctrl is only a byte value */
 
@@ -1546,7 +1552,7 @@ void cpri_eth_enable(struct cpri_framer *framer)
 EXPORT_SYMBOL(cpri_eth_enable);
 
 
-void reset_eth_regs(struct cpri_framer *framer)
+void init_eth_regs(struct cpri_framer *framer)
 {
 	cpri_reg_set_val(&framer->regs->cpri_ethcfg1,
 		MASK_ALL, 0);
@@ -1559,7 +1565,7 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	struct cpri_eth_priv *priv = NULL;
 	int err = 0;
 
-	reset_eth_regs(framer);
+	init_eth_regs(framer);
 	err = cpri_eth_of_init(ofdev, &ndev, frnode);
 	if (err < 0) {
 		framer->frmr_ethflag = CPRI_ETH_NOT_SUPPORTED; 
@@ -1633,3 +1639,42 @@ void cpri_eth_deinit(struct platform_device *ofdev, struct cpri_framer *framer)
 	return;
 }
 EXPORT_SYMBOL(cpri_eth_deinit);
+
+void init_eth(struct cpri_framer *framer)
+{
+	struct net_device *ndev = framer->eth_priv->ndev;
+	struct cpri_eth_priv *priv = netdev_priv(ndev);
+	struct cpri_framer_regs __iomem  *regs = framer->regs;
+
+	if (ndev->flags & IFF_UP) {
+		ndev->flags &= ~IFF_UP;
+		cpri_eth_tx_rx_halt(ndev);
+
+		napi_disable(&priv->napi);
+		netif_stop_queue(ndev);
+		netif_carrier_off(ndev);
+
+		cpri_eth_free_skb_resources(ndev);
+
+		/* Reset control word */
+		cpri_reg_set_val(&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK, 0);
+		cpri_reg_clear(&regs->cpri_config, TX_CW_INSERT_EN_MASK);
+
+		/* Reset write ptr */
+		cpri_reg_clear(&framer->regs->cpri_rethwriteptr, MASK_ALL);
+		cpri_reg_clear(&framer->regs->cpri_tethwriteptr, MASK_ALL);
+
+		/* Reset CPRIn_RACCR, CPRIn_TACCR */
+		cpri_reg_clear(&regs->cpri_raccr, MASK_ALL);
+		cpri_reg_clear(&regs->cpri_taccr, MASK_ALL);
+
+		/* Reset CPRIn_RCR & CPRIn_TCR, to clear control interrupts*/
+		cpri_reg_clear(&regs->cpri_rcr, MASK_ALL);
+		cpri_reg_clear(&regs->cpri_tcr, MASK_ALL);
+
+		/* Reset CPRIn_MAP_CONFIG and CPRIn_MAP_TBL_CONFIG */
+		cpri_reg_clear(&regs->cpri_map_config, MASK_ALL);
+		cpri_reg_clear(&regs->cpri_map_tbl_config, MASK_ALL);
+	}
+}
+

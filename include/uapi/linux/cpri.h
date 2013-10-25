@@ -477,12 +477,16 @@ enum autoneg_cmd {
 	CPRI_DO_AUTONEG_ALL,
 };
 
-enum recfg_cmd {
+enum interface_recfg_cmd {
 	CPRI_LINK_RECONFIG_INIT_REQ = 1,
-	CPRI_INTERFACE_RECONFIG_INIT_REQ,
-	CPRI_INTERFACE_RECONFIG_SETUP_REQ,
-	CPRI_AXC_MAPPING_RECONFIG_INIT_REQ,
-	CPRI_AXC_MAPPING_RECONFIG_SETUP_REQ
+	CPRI_ETH_INTERFACE_RECONFIG_INIT_REQ,
+	CPRI_AXC_INTERFACE_RECONFIG_INIT_REQ,
+	CPRI_VSS_INTERFACE_RECONFIG_INIT_REQ,
+};
+
+struct interface_reconf_param {
+	struct cpri_autoneg_params params;
+	enum interface_recfg_cmd recnfg_cmd;
 };
 
 enum mem_type {
@@ -547,7 +551,7 @@ enum mem_type {
 #define CPRI_START_AUTONEG			_IOW(CPRI_MAGIC, 20, \
 						enum autoneg_cmd)
 #define CPRI_START_RECONFIG			_IOW(CPRI_MAGIC, 21, \
-						enum recfg_cmd)
+						struct interface_reconf_param *)
 #define CPRI_INIT_AUTONEG_PARAM			_IOW(CPRI_MAGIC, 22, \
 						struct cpri_autoneg_params *)
 #define CPRI_GET_AUTONEG_PARAM			_IOR(CPRI_MAGIC, 23, \

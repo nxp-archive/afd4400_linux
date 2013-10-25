@@ -327,15 +327,14 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_map_offsets map_sync_offset;
-	struct axc **axcs;
-	struct axc *axc;
-	unsigned int loop;
-	u32 mask;
-	u32 line_sync_acheived;
+	struct axc **axcs = NULL;
+	struct axc *axc = NULL;
+	unsigned int loop = 0;
+	u32 mask = 0;
+	u32 line_sync_acheived = 0;
 
 	if ((ctrl->ctrl_mask & DEV_START_DL) ||
 		(ctrl->ctrl_mask & DEV_START_UL)) {
-
 		if (copy_from_user(&map_sync_offset,
 				(struct cpri_map_offsets *)ctrl->ctrl_data,
 				sizeof(struct cpri_map_offsets)) != 0)

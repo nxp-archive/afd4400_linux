@@ -198,7 +198,6 @@ static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)cookie;
 	u32 events;
-
 	events = cpri_reg_get_val(&framer->regs->cpri_tevent, MASK_ALL);
 
 	/* Handle tx ethernet event - Called function will disable the
@@ -503,8 +502,14 @@ static void cpri_err_tasklet(unsigned long arg)
 
 	mask = (RX_IQ_OVERRUN | TX_IQ_UNDERRUN |
 		TX_VSS_UNDERRUN | RX_VSS_OVERRUN |
-		ECC_CONFIG_MEM | ECC_DATA_MEM | TX_ETH_UNDERRUN);
+		ECC_CONFIG_MEM | ECC_DATA_MEM | RX_ETH_MEM_OVERRUN |
+		TX_ETH_UNDERRUN | RX_ETH_BD_UNDERRUN | RX_ETH_DMA_OVERRUN |
+		ETH_FORWARD_REM_FIFO_FULL);
 	if (err_evt && mask) {
+		if (err_evt & RX_ETH_MEM_OVERRUN)
+			cpri_reg_get_val(&framer->regs->cpri_rethexstatus,
+				MASK_ALL);
+
 		cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_errevent,
 			err_evt, err_evt);

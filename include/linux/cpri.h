@@ -772,8 +772,9 @@ enum cpri_linerate {
 #define CW_BYTE3				0
 
 
-#define CPRI_ETH_SUPPORTED			1
-#define CPRI_ETH_NOT_SUPPORTED			0
+#define CPRI_ETH_NOT_SUPPORTED		0
+#define CPRI_ETH_SUPPORTED			(1 << 0)
+#define CPRI_ETH_AUTONEG_REQ		(1 << 1)
 
 #define CLEAR_LINE_RATE	0
 #define SET_LINE_RATE	1
@@ -937,5 +938,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 void update_bf_data(struct cpri_framer *framer);
 void framer_int_enable(struct cpri_framer *framer);
 void cpri_mask_irq_events(struct cpri_framer *framer);
-int clear_axc_buff(struct cpri_framer *framer);
+int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction);
+void clear_axc_buff(struct cpri_framer *framer);
+void init_eth(struct cpri_framer *framer);
 #endif /* __CPRI_H */
