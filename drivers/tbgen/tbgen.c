@@ -1145,8 +1145,6 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		start_time = tbg->last_10ms_counter;
 		start_time += timer->timer_param.offset;
 		current_time = tbgen_get_l10_mcntr(tbg);
-		/*XXX: fire in current 10ms window */
-		start_time = current_time + timer->timer_param.offset;
 		if (current_time > start_time) {
 			dev_info(tbg->dev, "%s: Timer id %d, type %d missed\n",
 				__func__, timer_id, type);
