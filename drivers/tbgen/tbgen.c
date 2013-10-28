@@ -1407,10 +1407,12 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 	case TBGEN_GET_DEV_INFO:
 
 		dev_info.state = tbg->state;
+		dev_info.refclk_khz = tbg->refclk_khz;
 
 		if (copy_to_user((struct tbgen_device_info *)arg, &dev_info,
 				sizeof(struct tbgen_device_info)))
 			retcode = -EFAULT;
+		retcode = 0;
 		break;
 	case TBGEN_GET_MASTER_COUNTER:
 		master_counter = tbgen_get_master_counter(tbg);

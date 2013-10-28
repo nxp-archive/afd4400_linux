@@ -155,6 +155,7 @@ struct timer_ctrl {
  */
 struct tbgen_device_info {
 	enum tbgen_dev_state state;
+	__u32 refclk_khz;
 };
 /** @ brief ioctl instances
  * tbgen_num is 't'
