@@ -164,7 +164,7 @@ static s32 landshark_mmap(struct file *filp, struct vm_area_struct *vma)
 
 		result = remap_pfn_range(vma,
 				vma->vm_start,
-				(landshark_pinit_info.nondma_memory >> PAGE_SHIFT),
+				(start >> PAGE_SHIFT),
 				vma->vm_end - vma->vm_start,
 				vma->vm_page_prot);
 	}
