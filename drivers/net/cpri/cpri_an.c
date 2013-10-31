@@ -132,6 +132,7 @@ static void cpri_init_framer(struct cpri_framer *framer)
 	struct cpri_dev_init_params *param = &framer->framer_param;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 
+	clear_axc_buff(framer);
 	cpri_reg_set_val(&regs->cpri_rdelay_ctrl,
 				MASK_ALL, 0x20);
 

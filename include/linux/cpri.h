@@ -937,4 +937,5 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 void update_bf_data(struct cpri_framer *framer);
 void framer_int_enable(struct cpri_framer *framer);
 void cpri_mask_irq_events(struct cpri_framer *framer);
+int clear_axc_buff(struct cpri_framer *framer);
 #endif /* __CPRI_H */

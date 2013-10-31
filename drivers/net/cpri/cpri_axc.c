@@ -1092,7 +1092,7 @@ void map_table_struct_entry_ctrl(struct axc *axc, unsigned char cmd)
 				nc = CEIL_FUNC((axc->S * axc->na), axc->K);
 				ki = (ki % nc);
 				ki = ki * 2 * axc->sampling_width;
-				ki = k + bit_position;
+				ki = ki + bit_position;
 			} else if (!(loop % axc->K)) {
 				nst_flag = 1;
 				ki = bit_position;
@@ -1527,6 +1527,20 @@ void delete_axc(struct cpri_framer *framer, unsigned char axc_id,
 	kfree(axc->pos);
 	kfree(axc);
 	return;
+}
+
+int clear_axc_buff(struct cpri_framer *framer)
+{
+	struct axc_buf_head *tx_mblk;
+	struct axc_buf_head *rx_mblk;
+
+	tx_mblk = &framer->tx_buf_head;
+	rx_mblk = &framer->rx_buf_head;
+	tx_mblk->blocks[0].next_free_addr = tx_mblk->blocks[0].base;
+	tx_mblk->blocks[1].next_free_addr = tx_mblk->blocks[1].base;
+	rx_mblk->blocks[0].next_free_addr = rx_mblk->blocks[0].base;
+	rx_mblk->blocks[1].next_free_addr = rx_mblk->blocks[1].base;
+	return 0;
 }
 
 int cpri_axc_param_ctrl(struct cpri_framer *framer, unsigned long arg)
