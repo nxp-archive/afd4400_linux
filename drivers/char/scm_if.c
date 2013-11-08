@@ -1,15 +1,26 @@
-/* GCR configuration driver
- * Authod: Anand Singh
- * Anand Singh<b44195@freescale.com>
- * Copyright 2013 Freescale Semiconductor, Inc.
+/*
+ * drivers/char/scm_if.c
  *
- * The code contained herein is licensed under the GNU General Public
- * License. You may obtain a copy of the GNU General Public License
- * Version 2 or later at the following locations:
+ * Author: Meenakshi Aggarwal <meenakshi.aggarwaln@freescale.com>
+ * Author: Anand Singh <anand.singh@freescale.com>
  *
- * http://www.opensource.org/licenses/gpl-license.html
- * http://www.gnu.org/copyleft/gpl.html
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2, as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ * Copyright (C) 2013 Freescale Semiconductor, Inc.
+ *
  */
+
 #include <linux/kernel.h>
 #include <linux/cdev.h>
 #include <linux/io.h>
