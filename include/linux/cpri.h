@@ -21,7 +21,7 @@
 #include <linux/bitops.h>
 
 #include <uapi/linux/cpri.h>
-#include <linux/sfp.h>
+#include <linux/finisar.h>
 #include <linux/gcr.h>
 #include <linux/cpri_eth.h>
 
@@ -124,14 +124,14 @@ enum d4400_rev_clk_dev {
 	REV_CLK_DIV_8,
 };
 
-struct sfp_dev {
+struct finisar_dev {
 	u32 id;
 	struct device_node *dev_node;
 	unsigned int num_addresses;
 	enum mem_type type;
 	int use_smbus;
 	struct cpri_framer *pair_framer;
-	struct sfp info;
+	struct finisar info;
 	struct mutex lock;
 	u8 *writebuf;
 	unsigned write_max;
@@ -391,8 +391,8 @@ struct cpri_framer {
 	struct cdev cdev;
 	dev_t dev_t;
 	raw_spinlock_t regs_lock;
-	struct device_node *sfp_dev_node;
-	struct sfp_dev *sfp_dev;
+	struct device_node *finisar_dev_node;
+	struct finisar_dev *finisar_dev;
 	struct of_phandle_args serdesspec;
 	void *serdes_handle;
 	/* ISR events and bottom half */
@@ -482,9 +482,9 @@ enum cpri_linerate {
 #define TEVENT_PROTVER_SETUP_TEXPIRED		(1 << 3)
 #define TEVENT_ETHRATE_SETUP_TEXPIRED		(1 << 4)
 
-#define IEVENT_SFP_TXFAULT			(1 << 1)
-#define IEVENT_SFP_LOS				(1 << 2)
-#define IEVENT_SFP_PRS				(1 << 3)
+#define IEVENT_FINISAR_TXFAULT			(1 << 1)
+#define IEVENT_FINISAR_LOS				(1 << 2)
+#define IEVENT_FINISAR_PRS				(1 << 3)
 
 #define MASK_ALL				0xFFFFFFFF
 #define BITS_PER_U32				32
@@ -909,14 +909,15 @@ extern int cpri_eth_handle_tx(struct cpri_framer *framer);
 extern int cpri_eth_handle_error(struct cpri_framer *framer);
 void cpri_eth_parm_init(struct cpri_framer *framer);
 
-/* SFP exported functions */
+/* FINISAR exported functions */
 extern struct cpri_framer
-	*get_attached_cpri_dev(struct device_node **sfp_dev_node);
-extern struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node);
-extern void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value);
-extern int sfp_raw_write(struct sfp_dev *sfp, u8 *buf, u8 offset,
+	*get_attached_cpri_dev(struct device_node **finisar_dev_node);
+extern struct finisar_dev *get_attached_finisar_dev(struct device_node
+		*finisar_dev_node);
+extern void set_finisar_txdisable(struct finisar_dev *finisar, unsigned value);
+extern int finisar_raw_write(struct finisar_dev *finisar, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
-int sfp_raw_read(struct sfp_dev *sfp, u8 *buf, u8 offset,
+int finisar_raw_read(struct finisar_dev *finisar, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
 extern void d4400_rev_clk_select(u8 cpri_id, u8 clk_dev);
 

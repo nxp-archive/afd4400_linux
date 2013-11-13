@@ -1,5 +1,5 @@
-config RF_SFP
-	tristate "SFP"
+config RF_FINISAR
+	tristate "FINISAR"
 	help
 	  If you say yes to this option, support will be included
-	  for SFP driver
+	  for FINISAR driver

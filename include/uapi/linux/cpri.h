@@ -67,7 +67,7 @@ struct cpri_dev_init_params {
 	unsigned int k1;
 };
 
-struct sfp_info {
+struct finisar_info {
 	/* Basic ID fields */
 	__u8 type;
 	__u8 ext_type;
@@ -95,12 +95,12 @@ struct sfp_info {
 	__u8 manf_date[8];
 	__u8 diag_type;
 	__u8 enhanced_options;
-	__u8 sfp_compliance;
+	__u8 finisar_compliance;
 	__u8 check_code_e;
 };
 
 enum cpri_state {
-	CPRI_STATE_SFP_DETACHED = 1,
+	CPRI_STATE_FINISAR_DETACHED = 1,
 	/* Initial state */
 	CPRI_STATE_STANDBY,
 	CPRI_STATE_CONFIGURED,
@@ -142,7 +142,7 @@ struct cpri_dev_info {
 #define RESET_DETECT_STATUS			(1 << 12)
 	__u16 current_bfn;
 	__u8 current_hfn;
-	struct sfp_info sfp_info;
+	struct finisar_info finisar_info;
 	struct cpri_dev_init_params init_params;
 };
 
@@ -204,19 +204,19 @@ struct cpri_reg_write_buf {
 	int count;
 };
 
-struct sfp_reg_read_buf {
+struct finisar_reg_read_buf {
 	__u8 start_offset;
 	__u8 *reg_buff;
 	int count;
 };
 
-struct sfp_reg {
+struct finisar_reg {
 	__u8 offset;
 	__u8 value;
 };
 
-struct sfp_reg_write_buf {
-	struct sfp_reg *regs;
+struct finisar_reg_write_buf {
+	struct finisar_reg *regs;
 	int count;
 };
 
@@ -334,7 +334,7 @@ struct cpri_autoneg_output {
 };
 
 struct cpri_delays_raw {
-	/*external delays (SFP + SERDES)*/
+	/*external delays (FINISAR + SERDES)*/
 	__u16 rx_ext_buf_delay_valid;
 	__u16 rx_ext_buf_delay;
 	/* variable delays */
@@ -467,8 +467,8 @@ enum recfg_cmd {
 };
 
 enum mem_type {
-	SFP_MEM_EEPROM = 0,
-	SFP_MEM_DIAG
+	FINISAR_MEM_EEPROM = 0,
+	FINISAR_MEM_DIAG
 };
 
 /* AxC mapping direction flags */
@@ -512,11 +512,11 @@ enum mem_type {
 						struct cpri_reg_read_buf *)
 #define CPRI_WRITE_REG_COMMON			_IOW(CPRI_MAGIC, 12, \
 						struct cpri_reg_write_buf *)
-#define SFP_READ_REG				_IOR(CPRI_MAGIC, 13, \
+#define FINISAR_READ_REG				_IOR(CPRI_MAGIC, 13, \
 						struct cpri_reg_read_buf *)
-#define SFP_READ_DIAG_REG			_IOR(CPRI_MAGIC, 14, \
+#define FINISAR_READ_DIAG_REG			_IOR(CPRI_MAGIC, 14, \
 						struct cpri_reg_read_buf *)
-#define SFP_WRITE_REG				_IOW(CPRI_MAGIC, 15, \
+#define FINISAR_WRITE_REG				_IOW(CPRI_MAGIC, 15, \
 						struct cpri_reg_write_buf *)
 #define CPRI_REGISTER_EVENT			_IOW(CPRI_MAGIC, 16, \
 						unsigned int)

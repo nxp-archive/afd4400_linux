@@ -1,6 +1,6 @@
 /*
- * include/linux/sfp.h
- * SFP device driver
+ * include/linux/finisar.h
+ * FINISAR device driver
  * Author: Freescale semiconductor, Inc.
  *
  * Copyright 2013 Freescale Semiconductor, Inc.
@@ -11,10 +11,10 @@
  * option) any later version.
  */
 
-#ifndef __SFP_H_
-#define __SFP_H_
+#ifndef __FINISAR_H_
+#define __FINISAR_H_
 
-struct sfp_diag_info {
+struct finisar_diag_info {
 	/* Alarm and Warning Thresholds */
 	u8 temp_hi_alarm[2];
 	u8 temp_lo_alarm[2];
@@ -125,7 +125,7 @@ struct sfp_diag_info {
 	u8 vendor[8];
 };
 
-struct sfp {
+struct finisar {
 	/* Basic ID fields */
 	u8 type;
 	u8 ext_type;
@@ -161,17 +161,17 @@ struct sfp {
 	u8 manf_date[8];
 	u8 diag_type;
 	u8 enhanced_options;
-	u8 sfp_compliance;
+	u8 finisar_compliance;
 	u8 check_code_e;
 	u8 vendor_id_fields[32];
 	u8 reserved5[128];
 };
 
-#define SFP_EEPROM_INFO_SIZE		128
-#define SFP_BASIC_DATA_SIZE		63
-#define SFP_EXT_DATA_SIZE		31
-#define SFP_NUM_ADDR			2
-#define SFP_EEPROM_NODE_NAME		"eeprom"
-#define SFP_DIAG_NODE_NAME		"diagnostics"
+#define FINISAR_EEPROM_INFO_SIZE		128
+#define FINISAR_BASIC_DATA_SIZE		63
+#define FINISAR_EXT_DATA_SIZE		31
+#define FINISAR_NUM_ADDR			2
+#define FINISAR_EEPROM_NODE_NAME		"eeprom"
+#define FINISAR_DIAG_NODE_NAME		"diagnostics"
 
-#endif /* __SFP_H_ */
+#endif /* __FINISAR_H_ */
