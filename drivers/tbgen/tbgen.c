@@ -667,8 +667,26 @@ static int tbgen_config_tx_timer_regs(struct tbgen_timer *timer,
 	if (timer_param->config_flags & TIMER_CONF_SYNC_ERR_DETECT_EN)
 		val |= TXCTRL_SREPEN;
 
-	if (timer_param->config_flags & TIMER_CONF_ACTIVE_LOW)
+	if (timer_param->config_flags & TIMER_CONF_ACTIVE_LOW) {
 		val |= TMRCTRL_POL_ACTIVE_LOW;
+
+		/* XXX: Active low hack : D4400 uses all the strobes as
+		 * active high to activate the signal that the strobe is
+		 * driving.
+		 * But during BSP testing we don't know the exact strobe
+		 * timings for the use case that is being run, so we use
+		 * this hack to keep the strobe active all the time. The
+		 * hack is to program timer as active low and do not fire
+		 * it, so that it remains high all the time.
+		 *
+		 * This hack is safe to place in driver because there are
+		 * no active low strobes in system. This hack is required
+		 * only for TX_AXRF timer that is why it is placed only
+		 * in tbgen_config_tx_timer_regs().
+		 */
+
+		SET_STATUS_FLAG(timer, STATUS_FLG_DO_NOT_FIRE);
+	}
 
 	spin_lock(&timer->lock);
 	reg = &tx_timer_regs->ctrl;
@@ -677,7 +695,7 @@ static int tbgen_config_tx_timer_regs(struct tbgen_timer *timer,
 	tbgen_write_reg(reg, val);
 
 	memcpy(&timer->timer_param, timer_param, sizeof(struct timer_param));
-	timer->status_flags = STATUS_FLG_CONFIGURED;
+	SET_STATUS_FLAG(timer, STATUS_FLG_CONFIGURED);
 	spin_unlock(&timer->lock);
 
 	return retcode;
@@ -788,7 +806,7 @@ static int tbgen_config_generic_timer_regs(struct tbgen_timer *timer,
 	tbgen_write_reg(reg, val);
 	tbgen_write_reg(&timer_regs->interval, timer_param->interval);
 	memcpy(&timer->timer_param, timer_param, sizeof(struct timer_param));
-	timer->status_flags = STATUS_FLG_CONFIGURED;
+	SET_STATUS_FLAG(timer, STATUS_FLG_CONFIGURED);
 	spin_unlock(&timer->lock);
 
 out:
@@ -1011,6 +1029,7 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		retcode = -EINVAL;
 		goto out;
 	}
+
 	switch (type) {
 
 	case JESD_TX_ALIGNMENT:
@@ -1106,13 +1125,22 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 
 	spin_lock(&timer->lock);
 	if (enable) {
-		if (!(timer->status_flags & STATUS_FLG_CONFIGURED)) {
+		if (!CHECK_STATUS_FLAG(timer, STATUS_FLG_CONFIGURED)) {
 			dev_err(tbg->dev, "%s:[%d:%d] Failed, uninit timer\n",
 				__func__, type, timer_id);
 			spin_unlock(&timer->lock);
 			retcode = -EINVAL;
 			goto out;
 		}
+
+		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_DO_NOT_FIRE)) {
+			dev_dbg(tbg->dev, "[%d:%d] Act low hack, abort fire\n",
+				type, timer_id);
+			spin_unlock(&timer->lock);
+			retcode = 0;
+			goto out;
+		}
+
 		/*Program Timer fire time */
 		start_time = tbg->last_10ms_counter;
 		start_time += timer->timer_param.offset;
@@ -1136,12 +1164,12 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		val = TMRCTRL_EN;
 		mask = TMRCTRL_EN;
 		tbgen_update_reg(ctrl_reg, val, mask);
-		timer->status_flags |= STATUS_FLG_ENABLED;
+		SET_STATUS_FLAG(timer, STATUS_FLG_ENABLED);
 	} else {
 		val = ~TMRCTRL_EN;
 		mask = TMRCTRL_EN;
 		tbgen_update_reg(ctrl_reg, val, mask);
-		timer->status_flags &= ~STATUS_FLG_ENABLED;
+		CLEAR_STATUS_FLAG(timer, STATUS_FLG_ENABLED);
 	}
 	spin_unlock(&timer->lock);
 out:

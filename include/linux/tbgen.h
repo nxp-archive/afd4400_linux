@@ -43,6 +43,7 @@ struct tbgen_timer {
 #define STATUS_FLG_CONFIGURED			(1 << 1)
 #define STATUS_FLG_CAPTURE_SYSREF		(1 << 2)
 #define STATUS_FLG_JESD_ATACHED			(1 << 3)
+#define STATUS_FLG_DO_NOT_FIRE			(1 << 4)
 #define SET_STATUS_FLAG(timer, flag) (timer->status_flags |= flag)
 #define CLEAR_STATUS_FLAG(timer, flag) (timer->status_flags &= ~flag)
 #define CHECK_STATUS_FLAG(timer, flag) (timer->status_flags & flag)
