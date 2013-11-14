@@ -1,6 +1,6 @@
 /*
- * drivers/net/cpri/finisar/finisar.c
- * FINISAR device driver
+ * drivers/net/cpri/sfp/sfp.c
+ * SFP device driver
  * Author: Freescale semiconductor, Inc.
  *
  * Copyright 2013 Freescale Semiconductor, Inc.
@@ -27,8 +27,8 @@
 
 #include <linux/cpri.h>
 
-static LIST_HEAD(finisar_dev_list);
-raw_spinlock_t finisar_list_lock;
+static LIST_HEAD(sfp_dev_list);
+raw_spinlock_t sfp_list_lock;
 
 /* This parameter is to help this driver avoid blocking other drivers out
  * of I2C for potentially troublesome amounts of time. With a 100 kHz I2C
@@ -38,7 +38,7 @@ raw_spinlock_t finisar_list_lock;
  *
  * This value is forced to be a power of two so that writes align on pages.
  */
-static unsigned io_limit = FINISAR_EEPROM_INFO_SIZE;
+static unsigned io_limit = SFP_EEPROM_INFO_SIZE;
 module_param(io_limit, uint, 0);
 MODULE_PARM_DESC(io_limit, "Maximum bytes per I/O (default 128)");
 
@@ -49,30 +49,29 @@ static unsigned write_timeout = 25;
 module_param(write_timeout, uint, 0);
 MODULE_PARM_DESC(write_timeout, "Time (in ms) to try writes (default 25)");
 
-static int finisar_eeprom_write(struct finisar_dev *finisar, u8 *buf,
+static int sfp_eeprom_write(struct sfp_dev *sfp, u8 *buf,
 		u8 offset, unsigned int count)
 {
 	struct i2c_client *client;
 	struct i2c_msg msg;
 	int status;
 	unsigned long timeout, write_time;
-	enum mem_type type = finisar->type;
+	enum mem_type type = sfp->type;
 
-	client = ((type == FINISAR_MEM_EEPROM) ?
-			finisar->client[0] : finisar->client[1]);
+	client = ((type == SFP_MEM_EEPROM) ? sfp->client[0] : sfp->client[1]);
 
-	if (count > finisar->write_max)
-		count = finisar->write_max;
+	if (count > sfp->write_max)
+		count = sfp->write_max;
 
 	/* If we'll use I2C calls for I/O, set up the message */
-	if (!finisar->use_smbus) {
+	if (!sfp->use_smbus) {
 		int i = 0;
 
 		msg.addr = client->addr;
 		msg.flags = 0;
 
 		/* msg.buf is u8 and casts will mask the values */
-		msg.buf = finisar->writebuf;
+		msg.buf = sfp->writebuf;
 		msg.buf[i++] = offset;
 		memcpy(&msg.buf[i], buf, count);
 		msg.len = i + count;
@@ -85,7 +84,7 @@ static int finisar_eeprom_write(struct finisar_dev *finisar, u8 *buf,
 	timeout = jiffies + msecs_to_jiffies(write_timeout);
 	do {
 		write_time = jiffies;
-		if (finisar->use_smbus) {
+		if (sfp->use_smbus) {
 			status = i2c_smbus_write_i2c_block_data(client,
 					offset, count, buf);
 			if (status == 0)
@@ -108,7 +107,7 @@ static int finisar_eeprom_write(struct finisar_dev *finisar, u8 *buf,
 	return -ETIMEDOUT;
 }
 
-int finisar_raw_write(struct finisar_dev *finisar,
+int sfp_raw_write(struct sfp_dev *sfp,
 		u8 *buf,
 		u8 offset,
 		unsigned int count,
@@ -116,20 +115,20 @@ int finisar_raw_write(struct finisar_dev *finisar,
 {
 	int ret = 0;
 
-	finisar->type = type;
+	sfp->type = type;
 
-	if (unlikely(finisar->type != FINISAR_MEM_DIAG))
+	if (unlikely(sfp->type != SFP_MEM_DIAG))
 		return -ENOMEM;
 
 	if (unlikely(!count))
 		return count;
 
-	mutex_lock(&finisar->lock);
+	mutex_lock(&sfp->lock);
 
 	while (count) {
 		int status;
 
-		status = finisar_eeprom_write(finisar, buf, offset, count);
+		status = sfp_eeprom_write(sfp, buf, offset, count);
 		if (status <= 0) {
 			if (ret == 0)
 				ret = status;
@@ -141,20 +140,20 @@ int finisar_raw_write(struct finisar_dev *finisar,
 		ret += status;
 	}
 
-	mutex_unlock(&finisar->lock);
+	mutex_unlock(&sfp->lock);
 
 	return ret;
 }
-EXPORT_SYMBOL(finisar_raw_write);
+EXPORT_SYMBOL(sfp_raw_write);
 
-static int finisar_eeprom_read(struct finisar_dev *finisar, u8 *buf,
+static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 		u8 offset, unsigned int count)
 {
 	struct i2c_client *client;
 	u8 msgbuf[2];
 	struct i2c_msg msg[2];
 	unsigned long timeout, read_time;
-	enum mem_type type = finisar->type;
+	enum mem_type type = sfp->type;
 	int status, i;
 
 	if (offset > io_limit)
@@ -163,13 +162,12 @@ static int finisar_eeprom_read(struct finisar_dev *finisar, u8 *buf,
 	memset(msg, 0, sizeof(msg));
 
 	/* Determine the memory (eeprom/diagnostics) to read */
-	client = ((type == FINISAR_MEM_EEPROM) ?
-			finisar->client[0] : finisar->client[1]);
+	client = ((type == SFP_MEM_EEPROM) ? sfp->client[0] : sfp->client[1]);
 
 	if (count > io_limit)
 		count = io_limit;
 
-	switch (finisar->use_smbus) {
+	switch (sfp->use_smbus) {
 	case I2C_SMBUS_I2C_BLOCK_DATA:
 		if (count > I2C_SMBUS_BLOCK_MAX)
 			count = I2C_SMBUS_BLOCK_MAX;
@@ -201,7 +199,7 @@ static int finisar_eeprom_read(struct finisar_dev *finisar, u8 *buf,
 	timeout = jiffies + msecs_to_jiffies(write_timeout);
 	do {
 		read_time = jiffies;
-		switch (finisar->use_smbus) {
+		switch (sfp->use_smbus) {
 		case I2C_SMBUS_I2C_BLOCK_DATA:
 			status = i2c_smbus_read_i2c_block_data(client, offset,
 					count, buf);
@@ -239,7 +237,7 @@ static int finisar_eeprom_read(struct finisar_dev *finisar, u8 *buf,
 	return -ETIMEDOUT;
 }
 
-int finisar_raw_read(struct finisar_dev *finisar,
+int sfp_raw_read(struct sfp_dev *sfp,
 		u8 *buf,
 		u8 offset,
 		unsigned int count,
@@ -247,17 +245,17 @@ int finisar_raw_read(struct finisar_dev *finisar,
 {
 	int ret = 0;
 
-	finisar->type = type;
+	sfp->type = type;
 
 	if (unlikely(!count))
 		return count;
 
-	mutex_lock(&finisar->lock);
+	mutex_lock(&sfp->lock);
 
 	while (count) {
 		int status;
 
-		status = finisar_eeprom_read(finisar, buf, offset, count);
+		status = sfp_eeprom_read(sfp, buf, offset, count);
 		if (status <= 0) {
 			if (ret == 0)
 				ret = status;
@@ -269,48 +267,48 @@ int finisar_raw_read(struct finisar_dev *finisar,
 		ret += status;
 	}
 
-	mutex_unlock(&finisar->lock);
+	mutex_unlock(&sfp->lock);
 
 	return ret;
 }
-EXPORT_SYMBOL(finisar_raw_read);
+EXPORT_SYMBOL(sfp_raw_read);
 
-static unsigned long long do_bdata_sanity_check(struct finisar *info)
+static unsigned long long do_bdata_sanity_check(struct sfp *info)
 {
 	unsigned long long csum = 0;
 	u8 *taddr;
 	int i;
 
 	taddr = &info->type;
-	for (i = 0; i < FINISAR_BASIC_DATA_SIZE; i++) {
+	for (i = 0; i < SFP_BASIC_DATA_SIZE; i++) {
 		csum += *taddr;
 		taddr++;
 	}
 	return csum;
 }
 
-static int read_finisar_info(struct finisar_dev *finisar)
+static int read_sfp_info(struct sfp_dev *sfp)
 {
-	struct device *dev = &(finisar->client[0]->dev);
+	struct device *dev = &(sfp->client[0]->dev);
 	u8 offset = 0;
 	unsigned long long csum;
 	int ret = 0;
-	unsigned int count = FINISAR_EEPROM_INFO_SIZE;
-	enum mem_type type = FINISAR_MEM_EEPROM;
-	u8 *buf = &(finisar->info.type);
+	unsigned int count = SFP_EEPROM_INFO_SIZE;
+	enum mem_type type = SFP_MEM_EEPROM;
+	u8 *buf = &(sfp->info.type);
 
 	/* Try reading basic eeprom info */
-	ret = finisar_raw_read(finisar, buf, offset, count, type);
+	ret = sfp_raw_read(sfp, buf, offset, count, type);
 	if (ret != count) {
-		dev_dbg(dev, "basic data read failure");
+		dev_err(dev, "basic data read failure");
 		ret = -1;
 	}
 
 	/* Check the read was proper */
-	csum = do_bdata_sanity_check(&finisar->info);
+	csum = do_bdata_sanity_check(&sfp->info);
 
-	if ((u8)csum != finisar->info.check_code_b) {
-		dev_dbg(dev, "basic data verification failed");
+	if ((u8)csum != sfp->info.check_code_b) {
+		dev_err(dev, "basic data verification failed");
 		ret = -1;
 		goto out;
 	}
@@ -343,32 +341,31 @@ static irqreturn_t prs_handler(int irq, void *cookie)
 	return IRQ_HANDLED;
 }
 
-struct finisar_dev *get_attached_finisar_dev(struct device_node
-						*finisar_dev_node)
+struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node)
 {
-	struct finisar_dev *finisar_dev = NULL;
+	struct sfp_dev *sfp_dev = NULL;
 
-	if (list_empty(&finisar_dev_list))
+	if (list_empty(&sfp_dev_list))
 		return NULL;
 
-	raw_spin_lock(&finisar_list_lock);
+	raw_spin_lock(&sfp_list_lock);
 
-	list_for_each_entry(finisar_dev, &finisar_dev_list, list) {
-		if (finisar_dev_node == finisar_dev->dev_node)
+	list_for_each_entry(sfp_dev, &sfp_dev_list, list) {
+		if (sfp_dev_node == sfp_dev->dev_node)
 			break;
 	}
 
-	raw_spin_unlock(&finisar_list_lock);
+	raw_spin_unlock(&sfp_list_lock);
 
-	return finisar_dev;
+	return sfp_dev;
 }
-EXPORT_SYMBOL(get_attached_finisar_dev);
+EXPORT_SYMBOL(get_attached_sfp_dev);
 
-void set_finisar_txdisable(struct finisar_dev *finisar, unsigned value)
+void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value)
 {
-	gpio_set_value(finisar->tx_disable, value);
+	gpio_set_value(sfp->tx_disable, value);
 }
-EXPORT_SYMBOL(set_finisar_txdisable);
+EXPORT_SYMBOL(set_sfp_txdisable);
 
 static int config_gpio_out(unsigned int pin, const char *label)
 {
@@ -377,7 +374,7 @@ static int config_gpio_out(unsigned int pin, const char *label)
 
 static int config_gpio_irq(unsigned int pin, const char *label,
 		irqreturn_t (*handler) (int, void*),
-		struct finisar_dev *finisar)
+		struct sfp_dev *sfp)
 {
 	int ret, irq;
 
@@ -389,7 +386,7 @@ static int config_gpio_irq(unsigned int pin, const char *label,
 	if (ret < 0)
 		goto err_get_irq_num_failed;
 
-	ret = request_irq(irq, handler, 0, label, finisar);
+	ret = request_irq(irq, handler, 0, label, sfp);
 	if (ret)
 		goto err_request_irq_failed;
 
@@ -400,45 +397,44 @@ err_request_gpio_failed:
 	return ret;
 }
 
-static int config_finisar_lines(struct finisar_dev *finisar)
+static int config_sfp_lines(struct sfp_dev *sfp)
 {
 	int ret = 0;
 
 	return 0; /* need to implement with pca 9565 driver changes */
 	/* Get the GPIO pin numbers from device node */
-	finisar->irq_txfault = of_get_named_gpio(finisar->dev_node,
-				"finisar-int-txfault", 0);
-	finisar->irq_rxlos = of_get_named_gpio(finisar->dev_node,
-				"finisar-int-rxlos", 0);
-	finisar->irq_prs = of_get_named_gpio(finisar->dev_node,
-				"finisar-int-prs", 0);
-	finisar->tx_disable = of_get_named_gpio(finisar->dev_node,
-				"finisar-int-disable", 0);
+	sfp->irq_txfault = of_get_named_gpio(sfp->dev_node,
+				"sfp-int-txfault", 0);
+	sfp->irq_rxlos = of_get_named_gpio(sfp->dev_node,
+				"sfp-int-rxlos", 0);
+	sfp->irq_prs = of_get_named_gpio(sfp->dev_node,
+				"sfp-int-prs", 0);
+	sfp->tx_disable = of_get_named_gpio(sfp->dev_node,
+				"sfp-int-disable", 0);
 
 	/* Check enhanced options supported by transceiver
 	 * and configure the pins accordingly
 	 */
-	if (finisar->info.options[1] & TX_FAULT_BIT3_EN) {
-		ret = config_gpio_irq(finisar->irq_txfault, "finisar txfault",
-				txfault_handler, finisar);
+	if (sfp->info.options[1] & TX_FAULT_BIT3_EN) {
+		ret = config_gpio_irq(sfp->irq_txfault, "sfp txfault",
+				txfault_handler, sfp);
 		if (ret < 0)
 			goto out;
 	}
-	if (finisar->info.options[1] & LOS_BIT1_EN) {
-		ret = config_gpio_irq(finisar->irq_rxlos, "finisar los",
-				rxlos_handler, finisar);
+	if (sfp->info.options[1] & LOS_BIT1_EN) {
+		ret = config_gpio_irq(sfp->irq_rxlos, "sfp los",
+				rxlos_handler, sfp);
 		if (ret < 0)
 			goto out;
 	}
 
 	/* TBD: Not sure whether PRS is interrupt */
-	ret = config_gpio_irq(finisar->irq_prs, "finisar prs", prs_handler,
-				finisar);
+	ret = config_gpio_irq(sfp->irq_prs, "sfp prs", prs_handler, sfp);
 	if (ret < 0)
 		goto out;
 
-	if (finisar->info.options[1] & TX_DISABLE_BIT4_EN) {
-		ret = config_gpio_out(finisar->tx_disable, "finisar txdisable");
+	if (sfp->info.options[1] & TX_DISABLE_BIT4_EN) {
+		ret = config_gpio_out(sfp->tx_disable, "sfp txdisable");
 		if (ret < 0)
 			goto out;
 	}
@@ -447,10 +443,10 @@ out:
 	return ret;
 }
 
-static int finisar_probe(struct i2c_client *client,
+static int sfp_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
 {
-	struct finisar_dev *finisar = NULL;
+	struct sfp_dev *sfp = NULL;
 	struct device_node *node = NULL;
 	struct device *dev = &client->dev;
 	unsigned int num_addr = 0;
@@ -466,12 +462,12 @@ static int finisar_probe(struct i2c_client *client,
 	if (client->dev.of_node) {
 		of_property_read_u32(client->dev.of_node, "max-addr",
 				&num_addr);
-		finisar = kzalloc((sizeof(struct finisar_dev) +
+		sfp = kzalloc((sizeof(struct sfp_dev) +
 				num_addr * sizeof(struct i2c_client *)),
 				GFP_KERNEL);
-		if (!finisar) {
+		if (!sfp) {
 			err = -ENOMEM;
-			dev_dbg(dev, "probe error\n");
+			dev_err(dev, "probe error\n");
 			goto err_out;
 		}
 	}
@@ -498,16 +494,16 @@ static int finisar_probe(struct i2c_client *client,
 	if (use_smbus && write_max > I2C_SMBUS_BLOCK_MAX)
 		write_max = I2C_SMBUS_BLOCK_MAX;
 
-	/* ------------ Start populating finisar_dev ---------- */
-	finisar->dev_node = node;
-	finisar->write_max = write_max;
-	finisar->num_addresses = num_addr;
-	finisar->use_smbus = use_smbus;
-	mutex_init(&finisar->lock);
+	/* ------------ Start populating sfp_dev ---------- */
+	sfp->dev_node = node;
+	sfp->write_max = write_max;
+	sfp->num_addresses = num_addr;
+	sfp->use_smbus = use_smbus;
+	mutex_init(&sfp->lock);
 
 	/* buffer (data + address at the beginning) */
-	finisar->writebuf = kmalloc(write_max + 2, GFP_KERNEL);
-	if (!finisar->writebuf) {
+	sfp->writebuf = kmalloc(write_max + 2, GFP_KERNEL);
+	if (!sfp->writebuf) {
 		err = -ENOMEM;
 		goto err_struct;
 	}
@@ -519,167 +515,167 @@ static int finisar_probe(struct i2c_client *client,
 	of_property_read_u32_array(client->dev.of_node, "reg", prop,
 			ARRAY_SIZE(prop));
 
-	finisar->id = prop[0];
+	sfp->id = prop[0];
 
 	/* Getting eeprom mem interface address */
-	finisar->client[0] = client;
-	finisar->client[0]->addr = prop[0];
+	sfp->client[0] = client;
+	sfp->client[0]->addr = prop[0];
 
 	/* Getting diagnostic mem interface address */
 	addr = prop[1];
-	finisar->client[1] = i2c_new_dummy(client->adapter, addr);
-	if (!finisar->client[1]) {
-		dev_dbg(dev, "addr 0x%02x unavailable\n", client->addr + 1);
+	sfp->client[1] = i2c_new_dummy(client->adapter, addr);
+	if (!sfp->client[1]) {
+		dev_err(dev, "addr 0x%02x unavailable\n", client->addr + 1);
 		err = -EADDRINUSE;
 		goto err_clients;
 	}
 #if 0
 	addr = prop[2];
-	finisar->client[2] = i2c_new_dummy(client->adapter, addr);
-	if (!finisar->client[2]) {
-		dev_dbg(dev, "addr 0x%02x unavailable\n", addr);
+	sfp->client[2] = i2c_new_dummy(client->adapter, addr);
+	if (!sfp->client[2]) {
+		dev_err(dev, "addr 0x%02x unavailable\n", addr);
 		err = -EADDRINUSE;
 		goto err_clients;
 	}
 #endif
 
-	/* ------------ End populating finisar_dev ---------- */
+	/* ------------ End populating sfp_dev ---------- */
 	/* Configure transceiver pins */
-	if (config_finisar_lines(finisar) < 0) {
-		dev_dbg(dev, "finisar pin configuration failed\n");
+	if (config_sfp_lines(sfp) < 0) {
+		dev_err(dev, "sfp pin configuration failed\n");
 		goto err_clients;
 	}
 
-	dev_dbg(dev, "Tx Fault pin: %d, Rx LOS pin: %d ",
-			finisar->irq_txfault, finisar->irq_rxlos);
-	dev_dbg(dev, "PRS pin: %d, Tx Disable pin: %d ",
-			finisar->irq_prs, finisar->tx_disable);
+	dev_notice(dev, "Tx Fault pin: %d, Rx LOS pin: %d ",
+			sfp->irq_txfault, sfp->irq_rxlos);
+	dev_notice(dev, "PRS pin: %d, Tx Disable pin: %d ",
+			sfp->irq_prs, sfp->tx_disable);
 
 	/* Log i2c performance info */
 	if (use_smbus == I2C_SMBUS_WORD_DATA ||
 		use_smbus == I2C_SMBUS_BYTE_DATA) {
-		dev_dbg(dev, "Falling back to %s reads, perf will suffer\n",
+		dev_notice(dev, "Falling back to %s reads, perf will suffer\n",
 			use_smbus == I2C_SMBUS_WORD_DATA ? "word" : "byte");
 	}
 
-	/* Fill FINISAR info structure and do sanity checks */
-	if (read_finisar_info(finisar) < 0) {
-		dev_dbg(dev, "finisar read failed\n");
+	/* Fill SFP info structure and do sanity checks */
+	if (read_sfp_info(sfp) < 0) {
+		dev_err(dev, "sfp read failed\n");
 		goto err_clients;
 	}
 
-	/* Get the pair cpri device. If found, update the finisar there and
+	/* Get the pair cpri device. If found, update the sfp device there and
 	 * change its state
 	 */
-	finisar->pair_framer = get_attached_cpri_dev(&finisar->dev_node);
+	sfp->pair_framer = get_attached_cpri_dev(&sfp->dev_node);
 
-	/* Add the finisar_dev to global finisar_dev_list. This is required
-	 * since the probe will get called for multiple finisar transceivers
+	/* Add the populated sfp_dev to global sfp_dev_list. This is required
+	 * since the probe will get called for multiple sfp transceivers
 	 */
-	raw_spin_lock(&finisar_list_lock);
-	list_add_tail(&finisar->list, &finisar_dev_list);
-	raw_spin_unlock(&finisar_list_lock);
+	raw_spin_lock(&sfp_list_lock);
+	list_add_tail(&sfp->list, &sfp_dev_list);
+	raw_spin_unlock(&sfp_list_lock);
 
 	/* Set the client data for this i2c transceiver device */
-	i2c_set_clientdata(client, finisar);
+	i2c_set_clientdata(client, sfp);
 
-	dev_info(dev, "finisar dev probe successfull\n");
+	dev_info(dev, "probe successfull\n");
 
 	return 0;
 
 err_clients:
 	for (i = 1; i <= num_addr; i++)
-		if (finisar->client[i])
-			i2c_unregister_device(finisar->client[i]);
+		if (sfp->client[i])
+			i2c_unregister_device(sfp->client[i]);
 err_struct:
-	kfree(finisar);
+	kfree(sfp);
 err_out:
 	dev_dbg(dev, "probe error %d\n", err);
 
 	return err;
 }
 
-static int finisar_remove(struct i2c_client *client)
+static int sfp_remove(struct i2c_client *client)
 {
-	struct finisar_dev *finisar, *finisardev;
+	struct sfp_dev *sfp, *sfpdev;
 	struct list_head *pos, *nx;
 	int i;
 
-	finisar = i2c_get_clientdata(client);
+	sfp = i2c_get_clientdata(client);
 
-	for (i = 1; i < finisar->num_addresses; i++)
-		i2c_unregister_device(finisar->client[i]);
+	for (i = 1; i < sfp->num_addresses; i++)
+		i2c_unregister_device(sfp->client[i]);
 
-	kfree(finisar->writebuf);
+	kfree(sfp->writebuf);
 
-	/* Deleting the finisar device from list */
-	raw_spin_lock(&finisar_list_lock);
-	list_for_each_safe(pos, nx, &finisar_dev_list) {
-		finisardev = list_entry(pos, struct finisar_dev, list);
-		if (finisardev == finisar) {
-			list_del(&finisardev->list);
-			kfree(finisardev);
+	/* Deleting the sfp device from list */
+	raw_spin_lock(&sfp_list_lock);
+	list_for_each_safe(pos, nx, &sfp_dev_list) {
+		sfpdev = list_entry(pos, struct sfp_dev, list);
+		if (sfpdev == sfp) {
+			list_del(&sfpdev->list);
+			kfree(sfpdev);
 			break;
 		}
 	}
-	raw_spin_unlock(&finisar_list_lock);
+	raw_spin_unlock(&sfp_list_lock);
 
-	kfree(finisar);
+	kfree(sfp);
 
-	gpio_free(finisar->irq_txfault);
-	gpio_free(finisar->irq_rxlos);
-	gpio_free(finisar->irq_prs);
-	gpio_free(finisar->tx_disable);
+	gpio_free(sfp->irq_txfault);
+	gpio_free(sfp->irq_rxlos);
+	gpio_free(sfp->irq_prs);
+	gpio_free(sfp->tx_disable);
 
 	return 0;
 }
 
-static const struct i2c_device_id finisar_ids[] = {
+static const struct i2c_device_id sfp_ids[] = {
 	{ "finisar-FTLF8526P3", 0 },
 	{ }
 };
-MODULE_DEVICE_TABLE(i2c, finisar_ids);
+MODULE_DEVICE_TABLE(i2c, sfp_ids);
 
-static struct i2c_driver finisar_driver = {
+static struct i2c_driver sfp_driver = {
 	.driver = {
 		.name = "finisar-FTLF8526P3",
 		.owner = THIS_MODULE,
 	},
-	.probe = finisar_probe,
-	.remove = finisar_remove,
-	.id_table = finisar_ids,
+	.probe = sfp_probe,
+	.remove = sfp_remove,
+	.id_table = sfp_ids,
 };
 
-static int __init finisar_init(void)
+static int __init sfp_init(void)
 {
 	if (!io_limit) {
-		pr_err("finisar: io_limit must not be 0!\n");
+		pr_err("sfp: io_limit must not be 0!\n");
 		return -EINVAL;
 	}
 
 	io_limit = rounddown_pow_of_two(io_limit);
 
-	return i2c_add_driver(&finisar_driver);
+	return i2c_add_driver(&sfp_driver);
 }
-module_init(finisar_init);
+module_init(sfp_init);
 
-static void __exit finisar_exit(void)
+static void __exit sfp_exit(void)
 {
 	struct list_head *pos, *nx;
-	struct finisar_dev *finisar = NULL;
+	struct sfp_dev *sfp = NULL;
 
-	i2c_del_driver(&finisar_driver);
+	i2c_del_driver(&sfp_driver);
 
-	raw_spin_lock(&finisar_list_lock);
-	list_for_each_safe(pos, nx, &finisar_dev_list) {
-		finisar = list_entry(pos, struct finisar_dev, list);
-		list_del(&finisar->list);
-		kfree(finisar);
+	raw_spin_lock(&sfp_list_lock);
+	list_for_each_safe(pos, nx, &sfp_dev_list) {
+		sfp = list_entry(pos, struct sfp_dev, list);
+		list_del(&sfp->list);
+		kfree(sfp);
 	}
-	raw_spin_unlock(&finisar_list_lock);
+	raw_spin_unlock(&sfp_list_lock);
 }
-module_exit(finisar_exit);
+module_exit(sfp_exit);
 
-MODULE_DESCRIPTION("FINISAR DRIVER");
+MODULE_DESCRIPTION("SFP DRIVER");
 MODULE_AUTHOR("Freescale Semiconductor, Inc");
 MODULE_LICENSE("GPL");

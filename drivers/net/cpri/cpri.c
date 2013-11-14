@@ -46,11 +46,11 @@ static struct class *cpri_class;
 static LIST_HEAD(cpri_dev_list);
 raw_spinlock_t cpri_list_lock;
 
-struct cpri_framer *get_attached_cpri_dev(struct device_node **finisar_dev_node)
+struct cpri_framer *get_attached_cpri_dev(struct device_node **sfp_dev_node)
 {
 	struct cpri_dev *cpri_dev = NULL;
 	struct cpri_framer *framer = NULL;
-	struct finisar_dev *finisar_dev;
+	struct sfp_dev *sfp_dev;
 	struct device_node *node = NULL;
 	int i;
 
@@ -59,17 +59,16 @@ struct cpri_framer *get_attached_cpri_dev(struct device_node **finisar_dev_node)
 
 		for (i = 0; i < cpri_dev->framers; i++) {
 			framer = cpri_dev->framer[i];
-			if (*finisar_dev_node == framer->finisar_dev_node) {
-				node = framer->finisar_dev_node;
+			if (*sfp_dev_node == framer->sfp_dev_node) {
+				node = framer->sfp_dev_node;
 				break;
 			}
 		}
 
-		if ((framer->finisar_dev == NULL) && node) {
-			finisar_dev = container_of(finisar_dev_node,
-					struct finisar_dev,
+		if ((framer->sfp_dev == NULL) && node) {
+			sfp_dev = container_of(sfp_dev_node, struct sfp_dev,
 						dev_node);
-			framer->finisar_dev = finisar_dev;
+			framer->sfp_dev = sfp_dev;
 			cpri_state_machine(framer,
 						CPRI_STATE_STANDBY);
 			break;
@@ -335,7 +334,7 @@ int cpri_state_validation(enum cpri_state present_state,
 	int ret = -EINVAL;
 
 	switch (present_state) {
-	case CPRI_STATE_FINISAR_DETACHED:
+	case CPRI_STATE_SFP_DETACHED:
 	case CPRI_STATE_STANDBY:
 		if (new_state <= CPRI_STATE_CONFIGURED ||
 				new_state <= CPRI_STATE_LINK_ERROR)
@@ -416,7 +415,7 @@ static void do_framer_state_update(struct cpri_framer *framer, u32 mask)
 	}
 #if 0
 	if ((mask & LLOS) | (mask & LLOF))
-		cpri_state_machine(framer, CPRI_STATE_FINISAR_DETACHED);
+		cpri_state_machine(framer, CPRI_STATE_SFP_DETACHED);
 #endif
 
 	if (mask & RRE) {
@@ -721,7 +720,7 @@ static int cpri_probe(struct platform_device *pdev)
 		framer->cpri_dev = cpri_dev;
 		framer->cpri_node = np;
 		framer->id = framer_id;
-		framer->framer_state = CPRI_STATE_FINISAR_DETACHED;
+		framer->framer_state = CPRI_STATE_SFP_DETACHED;
 		dev_info(dev, "framer id:%d\n", framer->id);
 
 		framer->regs = of_iomap(child, 0);
@@ -776,18 +775,17 @@ static int cpri_probe(struct platform_device *pdev)
 			dev_err(dev, "framer events not supported\n");
 		}
 
-		/* Get the FINISAR handle and determine the cpri state */
-		framer->finisar_dev_node = of_parse_phandle(child,
-					"finisar-handle", 0);
+		/* Get the SFP handle and determine the cpri state */
+		framer->sfp_dev_node = of_parse_phandle(child,
+					"sfp-handle", 0);
 
-		framer->finisar_dev =
-			get_attached_finisar_dev(framer->finisar_dev_node);
-		if (framer->finisar_dev != NULL) {
+		framer->sfp_dev = get_attached_sfp_dev(framer->sfp_dev_node);
+		if (framer->sfp_dev != NULL) {
 			cpri_state_machine(framer,
 						CPRI_STATE_STANDBY);
 		} else {
-			cpri_state_machine(framer, CPRI_STATE_FINISAR_DETACHED);
-			dev_err(dev, "no finisar, frmr state detached\n");
+			cpri_state_machine(framer, CPRI_STATE_SFP_DETACHED);
+			dev_err(dev, "no sfp, framer state remains detached\n");
 		}
 
 		INIT_WORK(&framer->lineautoneg_task, cpri_linkrate_autoneg);
@@ -796,7 +794,7 @@ static int cpri_probe(struct platform_device *pdev)
 		INIT_WORK(&framer->allautoneg_task, cpri_autoneg_all);
 
 		if (cpri_eth_init(pdev, framer, child) < 0) {
-			dev_err(dev, "eth init fail 'cpri eth nt supported'\n");
+			dev_err(dev, "ethernet init failed 'cpri eth is not supported'\n");
 		}
 	}
 

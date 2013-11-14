@@ -84,7 +84,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_i2c1_1>;
 
-				cpriphy0: finisar0@50 {
+				cpriphy0: sfp0@50 {
 					compatible = "finisar-FTLF8526P3";
 					reg = <0x50 0x51 0x24>;
 					max-addr = <0x3>;
@@ -99,7 +99,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_i2c2_1>;
 
-				cpriphy1: finisar1@50 {
+				cpriphy1: sfp1@50 {
 					compatible = "finisar-FTLF8526P3";
 					reg = <0x50 0x51 0x24>;
 					max-addr = <0x3>;
@@ -114,7 +114,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_i2c3_1>;
 
-				cpriphy2: finisar2@50 {
+				cpriphy2: sfp2@50 {
 					compatible = "finisar-FTLF8526P3";
 					reg = <0x50 0x51 0x24>;
 					max-addr = <0x3>;
@@ -135,7 +135,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_i2c5_1>;
 
-				cpriphy3: finisar3@50 {
+				cpriphy3: sfp3@50 {
 					compatible = "finisar-FTLF8526P3";
 					reg = <0x50 0x51 0x24>;
 					max-addr = <0x3>;

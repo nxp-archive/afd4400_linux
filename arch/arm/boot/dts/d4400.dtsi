@@ -390,7 +390,7 @@
 					 <0 73 0x04>,
 					 <0 75 0x04>,
 					 <0 77 0x04>;
-				finisar-handle = <&cpriphy0>;
+				sfp-handle = <&cpriphy0>;
 				serdes-handle = <&serdes3 2>;
 			};
 
@@ -405,7 +405,7 @@
 					 <0 74 0x4>,
 					 <0 76 0x4>,
 					 <0 78 0x4>;
-				finisar-handle = <&cpriphy1>;
+				sfp-handle = <&cpriphy1>;
 				serdes-handle = <&serdes3 3>;
 				};
 			};
@@ -861,7 +861,7 @@
                                          <0 86 0x04>,
                                          <0 88 0x04>,
                                          <0 90 0x04>;
-                                finisar-handle = <&cpriphy2>;
+                                sfp-handle = <&cpriphy2>;
                                 serdes-handle = <&serdes3 4>;
                         };
 
@@ -876,7 +876,7 @@
                                          <0 87 0x4>,
                                          <0 89 0x4>,
                                          <0 91 0x4>;
-                                finisar-handle = <&cpriphy3>;
+                                sfp-handle = <&cpriphy3>;
                                 serdes-handle = <&serdes3 5>;
                                 };
                         };

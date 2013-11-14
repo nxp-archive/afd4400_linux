@@ -84,67 +84,67 @@ static void cpri_fill_framer_stats(struct cpri_framer *framer)
 						&regs->cpri_lcv, CNT_LCV_MASK);
 }
 
-static void fill_finisar_info(struct cpri_framer *framer,
+static void fill_sfp_info(struct cpri_framer *framer,
 			struct cpri_dev_info *dev_info)
 {
 	int status;
-	struct finisar *info = &(framer->finisar_dev->info);
+	struct sfp *info = &(framer->sfp_dev->info);
 
-	status = finisar_raw_read(framer->finisar_dev, (u8 *)&info->type,
-			0, sizeof(struct finisar), FINISAR_MEM_EEPROM);
+	status = sfp_raw_read(framer->sfp_dev, (u8 *)&info->type,
+			0, sizeof(struct sfp), SFP_MEM_EEPROM);
 	if (status < 0) {
-		dev_err(framer->cpri_dev->dev, "FINISAR read error");
+		dev_err(framer->cpri_dev->dev, "SFP read error");
 		return;
 	}
 
-	dev_info->finisar_info.type = info->type;
-	dev_info->finisar_info.ext_type = info->ext_type;
-	dev_info->finisar_info.connector_type = info->connector_type;
+	dev_info->sfp_info.type = info->type;
+	dev_info->sfp_info.ext_type = info->ext_type;
+	dev_info->sfp_info.connector_type = info->connector_type;
 
-	memcpy(dev_info->finisar_info.compatibility_code,
+	memcpy(dev_info->sfp_info.compatibility_code,
 		info->compatibility_code, sizeof(info->compatibility_code));
 
-	dev_info->finisar_info.encoding = info->encoding;
-	dev_info->finisar_info.bitrate = info->bitrate;
-	dev_info->finisar_info.link_len_9u_km = info->link_len_9u_km;
-	dev_info->finisar_info.link_len_9u_100m = info->link_len_9u_100m;
-	dev_info->finisar_info.link_len_50u_10m = info->link_len_50u_10m;
-	dev_info->finisar_info.link_len_62_5u_10m = info->link_len_62_5u_10m;
-	dev_info->finisar_info.link_len_cu_m = info->link_len_cu_m;
+	dev_info->sfp_info.encoding = info->encoding;
+	dev_info->sfp_info.bitrate = info->bitrate;
+	dev_info->sfp_info.link_len_9u_km = info->link_len_9u_km;
+	dev_info->sfp_info.link_len_9u_100m = info->link_len_9u_100m;
+	dev_info->sfp_info.link_len_50u_10m = info->link_len_50u_10m;
+	dev_info->sfp_info.link_len_62_5u_10m = info->link_len_62_5u_10m;
+	dev_info->sfp_info.link_len_cu_m = info->link_len_cu_m;
 
-	memcpy(dev_info->finisar_info.vendor_name,
+	memcpy(dev_info->sfp_info.vendor_name,
 		info->vendor_name, sizeof(info->vendor_name));
 
-	memcpy(dev_info->finisar_info.vendor_oui,
+	memcpy(dev_info->sfp_info.vendor_oui,
 		info->vendor_oui, sizeof(info->vendor_oui));
 
-	memcpy(dev_info->finisar_info.vendor_pn,
+	memcpy(dev_info->sfp_info.vendor_pn,
 		info->vendor_pn, sizeof(info->vendor_pn));
 
-	memcpy(dev_info->finisar_info.vendor_rev,
+	memcpy(dev_info->sfp_info.vendor_rev,
 		info->vendor_rev, sizeof(info->vendor_rev));
 
-	memcpy(dev_info->finisar_info.wavelength,
+	memcpy(dev_info->sfp_info.wavelength,
 		info->wavelength, sizeof(info->wavelength));
 
-	dev_info->finisar_info.check_code_b = info->check_code_b;
+	dev_info->sfp_info.check_code_b = info->check_code_b;
 
-	memcpy(dev_info->finisar_info.options,
+	memcpy(dev_info->sfp_info.options,
 		info->options, sizeof(info->options));
 
-	dev_info->finisar_info.bitrate_max = info->bitrate_max;
-	dev_info->finisar_info.bitrate_min = info->bitrate_min;
+	dev_info->sfp_info.bitrate_max = info->bitrate_max;
+	dev_info->sfp_info.bitrate_min = info->bitrate_min;
 
-	memcpy(dev_info->finisar_info.vendor_sn,
+	memcpy(dev_info->sfp_info.vendor_sn,
 		info->vendor_sn, sizeof(info->vendor_sn));
 
-	memcpy(dev_info->finisar_info.manf_date,
+	memcpy(dev_info->sfp_info.manf_date,
 		info->manf_date, sizeof(info->manf_date));
 
-	dev_info->finisar_info.diag_type = info->diag_type;
-	dev_info->finisar_info.enhanced_options = info->enhanced_options;
-	dev_info->finisar_info.finisar_compliance = info->finisar_compliance;
-	dev_info->finisar_info.check_code_e = info->check_code_e;
+	dev_info->sfp_info.diag_type = info->diag_type;
+	dev_info->sfp_info.enhanced_options = info->enhanced_options;
+	dev_info->sfp_info.sfp_compliance = info->sfp_compliance;
+	dev_info->sfp_info.check_code_e = info->check_code_e;
 }
 
 static void cpri_fill_framer_info(struct cpri_dev_info *info,
@@ -241,9 +241,9 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 					&regs->cpri_hfn,
 					RECOVERED_HFN_CNT_MASK);
 
-	/* FINISAR info */
-	if (framer->finisar_dev != NULL)
-		fill_finisar_info(framer, info);
+	/* SFP info */
+	if (framer->sfp_dev != NULL)
+		fill_sfp_info(framer, info);
 
 	/* Current framer param settings */
 	memcpy((struct cpri_dev_init_params *)&info->init_params,
@@ -469,11 +469,11 @@ static int validate_cpri_state(struct cpri_framer *framer, unsigned int cmd)
 {
 	int ret = 0;
 
-	/* this is commented need to enable after finisar functionality
+	/* this is commented temporarily need to enable after sfp functionality
 	 */
 #if 0
-	if (framer->framer_state == CPRI_STATE_FINISAR_DETACHED &&
-			(framer->finisar_dev == NULL)) {
+	if (framer->framer_state == CPRI_STATE_SFP_DETACHED &&
+			(framer->sfp_dev == NULL)) {
 		ret = -EINVAL;
 	}
 #endif
@@ -518,10 +518,10 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	u32 *buf = NULL;
 	unsigned int framer_state;
 
-	struct finisar_reg_write_buf finisar_wreg;
-	struct finisar_reg *finisar_wregset;
-	struct finisar_reg_read_buf finisar_rreg;
-	u8 *finisar_buf = NULL;
+	struct sfp_reg_write_buf sfp_wreg;
+	struct sfp_reg *sfp_wregset;
+	struct sfp_reg_read_buf sfp_rreg;
+	u8 *sfp_buf = NULL;
 
 	int err = 0, count, i;
 	void __user *ioargp = (void __user *)arg;
@@ -738,96 +738,89 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		kfree(wregset);
 		break;
 
-	case FINISAR_READ_REG:
-		if (copy_from_user(&finisar_rreg,
-			(struct finisar_reg_read_buf *)ioargp,
-				sizeof(struct finisar_reg_read_buf)) != 0) {
+	case SFP_READ_REG:
+		if (copy_from_user(&sfp_rreg, (struct sfp_reg_read_buf *)ioargp,
+				sizeof(struct sfp_reg_read_buf)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
 
-		finisar_buf = kzalloc(sizeof(u8) * finisar_rreg.count,
-				GFP_KERNEL);
-		if (!finisar_buf) {
+		sfp_buf = kzalloc(sizeof(u8) * sfp_rreg.count, GFP_KERNEL);
+		if (!sfp_buf) {
 			err = -ENOMEM;
 			goto out;
 		}
 
-		finisar_raw_read(framer->finisar_dev, finisar_buf,
-			finisar_rreg.start_offset,
-			finisar_rreg.count, FINISAR_MEM_EEPROM);
+		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
+			sfp_rreg.count, SFP_MEM_EEPROM);
 
-		if (copy_to_user(finisar_rreg.reg_buff, buf,
+		if (copy_to_user(sfp_rreg.reg_buff, buf,
 				sizeof(u8) * rreg.count)) {
 			err = -EFAULT;
-			kfree(finisar_buf);
+			kfree(sfp_buf);
 			goto out;
 		}
 
-		kfree(finisar_buf);
+		kfree(sfp_buf);
 		break;
 
-	case FINISAR_READ_DIAG_REG:
-		if (copy_from_user(&finisar_rreg,
-				(struct finisar_reg_read_buf *)ioargp,
-				sizeof(struct finisar_reg_read_buf)) != 0) {
+	case SFP_READ_DIAG_REG:
+		if (copy_from_user(&sfp_rreg, (struct sfp_reg_read_buf *)ioargp,
+				sizeof(struct sfp_reg_read_buf)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
 
-		finisar_buf = kzalloc(sizeof(u8) * finisar_rreg.count,
-				GFP_KERNEL);
-		if (!finisar_buf) {
+		sfp_buf = kzalloc(sizeof(u8) * sfp_rreg.count, GFP_KERNEL);
+		if (!sfp_buf) {
 			err = -ENOMEM;
 			goto out;
 		}
 
-		finisar_raw_read(framer->finisar_dev, finisar_buf,
-			finisar_rreg.start_offset,
-			finisar_rreg.count, FINISAR_MEM_DIAG);
+		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
+			sfp_rreg.count, SFP_MEM_DIAG);
 
-		if (copy_to_user(finisar_rreg.reg_buff, buf,
+		if (copy_to_user(sfp_rreg.reg_buff, buf,
 				sizeof(u8) * rreg.count)) {
 			err = -EFAULT;
-			kfree(finisar_buf);
+			kfree(sfp_buf);
 			goto out;
 		}
 
-		kfree(finisar_buf);
+		kfree(sfp_buf);
 		break;
 
-	case FINISAR_WRITE_REG:
-		if (copy_from_user(&finisar_wreg,
-				(struct finisar_reg_write_buf *) ioargp,
-				sizeof(struct finisar_reg_write_buf)) != 0) {
+	case SFP_WRITE_REG:
+		if (copy_from_user(&sfp_wreg,
+				(struct sfp_reg_write_buf *) ioargp,
+				sizeof(struct sfp_reg_write_buf)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
 
-		count = finisar_wreg.count;
-		finisar_wregset = kmalloc((sizeof(struct finisar_reg) * count),
+		count = sfp_wreg.count;
+		sfp_wregset = kmalloc((sizeof(struct sfp_reg) * count),
 					GFP_KERNEL);
-		if (!finisar_wregset) {
+		if (!sfp_wregset) {
 			err = -ENOMEM;
 			goto out;
 		}
 
-		if (copy_from_user(finisar_wregset,
-				(struct finisar_reg *) finisar_wreg.regs,
-				(sizeof(struct finisar_reg) * count)) != 0) {
+		if (copy_from_user(sfp_wregset,
+				(struct sfp_reg *) sfp_wreg.regs,
+				(sizeof(struct sfp_reg) * count)) != 0) {
 			err = -EFAULT;
-			kfree(finisar_wregset);
+			kfree(sfp_wregset);
 			goto out;
 		}
 
 		for (i = 0; i < count; i++) {
-			finisar_raw_write(framer->finisar_dev,
-				&(finisar_wregset + i)->value,
-				(finisar_wregset + i)->offset, 1,
-				FINISAR_MEM_DIAG);
+			sfp_raw_write(framer->sfp_dev,
+				&(sfp_wregset + i)->value,
+				(sfp_wregset + i)->offset, 1, SFP_MEM_DIAG);
 		}
 
-		kfree(finisar_wregset);
+		kfree(sfp_wregset);
 		break;
 
 	case CPRI_BFN_RESET:

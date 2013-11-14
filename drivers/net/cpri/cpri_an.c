@@ -832,7 +832,7 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 				CONF_TX_EN_MASK);
 #if 0
 		/* Enable SFP Tx */
-		set_finisar_txdisable(framer->finisar_dev, 1);
+		set_sfp_txdisable(framer->sfp_dev, 1);
 
 		schedule_timeout_interruptible(param->tx_on_time * HZ);
 
@@ -841,7 +841,7 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 				CONF_TX_EN_MASK);
 
 		/* Disable SFP Tx */
-		set_finisar_txdisable(framer->finisar_dev, 0);
+		set_sfp_txdisable(framer->sfp_dev, 0);
 
 		schedule_timeout_interruptible(param->tx_off_time * HZ);
 #endif

@@ -355,6 +355,6 @@ source "drivers/net/hyperv/Kconfig"
 
 source "drivers/net/cpri/Kconfig"
 
-source "drivers/net/cpri/finisar/Kconfig"
+source "drivers/net/cpri/sfp/Kconfig"
 
 endif # NETDEVICES
