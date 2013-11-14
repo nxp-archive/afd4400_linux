@@ -1,5 +1,4 @@
 /*
- *
  * Copyright (C) 2013 Freescale Semiconductor, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,9 +34,18 @@
 #define __VSPA_UAPI_H_
 
 #define VSP_MAGIC_NUM 'V'
+
+/* IRQ request IOCTL */
 #define IOCTL_REQ_IRQ   _IOR(VSP_MAGIC_NUM, 1, int)
+
+/* Power Down request for vspa */
 #define IOCTL_REQ_PDN   _IOR(VSP_MAGIC_NUM, 2, int)
+
+/* Power UP request for vspa */
 #define IOCTL_REQ_PUP   _IOR(VSP_MAGIC_NUM, 3, int)
+
+/* Free the persistent memory & irq */
+#define IOCTL_REQ_FREE   _IOR(VSP_MAGIC_NUM, 4, int)
 
 /* mmap offset argument for vspa regsiters */
 #define VSPA_REG_OFFSET	0

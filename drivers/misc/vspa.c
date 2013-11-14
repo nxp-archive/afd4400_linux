@@ -124,7 +124,7 @@ static int vspa_register_irqs(struct vspa_device *vspadev)
 			return rc;
 		vspadev->irq_enabled = 1;
 	}
-	return 0;
+	return rc;
 }
 
 static long vspa_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
@@ -143,6 +143,17 @@ static long vspa_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 	case IOCTL_REQ_PUP:
 		return d4400_gpc_vspa_full_pow_up(vspadev->id);
 
+	case IOCTL_REQ_FREE:
+		if (vspadev->mem_context != 0) {
+			kfree((void *)vspadev->mem_context);
+			vspadev->mem_context = 0;
+		}
+		if (vspadev->irq_enabled) {
+			vspa_reg_write(vspadev->regs + IRQEN_REG_OFFSET, 0);
+			free_irq(vspadev->vspa_irq_no,vspadev);
+			vspadev->irq_enabled = 0;
+		}
+		return rc;
 	default:
 		return -EINVAL;
 	}
