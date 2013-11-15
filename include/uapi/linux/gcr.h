@@ -14,7 +14,6 @@
 #ifndef __UAPI_GCR_H
 #define __UAPI_GCR_H
 
-#define GCR_MOD_NAME                     "/dev/gcr_dev"
 
 #define GCR_IOC_MAGIC           'G'
 
