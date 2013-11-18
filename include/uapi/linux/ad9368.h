@@ -1,8 +1,6 @@
 /*
  * include/uapi/ad9368.h : AD9368 user space interface
  *
- * Author: Pankaj Chauhan  <pankaj.chauhan@freescale.com>
- * 
  * Copyright (C) 2013 Freescale Semiconductor, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
