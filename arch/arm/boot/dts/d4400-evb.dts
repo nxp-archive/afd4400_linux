@@ -164,6 +164,12 @@
                             compatible = "dallas,ds3232";
                             reg = <0x68>;
                         };
+			eeprom@54 {
+                            compatible = "at24,24c02";
+                            pagesize = <16>;
+                            reg = <0x54>;
+                        };
+
                     };
                 };
 		    };
