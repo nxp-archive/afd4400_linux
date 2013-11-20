@@ -3,8 +3,6 @@
 * System reset controller driver. This driver provides API
 * for controlling AFD-4400 reset and boot control.
 *
-* Author: pankaj chauhan <pankaj.chauhan@freescale.com>
-*
 * Copyright 2013 Freescale Semiconductor, Inc.
 *
 * This program is free software; you can redistribute it and/or modify it

@@ -1,7 +1,6 @@
 /*
  * drivers/misc/vspa.c
  * VSPA device driver
- * Author: Vineet Sharma b44341@freescale.com
  *
  * Copyright 2013 Freescale Semiconductor, Inc.
  *

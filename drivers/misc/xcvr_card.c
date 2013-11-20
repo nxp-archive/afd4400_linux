@@ -9,7 +9,6 @@
  * underlying devices.
  *
  * This driver is derived work from drivers/rf/phy/ad9361.c
- * Author: Rohit Thapliyal <rohit.thapliyal@freescale.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as

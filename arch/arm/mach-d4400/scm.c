@@ -1,9 +1,6 @@
 /*
  * arch/arm/mach-d4400/scm.c
  *
- * Author: Meenakshi Aggarwal <meenakshi.aggarwaln@freescale.com>
- * Author: Anand Singh <anand.singh@freescale.com>
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as
  * published by the Free Software Foundation.

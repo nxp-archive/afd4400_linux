@@ -1,8 +1,6 @@
 /*
  * SerDes device driver for D4400
  *
- * Author: Anil Jaiswal b44339@freescale.com
- *
  * Copyright 2013 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute  it and/or modify it
