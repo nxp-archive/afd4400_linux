@@ -169,6 +169,10 @@
                             pagesize = <16>;
                             reg = <0x54>;
                         };
+		        adt7461@4c {
+                            compatible = "adi,adt7461";
+                            reg = <0x4c>;
+			};
 
                     };
                 };
