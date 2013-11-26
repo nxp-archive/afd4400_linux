@@ -754,8 +754,8 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
 			sfp_rreg.count, SFP_MEM_EEPROM);
 
-		if (copy_to_user(sfp_rreg.reg_buff, buf,
-				sizeof(u8) * rreg.count)) {
+		if (copy_to_user(sfp_rreg.reg_buff, sfp_buf,
+				sizeof(u8) * sfp_rreg.count)) {
 			err = -EFAULT;
 			kfree(sfp_buf);
 			goto out;
@@ -780,8 +780,8 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
 			sfp_rreg.count, SFP_MEM_DIAG);
 
-		if (copy_to_user(sfp_rreg.reg_buff, buf,
-				sizeof(u8) * rreg.count)) {
+		if (copy_to_user(sfp_rreg.reg_buff, sfp_buf,
+				sizeof(u8) * sfp_rreg.count)) {
 			err = -EFAULT;
 			kfree(sfp_buf);
 			goto out;
