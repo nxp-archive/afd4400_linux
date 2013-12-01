@@ -230,7 +230,15 @@
                                         reg = <0x08000000 0x08000000>;
                                         label = "filesystem";
                                 };
-			};
+                    };
+
+                    qixisfpga@10000000 {
+                        compatible = "fsl,d4400-fpga";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        status = "okay";
+                        reg = <0x10000000 0xFF>;
+                    };
                 };
 		xcvr1 {
 			#address-cells = <1>;
