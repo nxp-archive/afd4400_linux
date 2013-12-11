@@ -31,6 +31,10 @@
 
 #define F(frate)  ((frate & 0x06) >> 1)
 
+#define SERDES_AMP_RED_MASK 0xffffffd0
+#define SERDES_CPRI_AMP_VAL 0x10
+
+
 static LIST_HEAD(serdes_dev_list);
 raw_spinlock_t serdes_list_lock;
 
@@ -195,7 +199,14 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 	/* TPLL_LES and RPLL_LES must be same */
 	if (((cflag & 0x4) >> 2) ^ ((cflag & 0x2) >> 1))
 		return -EINVAL;
-
+	if (lane_param->gen_conf.lane_prot == SERDES_LANE_PROTS_CPRI) {
+		reg = (u32 *) (&base_reg->lane_csr[lane_id].tx_ecr0);
+		val = ioread32(reg);
+		val &= SERDES_AMP_RED_MASK;
+		val |= SERDES_CPRI_AMP_VAL;
+		srds_write_reg(reg, val);
+		val = ioread32(reg);
+	}
 	/* Get PLL ID according to lane */
 	tpll_id = (cflag & 0x2) >> 1;
 	if ((!tpll_id) && (lane_id > LANE_B))
