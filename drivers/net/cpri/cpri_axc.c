@@ -695,8 +695,8 @@ int axc_validate(struct cpri_framer *framer, struct axc_info *param,
 		k1_ptr = map_table->k1_bitmap[loop];
 		bf_map[0] = k0_ptr[0];
 		bf_map[1] = k0_ptr[1];
-		bf_map[0] = k1_ptr[0];
-		bf_map[1] = k1_ptr[1];
+		bf_map[0] |= k1_ptr[0];
+		bf_map[1] |= k1_ptr[1];
 		axc_size = size;
 		if (flag & AXC_FLEXI_POSITION_EN)
 			axc_pos = (axc_pos + loop);
@@ -1011,8 +1011,10 @@ void map_table_struct_entry_ctrl(struct axc *axc, unsigned char cmd)
 
 		/* update the bitmap flag for first seg with bitposition offset
 		 */
-		while (bit_set <= 0)
+		do {
 			bitmap |= (0x1 << bit_set--);
+		} while (bit_set > 0);
+		bitmap |= 0x1;
 
 		bitmap = bitmap << bit_position;
 		sbitmap = (segment_bitmap + seg);
@@ -1600,6 +1602,7 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 	u32 tcm_enable;
 	u32 tcm_width;
 	u32 *reg_rcmd1 = (reg_rcmd0 + sizeof(u32));
+	u32 val;
 
 	axc_size = calculate_axc_size(axc);
 
@@ -1615,20 +1618,18 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 		else
 			shift = 0;
 
-		position = AXC_POS_MASK << (6 + (shift * BF_WRDS));
-		tcm_width = AXC_WIDTH_MASK << (11 + (shift * BF_WRDS));
-		axc_num = AXC_NUM_MASK << (1 + (shift * BF_WRDS));
-		tcm_enable = AXC_MEM_ENABLE_MASK << (shift * BF_WRDS);
+		position = (6 + (shift * BF_WRDS));
+		tcm_width = (11 + (shift * BF_WRDS));
+		axc_num = (1 + (shift * BF_WRDS));
+		tcm_enable = (shift * BF_WRDS);
 
 		bit_mapped += subsegment->map_size;
-		dev_dbg(dev, "axcsize: %d bit_mapped: %d subseg->mapsize: %d",
-				axc_size, bit_mapped, subsegment->map_size);
-		axc_size -= bit_mapped;
+		axc_size -= subsegment->map_size;
 		map_width = subsegment->map_size;
 
+		cpri_write(0, reg_rcmd0);
+		cpri_write(0, reg_rcmd1);
 		if (subsegloop == 2) {
-			cpri_reg_clear(reg_rcmd1, MASK_ALL);
-			cpri_reg_clear(reg_rcmd0, MASK_ALL);
 			dev_dbg(dev, "rcmd1 -> subsegNum[%d], sbseg_offst: %d",
 					subsegloop, subsegment->offset);
 			dev_dbg(dev, "tcm_enable: 0x%x, pos[0x%x] - 0x%x\n",
@@ -1637,15 +1638,13 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 			dev_dbg(dev, "tcm_width[0x%x]- %d, axc_num[0x%x]- %d\n",
 					tcm_width, (map_width / 2),
 					axc_num, axc->id);
-			cpri_reg_set_val(reg_rcmd1, position,
-				(subsegment->offset / 2));
-			cpri_reg_set_val(reg_rcmd1, tcm_width,
-				(map_width / 2));
-			cpri_reg_set_val(reg_rcmd1, axc_num, axc->id);
+			val = (((subsegment->offset / 2) << position) |
+					((map_width / 2) << tcm_width) |
+				(axc->id << axc_num) | (1 << tcm_enable));
+			cpri_write(val, reg_rcmd1);
+			dev_dbg(dev, "axcid: %d val: 0x%x", axc->id, val);
 			break;
 		} else {
-			cpri_reg_clear(reg_rcmd0, MASK_ALL);
-			cpri_reg_clear(reg_rcmd1, MASK_ALL);
 			dev_dbg(dev, "rcmd0 -> subsegNum[%d], sbseg_offst: %d",
 					subsegloop, subsegment->offset);
 			dev_dbg(dev, "pos[0x%x] - 0x%x\n",
@@ -1654,12 +1653,11 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 					tcm_width, (map_width / 2),
 					axc_num, axc->id);
 
-			cpri_reg_set_val(reg_rcmd0, position,
-				(subsegment->offset / 2));
-			cpri_reg_set_val(reg_rcmd0, tcm_width,
-				(map_width / 2));
-			cpri_reg_set_val(reg_rcmd0, axc_num, axc->id);
-			cpri_reg_set(reg_rcmd0, tcm_enable);
+			val = (((subsegment->offset / 2) << position) |
+					((map_width / 2) << tcm_width) |
+				(axc->id << axc_num) | (1 << tcm_enable));
+			cpri_write(val, reg_rcmd0);
+			dev_dbg(dev, "axcid: %d, val: 0x%x", axc->id, val);
 			break;
 		}
 	}
@@ -1779,7 +1777,6 @@ int check_for_kval_overlap(struct cpri_framer *framer, unsigned int flag)
 		memset(k1_map, 0, 2 * sizeof(u32));
 	}
 
-
 	cpri_reg_clear(cpri_map_k_select1,
 			(map_table->k0_bitmap[0])[0]);
 	cpri_reg_set(cpri_map_k_select1,
@@ -1789,6 +1786,7 @@ int check_for_kval_overlap(struct cpri_framer *framer, unsigned int flag)
 			(map_table->k0_bitmap[0])[1]);
 	cpri_reg_set(cpri_map_k_select2,
 			(map_table->k1_bitmap[0])[1]);
+
 
 		return 0;
 INVAL:
@@ -1838,6 +1836,7 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 	u32 *reg_rcmd1;
 	u32 *reg_accr;
 	u32 *reg_cr;
+	u32 val;
 
 	if (check_for_kval_overlap(framer, direction)) {
 		dev_err(dev, "k0/k1 overlaps! '- delete axcs and set again'\n");
@@ -1878,11 +1877,9 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 		loop = cpri_reg_get_val(cpri_status, AXC_ENABLE_MASK);
 		mdelay(1);
 	}
-	cpri_reg_set_val(reg_accr, MASK_ALL, 0);
-	cpri_reg_set_val(&regs->cpri_map_tbl_config,
-			AXC_K0_MASK, 0);
-	cpri_reg_set_val(&regs->cpri_map_tbl_config,
-			AXC_K1_MASK, 0);
+	cpri_write(0x0, reg_accr);
+	cpri_write(0x0, &regs->cpri_map_tbl_config);
+
 
 
 	/* configure num axcs for UL/DL */
@@ -1910,7 +1907,6 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 		else
 			k_max = framer->framer_param.k1;
 
-		program_axc_conf_reg(axc);
 
 		seg = get_segment_id(axc_pos, word_size);
 		axc_seg = seg;
@@ -1936,13 +1932,12 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 					segment = (map_table->segments + seg);
 					dev_dbg(dev, "%s segment num: %d\n",
 							__func__, seg);
-					cpri_reg_clear(reg_cma, MASK_ALL);
+					program_axc_conf_reg(axc);
 					bit_mapped = segment_param_set(segment,
 								axc, reg_rcmd0);
-					cpri_reg_write(&framer->regs_lock,
-						reg_cma, AXC_TBL_SEG_ADDR_MASK |
-						AXC_TBL_WRITE_MASK,
-						AXC_TBL_WRITE_MASK | seg);
+					val = AXC_TBL_WRITE_MASK | seg;
+
+					cpri_write(val, reg_cma);
 					axc_size -= bit_mapped;
 					if (axc_size > 0)
 						seg++;
@@ -1953,7 +1948,6 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 			loop2 += k;
 		}
 	}
-	cpri_reg_clear(reg_cma, MASK_ALL);
 
 	cpri_state_machine(framer, CPRI_STATE_AXC_MAP_INIT);
 	return 0;

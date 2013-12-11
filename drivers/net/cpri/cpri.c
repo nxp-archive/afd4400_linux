@@ -89,7 +89,7 @@ static int cpri_open(struct inode *inode, struct file *fp)
 
 	if (framer != NULL) {
 		fp->private_data = framer;
-		dev_info(framer->cpri_dev->dev, "framer id:%d\n", framer->id);
+		dev_dbg(framer->cpri_dev->dev, "framer id:%d\n", framer->id);
 	}
 	else
 		rc = -ENODEV;
