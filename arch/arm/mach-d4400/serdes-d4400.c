@@ -105,10 +105,15 @@ static int serdes_set_group_protocol(enum srds_grp_prot_id grp_prot,
 		mask = SRDS_GRP_PROT_SGMIIA_CFG_MASK |
 			SRDS_GRP_PROT_SGMIIB_CFG_MASK;
 		break;
-	case SERDES_PROT_CPRI:
+	case SERDES_PROT_CPRI_1:
 		reg = (u32 *) (&base_reg->pccr3);
 		val = SRDS_GRP_PROT_CPRIG4_SINGLE_CHANNEL;
 		mask = SRDS_GRP_PROT_CPRIG4_CFG_MASK;
+		break;
+	case SERDES_PROT_CPRI_2:
+		reg = (u32 *) (&base_reg->pccr3);
+		val = SRDS_GRP_PROT_CPRIG6_SINGLE_CHANNEL;
+		mask = SRDS_GRP_PROT_CPRIG6_CFG_MASK;
 		break;
 	case SERDES_PROT_JESD_1_LANE:
 		reg = (u32 *) (&base_reg->pccr5);
@@ -239,7 +244,12 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 		return -EINVAL;
 
 	val |= lane_param->gen_conf.lane_prot << SRDS_LN_GCR_PROTS_SEL;
-	srds_write_reg(reg, val);
+	mask = 0;
+	mask = SRDS_LN_GCR_TRAT_SEL_MASK | SRDS_LN_GCR_RRAT_SEL_MASK |
+		SRDS_LN_GCR_TPLL_LES | SRDS_LN_GCR_RPLL_LES |
+		SRDS_LN_GCR_IF20BIT_EN_MASK | SRDS_LN_GCR_FIRST_LN_MASK |
+		SRDS_LN_GCR_PROTS_SEL_MASK;
+	srds_update_reg(reg, val, mask);
 
 	reg = (u32 *) (&base_reg->lane_csr[lane_id].tcsr3);
 	val = (lane_param->gen_conf.cflag & SERDES_LOOPBACK_EN) <<
@@ -495,9 +505,7 @@ int serdes_init_pll(void *sdev_handle,
 
 
 	/* Update PLL initialized state */
-	srds_update_reg(&sdev->cflag,
-			(1 << pll->pll_id),
-			(1 << pll->pll_id));
+	sdev->cflag |= (1 << pll->pll_id);
 out:
 	return rc;
 }
