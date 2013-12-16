@@ -24,7 +24,7 @@
 
 #define CCM_VPGCSR_OFFSET 0x9C
 #define CCM_CCDR2_OFFSET 0xC
-#define CCM_REV_CLK_SEL  0x4000
+#define CCM_REV_CLK_SEL  0x40000
 #define CCM_REV_CLK_DEV_MASK  0x3
 
 extern spinlock_t d4400_ccm_lock;

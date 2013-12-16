@@ -82,7 +82,7 @@ void d4400_rev_clk_select(u8 cpri_id, u8 clk_dev)
 	u32 val;
 
 	val = readl(ccm_base + CCM_CCDR2_OFFSET);
-	val &= (~CCM_REV_CLK_DEV_MASK) << 16;
+	val &= ~(CCM_REV_CLK_DEV_MASK << 16);
 	val |= clk_dev << 16;
 	if (cpri_id == 1) /* select recover clock from cpri1 else 2 */
 		val &= ~CCM_REV_CLK_SEL;
