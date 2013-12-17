@@ -104,6 +104,13 @@ static void __init d4400_init_late(void)
  *FIXME - Add power management register function here
  */
 	d4400_gpc_init();
+	#if defined(D4400_GIT_LAST_COMMIT_HASH) && defined(D4400_GIT_LAST_COMMIT_DATE)
+	pr_err("KERNEL: git commit: Hash: %.7s; Date: %s)\n",
+		D4400_GIT_LAST_COMMIT_HASH,
+		D4400_GIT_LAST_COMMIT_DATE);
+
+	pr_err("KERNEL: Built %s %s\n", __DATE__, __TIME__);
+	#endif
 }
 
 static void __init d4400_map_io(void)
