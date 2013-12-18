@@ -42,6 +42,13 @@
 #define cpri_eth_next_bde(bdp, base, ring_size) \
 			cpri_skip_bd(bdp, 1, base, ring_size)
 #define CPRI_ETH_PTR_MIN	0x14
+#define CPRI_ETH_PTR_MAX	0x3F
+
+#define CPRI_ETH_PTR_EQU 0
+#define CPRI_ETH_PTR_LOW 1
+#define CPRI_ETH_PTR_HIGH 2
+#define CPRI_ETH_PTR_AVAIL 3
+#define CPRI_ETH_PTR_UNAVAIL -1
 
 struct cpri_eth_extra_stats {
 	unsigned long kernel_dropped;

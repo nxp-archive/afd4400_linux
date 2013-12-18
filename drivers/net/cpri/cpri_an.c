@@ -637,71 +637,47 @@ void cpri_setup_vendor_autoneg(struct cpri_framer *framer)
 		CPRI_STATE_AUTONEG_COMPLETE);
 }
 
-static int check_ethrate(struct cpri_framer *framer)
+/*Check eth pointer value*/
+/*If target=0 check if the rx_eth_rate is within range*/
+/*otherwise compare with target*/
+
+static int check_ethptr(struct cpri_framer *framer, u8 target, u8 *rx_eth_recv)
 {
 	struct cpri_framer_regs *regs = framer->regs;
-	struct cpri_autoneg_output *result = &(framer->autoneg_output);
-	struct device *dev = framer->cpri_dev->dev;
-	u32 tx_eth_rate, rx_eth_rate;
-	int status, err = 0;
-	u8 hf_cnt;
-	static u8 txhfcnt;
+	int status;
+	u8 rx_eth_rate;
 
-
-	txhfcnt = (u8) cpri_reg_get_val(
-			&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
-
-	/* if c&m ptr invalid */
-	while (1) {
-		hf_cnt = (u8) cpri_reg_get_val(
-			&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
-		/* Check whether two HF passed */
-		hf_cnt -= txhfcnt;
-		if (hf_cnt >= 5) {
-			status = cpri_reg_get_val(
+	status = cpri_reg_get_val(
+			&regs->cpri_cmstatus,
+			RX_FAST_CM_PTR_VALID_MASK);
+	rx_eth_rate = (u8) cpri_reg_get_val(
 				&regs->cpri_cmstatus,
-				RX_FAST_CM_PTR_VALID_MASK);
-			rx_eth_rate = cpri_reg_get_val(
-					&regs->cpri_cmstatus,
-					RX_FAST_CM_PTR_MASK);
-			if ((status) && (rx_eth_rate >= CPRI_ETH_PTR_MIN))
-				break;
-			txhfcnt = (u8) cpri_reg_get_val(
-				&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
-		}
-		if (framer->timer_expiry_events ==
-				TEVENT_ETHRATE_SETUP_TEXPIRED) {
-			err = -ETIME;
-			goto out;
-		}
-		dev_dbg(dev, "waiting for atleast 2 HF\n");
-		schedule_timeout_interruptible(msecs_to_jiffies(1));
+				RX_FAST_CM_PTR_MASK);
+
+	if ((status) && (rx_eth_rate >= CPRI_ETH_PTR_MIN) &&
+		(rx_eth_rate <= CPRI_ETH_PTR_MAX)) {
+		if (target == 0)
+			return CPRI_ETH_PTR_AVAIL;
+		else if (rx_eth_rate == target)
+			return CPRI_ETH_PTR_EQU;
+		else if (rx_eth_rate > target) {
+			*rx_eth_recv = rx_eth_rate;
+			return CPRI_ETH_PTR_LOW;
+		} else
+			return CPRI_ETH_PTR_HIGH;
 	}
+	return CPRI_ETH_PTR_UNAVAIL;
+}
 
-
-	if (status) {
-		tx_eth_rate = cpri_reg_get_val(
-					&regs->cpri_cmconfig,
-					TX_FAST_CM_PTR_MASK);
-		mdelay(2);
-
-		rx_eth_rate = cpri_reg_get_val(
-					&regs->cpri_cmstatus,
-					RX_FAST_CM_PTR_MASK);
-
-		if (tx_eth_rate == rx_eth_rate) {
-			result->common_eth_link_rate = rx_eth_rate;
-			dev_info(dev, "eth autoneg success\n");
-			err = 0;
-		} else {
-			err = -ENOLINK;
-			dev_info(dev, "eth autoneg fail:txPtr: %d, txPtr: %d\n",
-				tx_eth_rate, rx_eth_rate);
-		}
+/*Find the next eth pointer from the available eth pool*/
+static u8 find_next_eth_ptr(int *eth_rates, int eth_cnt, int eth_low)
+{
+	int i;
+	for (i = 0; i < eth_cnt; i++) {
+		if (eth_rates[i] >= eth_low)
+			return eth_rates[i];
 	}
-
-out:
-	return err;
+	return 255;
 }
 
 static void eth_setup_timer_expiry_hndlr(unsigned long ptr)
@@ -715,14 +691,16 @@ static void eth_setup_timer_expiry_hndlr(unsigned long ptr)
 void cpri_eth_autoneg(struct work_struct *work)
 {
 	struct cpri_framer *framer = container_of(work, struct cpri_framer,
-						ethautoneg_task);
+							ethautoneg_task);
 	struct cpri_dev *cpdev = framer->cpri_dev;
 	struct cpri_autoneg_params *param = &(framer->autoneg_param);
 	struct timer_list eth_setup_timer;
 	struct cpri_framer_regs *regs = framer->regs;
 	struct device *dev = framer->cpri_dev->dev;
-	u8 tx_eth_rate;
-	int i, err = 0;
+	u8 tx_eth_rate, rx_eth_rate;
+	u8 hf_cnt, txhfcnt;
+	int pass;
+	struct cpri_autoneg_output *result = &(framer->autoneg_output);
 
 	/* Init eth rate expiry timer */
 	init_timer(&eth_setup_timer);
@@ -731,26 +709,66 @@ void cpri_eth_autoneg(struct work_struct *work)
 
 	/* Turn ON Tx */
 	cpri_reg_set(&regs->cpri_config, CONF_TX_EN_MASK);
-
+	pass = 0;
 	framer->timer_expiry_events = 0;
 
-	for (i = param->eth_rates_count; i >= 1 ; i--) {
-		tx_eth_rate = param->eth_rates[i - 1];
-		cpri_reg_set_val(
-			&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK,
-			(u32)tx_eth_rate);
-		/* Setup eth rate expiry timer */
-		eth_setup_timer.expires = jiffies + (param->cnm_timeout) * HZ;
-		add_timer(&eth_setup_timer);
-		err = check_ethrate(framer);
-		if (err == -ENOLINK) {
-			dev_info(dev, "eth err -ENOLINK");
-			continue;
-		} else if (err == -ETIME) {
-			dev_info(dev, "eth autoneg timeout\n");
+	/* Setup eth rate expiry timer */
+	eth_setup_timer.expires = jiffies + (param->cnm_timeout) * HZ;
+	add_timer(&eth_setup_timer);
+
+	tx_eth_rate = param->eth_rates[0];
+	dev_dbg(dev, "try eth rate %d\n", tx_eth_rate);
+	cpri_reg_set_val(&regs->cpri_cmconfig,
+			TX_FAST_CM_PTR_MASK, (u32)tx_eth_rate);
+
+	while (framer->timer_expiry_events !=
+			TEVENT_ETHRATE_SETUP_TEXPIRED) {
+		if (check_ethptr(framer, 0, &rx_eth_rate)
+				== CPRI_ETH_PTR_AVAIL) {
+			dev_info(dev, "Enter C&M negotiation stage\n");
+			break;
+		}
+	}
+
+	while (1) {
+		if (framer->timer_expiry_events ==
+				TEVENT_ETHRATE_SETUP_TEXPIRED)
 			goto out_fail;
-		} else
+		txhfcnt = (u8) cpri_reg_get_val(
+			&regs->cpri_thfnctr, TX_HFN_COUNTER_MASK);
+		/*th pointer match*/
+		if (check_ethptr(framer, tx_eth_rate, &rx_eth_rate)
+				== CPRI_ETH_PTR_EQU) {
+			pass = 1;
 			goto out_pass;
+		}
+		/*eth pointer low, find a higher one*/
+		if (check_ethptr(framer, tx_eth_rate, &rx_eth_rate)
+				== CPRI_ETH_PTR_LOW) {
+			tx_eth_rate = find_next_eth_ptr(param->eth_rates,
+							param->eth_rates_count,
+							rx_eth_rate);
+			if (tx_eth_rate == 255)
+				goto out_fail;
+
+			cpri_reg_set_val(&regs->cpri_cmconfig,
+					TX_FAST_CM_PTR_MASK, (u32)tx_eth_rate);
+			while (1) {
+				hf_cnt = (u8) cpri_reg_get_val(
+						&regs->cpri_thfnctr,
+						TX_HFN_COUNTER_MASK);
+
+				if (check_ethptr(framer, tx_eth_rate,
+					&rx_eth_rate) == CPRI_ETH_PTR_EQU) {
+					pass = 1;
+					goto out_pass;
+				}
+				if ((hf_cnt - txhfcnt > 5) ||
+					(framer->timer_expiry_events ==
+						TEVENT_ETHRATE_SETUP_TEXPIRED))
+					break;
+			}
+		}
 	}
 
 out_fail:
@@ -761,6 +779,11 @@ out_fail:
 			CPRI_STATE_LINK_ERROR);
 
 out_pass:
+	if (pass) {
+		result->common_eth_link_rate = tx_eth_rate;
+		dev_info(dev, "eth autoneg success,common eth ptr:%d\n",
+			result->common_eth_link_rate);
+	}
 	cpri_reg_set(&cpdev->regs->cpri_intctrl[0],
 			IEVENT_ETH_MASK);
 	del_timer_sync(&eth_setup_timer);
@@ -768,7 +791,7 @@ out_pass:
 	if ((framer->framer_state == CPRI_STATE_PROT_VER_AUTONEG) ||
 		framer->framer_state == CPRI_STATE_LINK_ERROR) {
 		cpri_state_machine(framer,
-				CPRI_STATE_ETH_RATE_AUTONEG);
+			CPRI_STATE_ETH_RATE_AUTONEG);
 		cpri_setup_vendor_autoneg(framer);
 	}
 	/* Set framer state */
@@ -792,12 +815,13 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 	struct cpri_framer_regs  __iomem *regs = framer->regs;
 	struct timer_list proto_setup_timer;
 	struct device *dev = framer->cpri_dev->dev;
-	enum cpri_prot_ver rproto_ver = VER_1, tproto_ver = VER_2;
+	enum cpri_prot_ver tproto_ver = VER_2;
 	unsigned long timer_dur;
 	int err = -ETIME;
 	u8 hf_cnt;
-	u32 pver;
-	static u8 txhfcnt;
+	u8 txhfcnt;
+	u8 rx_scr_en;
+	u32 tx_seed;
 
 	/* Setup protocol ver expiry timer */
 	init_timer(&proto_setup_timer);
@@ -810,62 +834,71 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 
 	/* Turn ON Tx */
 	cpri_reg_set(&regs->cpri_config, CONF_TX_EN_MASK);
-	cpri_reg_set_val(&regs->cpri_tprotver,
-			PROTO_VER_MASK, 2);
-	txhfcnt = (u8) cpri_reg_get_val(&regs->cpri_thfnctr,
-					TX_HFN_COUNTER_MASK);
 
+	/*Lower lane rate starts on VER_1*/
+	/*or the user specify to use VER_1*/
+	if ((result->common_link_rate < RATE5_4915_2M) ||
+			(param->tx_prot_ver == VER_1)) {
+		tproto_ver = VER_1;
+		tx_seed = 0;
+	} else {
+		tproto_ver = VER_2;
+		tx_seed = param->tx_scr_seed;
+	}
+
+	cpri_reg_set_val(&regs->cpri_tprotver,
+				PROTO_VER_MASK, tproto_ver);
+	cpri_reg_set_val(&regs->cpri_tscrseed,
+				SCR_SEED_MASK, tx_seed);
 
 	while (framer->timer_expiry_events != TEVENT_PROTVER_SETUP_TEXPIRED) {
-
-		/* Update the received scramble seed value */
-		result->rx_scramble_seed_val =
-			cpri_reg_get_val(&regs->cpri_rscrseed, SCR_SEED_MASK);
-
-
-		/* Check whether two HF passed */
-		hf_cnt = (u8) cpri_reg_get_val(&regs->cpri_thfnctr,
+		txhfcnt = (u8) cpri_reg_get_val(&regs->cpri_thfnctr,
 					TX_HFN_COUNTER_MASK);
-		hf_cnt -= txhfcnt;
-		if (hf_cnt >= 2) {
-			dev_info(dev, "proto ver - 2HF passed\n");
-			/* Get last set proto ver */
-			pver = cpri_reg_get_val(
-					&regs->cpri_tprotver, PROTO_VER_MASK);
-			tproto_ver = (pver == 1) ? VER_1 : VER_2;
-			get_rxprotver(framer, &rproto_ver);
-			if (rproto_ver == tproto_ver) {
-				result->common_prot_ver  = tproto_ver;
-				err = 0;
-				dev_info(dev, "%d:%d protocol autoneg success",
-						framer->cpri_dev->dev_id,
-						framer->id);
-				break;
-			} else {
-				/* Change Tx proto ver */
-				if (tproto_ver == VER_1)
-					cpri_reg_set_val(&regs->cpri_tprotver,
-							PROTO_VER_MASK, 2);
-				else
-					cpri_reg_set_val(&regs->cpri_tprotver,
-							PROTO_VER_MASK, 1);
-				txhfcnt = (u8) cpri_reg_get_val(
-						&regs->cpri_thfnctr,
-						TX_HFN_COUNTER_MASK);
+
+		rx_scr_en = (u8) cpri_reg_get_val(&regs->cpri_rscrseed,
+					RX_SCR_EN_MASK);
+
+		if ((rx_scr_en) && (tproto_ver == VER_2)) {
+			result->rx_scramble_seed_val =
+				cpri_reg_get_val(&regs->cpri_rscrseed,
+					SCR_SEED_MASK);
+			result->common_prot_ver = VER_2;
+			err = 0;
+			break;
+		} else if ((rx_scr_en == 0) && (tproto_ver == VER_1)) {
+			result->rx_scramble_seed_val = 0;
+			result->common_prot_ver = VER_1;
+			err = 0;
+			break;
+		} else if ((rx_scr_en == 0) && (tproto_ver == VER_2)) {
+			tproto_ver = VER_1;
+			tx_seed = 0;
+			cpri_reg_set_val(&regs->cpri_tprotver,
+				PROTO_VER_MASK, tproto_ver);
+			cpri_reg_set_val(&regs->cpri_tscrseed,
+				SCR_SEED_MASK, tx_seed);
+			while (1) {
+				hf_cnt = (u8) cpri_reg_get_val(
+					&regs->cpri_thfnctr,
+					TX_HFN_COUNTER_MASK);
+
+				if ((hf_cnt - txhfcnt) > 2)
+					break;
 			}
 		}
-		dev_dbg(dev, "proto ver autoneg in progress\n");
-		schedule_timeout_interruptible(msecs_to_jiffies(1));
 	}
 
 	if (framer->timer_expiry_events == TEVENT_PROTVER_SETUP_TEXPIRED)
 		dev_info(dev, "proto ver autoneg timer expired\n");
 	del_timer_sync(&proto_setup_timer);
+
 	if (err != 0) {
 		framer->stats.proto_auto_neg_failures++;
 		cpri_state_machine(framer,
-				CPRI_STATE_LINK_ERROR);
+			CPRI_STATE_LINK_ERROR);
 	} else {
+		dev_info(dev, "protocol autoneg success,prot ver:%d\n",
+				result->common_prot_ver);
 		cpri_state_machine(framer,
 				CPRI_STATE_PROT_VER_AUTONEG);
 	}
@@ -878,7 +911,6 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_autoneg_output *result = &(framer->autoneg_output);
 	struct device *dev = framer->cpri_dev->dev;
-	u8 tx_eth_rate;
 	int err = 0;
 	static u8 txhfcnt;
 
@@ -886,18 +918,20 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 	result->common_link_rate = rate;
 
 	/* Update Tx proto ver and Tx scrambler seed */
-	if (rate > RATE4_3072_0M) {
+	if ((rate > RATE4_3072_0M) && (param->tx_prot_ver == VER_2)) {
 		cpri_reg_set_val(&regs->cpri_tprotver,
 				PROTO_VER_MASK, 2);
 
 		cpri_reg_set_val(&regs->cpri_tscrseed,
 				SCR_SEED_MASK, param->tx_scr_seed);
-	} else
+	} else {
 		cpri_reg_set_val(&regs->cpri_tprotver,
 				PROTO_VER_MASK, 1);
-
+		cpri_reg_set_val(&regs->cpri_tscrseed,
+				SCR_SEED_MASK, 0);
+	}
 	/* Set max Tx ethernet rate/ptr */
-	tx_eth_rate = param->eth_rates[param->eth_rates_count-1];
+	/*tx_eth_rate = param->eth_rates[0]*/;
 
 	/* Turn on Tx and enable tx for 1 HF */
 	cpri_reg_set(&regs->cpri_config, CONF_TX_EN_MASK);
