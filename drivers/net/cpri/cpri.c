@@ -46,13 +46,13 @@ static struct class *cpri_class;
 static LIST_HEAD(cpri_dev_list);
 raw_spinlock_t cpri_list_lock;
 
-struct cpri_dev* get_pair_cpri_dev(struct cpri_dev *cpri_dev)
+struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev)
 {
 	struct cpri_dev *cpri_dev_pair = NULL;
 
 
 	list_for_each_entry(cpri_dev_pair, &cpri_dev_list, list) {
-		if((cpri_dev_pair) && (cpri_dev_pair->dev_id !=
+		if ((cpri_dev_pair) && (cpri_dev_pair->dev_id !=
 					cpri_dev->dev_id))
 			return cpri_dev_pair;
 	}
@@ -415,7 +415,7 @@ void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state)
 					new_state);
 			return;
 		}
-		if(new_state < CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)
+		if (new_state < CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)
 			framer->cpri_dev->intr_cpri_frmr_state =
 				new_state;
 	return;

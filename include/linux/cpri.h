@@ -942,5 +942,5 @@ void cpri_mask_irq_events(struct cpri_framer *framer);
 int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction);
 void clear_axc_buff(struct cpri_framer *framer);
 void init_eth(struct cpri_framer *framer);
-struct cpri_dev* get_pair_cpri_dev(struct cpri_dev *cpri_dev);
+struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev);
 #endif /* __CPRI_H */

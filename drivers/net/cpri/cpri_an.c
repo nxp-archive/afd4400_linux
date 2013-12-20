@@ -27,6 +27,7 @@
 #include <linux/delay.h>
 
 #include <linux/cpri.h>
+#include <linux/qixis.h>
 #include <mach/serdes-d4400.h>
 
 int linkrate_autoneg_reset(struct cpri_framer *framer,
@@ -65,7 +66,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 		gcr_config_cpri_line_rate(framer->cpri_dev->dev_id, linerate,
 			SET_LINE_RATE);
 		gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
-		if((cpri_dev_pair) && (cpri_dev_pair->intr_cpri_frmr_state !=
+		if ((cpri_dev_pair) && (cpri_dev_pair->intr_cpri_frmr_state !=
 				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)) {
 			serdes_init = serdes_init_pll(framer->serdes_handle,
 					&pll_param);
@@ -101,6 +102,9 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 				&pll_param);
 		gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
 		d4400_rev_clk_select(framer->cpri_dev->dev_id, REV_CLK_DIV_1);
+		qixis_unlock_jcpll();
+	} else {
+		qixis_lock_jcpll();
 	}
 
 	return 0;
