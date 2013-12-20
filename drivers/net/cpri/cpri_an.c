@@ -36,6 +36,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 	struct serdes_lane_params lane_param;
 	struct cpri_framer *pair_framer;
 	int serdes_init;
+	struct cpri_dev *cpri_dev_pair = NULL;
 	u32 line_rate[7] = {0, 1228800, 2457600, 3072000, 4915200,
 		6144000, 9830400};
 
@@ -43,7 +44,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 		pair_framer = framer->cpri_dev->framer[1];
 	else
 		pair_framer = framer->cpri_dev->framer[0];
-
+	cpri_dev_pair = get_pair_cpri_dev(framer->cpri_dev);
 	pll_param.pll_id = SERDES_PLL_1;
 	pll_param.rfclk_sel = REF_CLK_FREQ_122_88_MHZ;
 	if ((linerate ==  RATE4_3072_0M) || (linerate == RATE6_6144_0M)) {
@@ -64,13 +65,19 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 		gcr_config_cpri_line_rate(framer->cpri_dev->dev_id, linerate,
 			SET_LINE_RATE);
 		gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
-		serdes_init = serdes_init_pll(framer->serdes_handle,
-				&pll_param);
-		if ((serdes_init != -EALREADY) && (serdes_init != 0))
-			return -EINVAL;
+		if((cpri_dev_pair) && (cpri_dev_pair->intr_cpri_frmr_state !=
+				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)) {
+			serdes_init = serdes_init_pll(framer->serdes_handle,
+					&pll_param);
+			if ((serdes_init != -EALREADY) && (serdes_init != 0))
+				return -EINVAL;
+		}
 	}
 	lane_param.lane_id = framer->serdesspec.args[0];
-	lane_param.grp_prot = SERDES_PROT_CPRI;
+	if (framer->cpri_dev->dev_id == 1)
+		lane_param.grp_prot = SERDES_PROT_CPRI_1;
+	else if (framer->cpri_dev->dev_id == 2)
+		lane_param.grp_prot = SERDES_PROT_CPRI_2;
 	lane_param.gen_conf.lane_prot = SERDES_LANE_PROTS_CPRI;
 	lane_param.gen_conf.bit_rate_kbps = line_rate[linerate];
 	lane_param.gen_conf.cflag = (SERDES_20BIT_EN |  SERDES_TPLL_LES |
@@ -237,7 +244,7 @@ static void cpri_init_framer(struct cpri_framer *framer)
 		cpri_reg_set(&regs->cpri_tcr,
 				IQ_SYNC_EN_MASK);
 	else
-		cpri_reg_clear(&regs->cpri_rcr,
+		cpri_reg_clear(&regs->cpri_tcr,
 				IQ_SYNC_EN_MASK);
 
 	/* ECC error indication config param */
@@ -906,7 +913,7 @@ static int cpri_stable(struct cpri_framer *framer, enum cpri_link_rate rate)
 }
 
 
-static int check_framesync(struct cpri_framer *framer, enum cpri_link_rate rate)
+static int check_framesync(struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	u32 line_sync_acheived;
@@ -967,7 +974,7 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 		 * LOS will go down when REC signal is recieved
 		 */
 
-		err = check_framesync(framer, rate);
+		err = check_framesync(framer);
 		if (err == -ETIME)
 			break;
 
@@ -1035,6 +1042,8 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		dev_dbg(dev, "trying new link rate\n");
 		cpri_state_machine(framer,
 				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS);
+		framer->cpri_dev->intr_cpri_frmr_state =
+				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS;
 #if 0
 		/* Disable framer clock */
 		if (framer->id == 2)
