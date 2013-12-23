@@ -228,6 +228,7 @@ struct tbg_regs {
 
 #define START_INTERNAL_RF_SYNC		(1 << 17)
 #define RFGEN				(1 << 0)
+#define RFGDIS				(0 << 0)
 
 /* ctrl_0 */
 #define SWRESET				(1 << 0)

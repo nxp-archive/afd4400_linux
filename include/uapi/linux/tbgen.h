@@ -186,4 +186,5 @@ struct tbgen_device_info {
 #define TBGEN_RECAPTURE_FRAME_SYNC	_IO(TDGEN_NUM, (IOCTL_IDX + 14))
 #define TBGEN_GET_STATE			_IOR(TDGEN_NUM, (IOCTL_IDX + 15), \
 						int)
+#define TBGEN_RFG_DISABLE		_IO(TDGEN_NUM, (IOCTL_IDX + 16))
 #endif

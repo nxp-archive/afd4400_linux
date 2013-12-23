@@ -353,6 +353,10 @@ int tbgen_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 	u32 val, *reg;
 	struct tbg_regs *tbgregs = tbg->tbgregs;
 
+	retcode = tbgen_reset(tbg);
+	if (retcode)
+		goto out;
+
 	retcode = validate_refclk(tbg, pll_params->refclk_khz);
 	if (retcode)
 		goto out;
@@ -436,10 +440,7 @@ int rfg_enable(struct tbgen_dev *tbg, u8 enable)
 		mask = IRQ_FS;
 		tbgen_update_reg(reg, val, mask);
 
-		reg = &tbgregs->rfg_cr;
-		val = ~RFGEN;
-		mask = RFGEN;
-		tbgen_update_reg(reg, val, mask);
+		tbgen_write_reg(&tbgregs->rfg_cr, RFGDIS);
 	}
 
 	spin_unlock_irqrestore(&tbg->lock, flags);
@@ -484,9 +485,6 @@ int tbgen_rfg_init(struct tbgen_dev *tbg, struct tbg_rfg *rfg_params)
 	u32 *reg, val, mask, sync_sel, sync_out, frame_sync_sel;
 	struct tbg_regs *tbgregs = tbg->tbgregs;
 
-	retcode = tbgen_reset(tbg);
-	if (retcode)
-		goto out;
 
 	reg = &tbgregs->rfg_cr;
 	val = rfg_params->drift_threshold << RFG_ERR_THRESHOLD_SHIFT;
@@ -525,7 +523,6 @@ int tbgen_rfg_init(struct tbgen_dev *tbg, struct tbg_rfg *rfg_params)
 	mask = SYNC_ADV_MASK << SYNC_ADV_SHIFT;
 	tbgen_update_reg(reg, val, mask);
 
-out:
 	return retcode;
 }
 /**
@@ -1325,11 +1322,19 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 		}
 
 		retcode = tbgen_restart_radio_frame_generation(tbg);
+		break;
 	case TBGEN_RFG_ENABLE:
 		retcode = rfg_enable(tbg, 1);
 		if (!retcode) {
 			TBG_SET_CONFIG_MASK(tbg, TBG_RFG_READY);
 			tbgen_change_state(tbg, TBG_STATE_READY);
+		}
+		break;
+	case TBGEN_RFG_DISABLE:
+		retcode = rfg_enable(tbg, 0);
+		if (!retcode) {
+			TBG_SET_CONFIG_MASK(tbg, TBG_RFG_CONFIGURED);
+			tbgen_change_state(tbg, TBG_STATE_STANDBY);
 		}
 		break;
 	case TBGEN_RECAPTURE_FRAME_SYNC:
