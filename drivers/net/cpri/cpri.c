@@ -331,7 +331,7 @@ int process_framer_irqs(struct device_node *child, struct cpri_framer *framer)
 	framer->irq_tx_t = irq_of_parse_and_map(child, 1);
 	framer->irq_rx_c = irq_of_parse_and_map(child, 2);
 	framer->irq_tx_c = irq_of_parse_and_map(child, 3);
-	dev_info(dev, "\nirq parsed: %d, %d, %d, %d\n",
+	dev_dbg(dev, "\nirq parsed: %d, %d, %d, %d\n",
 			framer->irq_rx_t,
 			framer->irq_tx_t,
 			framer->irq_rx_c,
@@ -743,7 +743,7 @@ static int cpri_probe(struct platform_device *pdev)
 		framer->cpri_node = np;
 		framer->id = framer_id;
 		framer->framer_state = CPRI_STATE_SFP_DETACHED;
-		dev_info(dev, "framer id:%d\n", framer->id);
+		dev_dbg(dev, "framer id:%d\n", framer->id);
 
 		framer->regs = of_iomap(child, 0);
 		if (!framer->regs) {
@@ -768,7 +768,7 @@ static int cpri_probe(struct platform_device *pdev)
 			rc = -ENODEV;
 			goto err_chrdev;
 		}
-		dev_info(dev, "max axcs:%d\n", framer->max_axcs);
+		dev_dbg(dev, "max axcs:%d\n", framer->max_axcs);
 		ret = init_axc_mem_blk(framer, child);
 		if (ret) {
 			dev_err(dev, "cpri axc memory init failed\n");

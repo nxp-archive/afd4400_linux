@@ -717,7 +717,6 @@ void cpri_eth_autoneg(struct work_struct *work)
 	add_timer(&eth_setup_timer);
 
 	tx_eth_rate = param->eth_rates[0];
-	dev_dbg(dev, "try eth rate %d\n", tx_eth_rate);
 	cpri_reg_set_val(&regs->cpri_cmconfig,
 			TX_FAST_CM_PTR_MASK, (u32)tx_eth_rate);
 
@@ -725,7 +724,6 @@ void cpri_eth_autoneg(struct work_struct *work)
 			TEVENT_ETHRATE_SETUP_TEXPIRED) {
 		if (check_ethptr(framer, 0, &rx_eth_rate)
 				== CPRI_ETH_PTR_AVAIL) {
-			dev_info(dev, "Enter C&M negotiation stage\n");
 			break;
 		}
 	}
