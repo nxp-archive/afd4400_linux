@@ -531,15 +531,31 @@ static void cpri_err_tasklet(unsigned long arg)
 			&framer->regs->cpri_errevent,
 			err_evt, err_evt);
 	}
-	/* Update stats */
-	do_err_stats_update(framer, err_evt);
+	if (framer->framer_param.ctrl_flags & CPRI_DAISY_CHAINED) {
+		if (framer->cpri_dev->intr_cpri_frmr_state >=
+				CPRI_STATE_AUTONEG_COMPLETE) {
+			/* Update stats */
+			do_err_stats_update(framer, err_evt);
 
-	/* Update state */
-	do_framer_state_update(framer, err_evt);
+			/* Update state */
+			do_framer_state_update(framer, err_evt);
 
-	/* Handle ethernet error if any */
-	if(framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
-		cpri_eth_handle_error(framer);
+			/* Handle ethernet error if any */
+			if (framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
+				cpri_eth_handle_error(framer);
+		}
+	} else {
+			/* Update stats */
+			do_err_stats_update(framer, err_evt);
+
+			/* Update state */
+			do_framer_state_update(framer, err_evt);
+
+			/* Handle ethernet error if any */
+			if (framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
+				cpri_eth_handle_error(framer);
+		}
+
 
 		/* Restore the interrupt mask */
 	err_evt = mask & err_evt;

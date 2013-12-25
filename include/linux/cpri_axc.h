@@ -29,6 +29,13 @@
 
 #define RX_TX_MEM_ALLOCATED			2
 
+/* CPRI daisy chaining defines */
+#define CPRI_SYNC_ESA_MASK			0x30000000
+#define CPRI_PAIRED_SYNC			0x2
+#define CPRI_SELF_SYNC				0x3
+#define CPRI_TMR_EN				0x80000000
+
+
 /* axc map table configuration defines */
 #define AXC_K1_MASK				0x003f0000
 #define AXC_K0_MASK				0x0000003f

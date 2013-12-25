@@ -361,7 +361,8 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 		loop = 0;
 		axcs = framer->ul_axcs;
 		while (loop < framer->framer_param.max_axc_count) {
-			if (axcs[loop] == NULL) {
+			if ((axcs[loop] == NULL) ||
+					(axcs[loop]->flags & AXC_AUX_EN)) {
 				loop++;
 				continue;
 			}

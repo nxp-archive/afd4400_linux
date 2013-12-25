@@ -387,6 +387,7 @@ struct axc_info {
 #define AXC_INTERLEAVING_EN			(1 << 30)
 #define AXC_IQ_FORMAT_2				(1 << 31)
 #define AXC_FLEXI_POSITION_EN			(1 << 11)
+#define AXC_AUX_EN                              (1 << 12)
 	enum mapping_method map_method;
 	unsigned int buffer_size;
 	unsigned int buffer_threshold;

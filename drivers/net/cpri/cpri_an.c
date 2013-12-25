@@ -66,7 +66,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 		gcr_config_cpri_line_rate(framer->cpri_dev->dev_id, linerate,
 			SET_LINE_RATE);
 		gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
-		if ((cpri_dev_pair) && (cpri_dev_pair->intr_cpri_frmr_state !=
+		if ((cpri_dev_pair) && (cpri_dev_pair->intr_cpri_frmr_state <
 				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)) {
 			serdes_init = serdes_init_pll(framer->serdes_handle,
 					&pll_param);

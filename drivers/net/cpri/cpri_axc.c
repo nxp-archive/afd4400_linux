@@ -932,6 +932,78 @@ void set_segment_map_with_stuffing(struct segment_param *seg_param)
 
 }
 
+void program_aux_interface(struct axc *axc, u16 word_size)
+{
+	struct cpri_framer *framer = axc->framer;
+	struct device *dev = axc->framer->cpri_dev->dev;
+	unsigned int size;
+	unsigned int last_bit_pos;
+	unsigned int bit_pos;
+	struct axc_pos axc_pos;
+	u32 bitmap;
+	u8 index;
+	u32 line_sync_acheived;
+	u32 mask = 0;
+	u32 count = 0;
+
+	axc_pos.axc_start_w = axc->pos->axc_start_w + 1;/* incr for ctl word */
+	axc_pos.axc_start_b = axc->pos->axc_start_b;
+	index = get_segment_id(&axc_pos, word_size);
+	size = calculate_axc_size(axc);
+	last_bit_pos = size;
+	bit_pos = BIT_POS(axc_pos.axc_start_w, word_size,
+				axc_pos.axc_start_b);
+
+	dev_dbg(dev, "AUx configured for AxCId: %d\n", axc->id);
+	while (size) {
+			size = (size >= SEG_SIZE) ? (size -
+				(SEG_SIZE - bit_pos)) : 0;
+			if (size) {
+				while (bit_pos < SEG_SIZE)
+					bitmap |= (0x1 << bit_pos++);
+			} else {
+				last_bit_pos = (bit_pos + last_bit_pos);
+				while (bit_pos < last_bit_pos)
+					bitmap |= (0x1 << bit_pos++);
+			}
+			cpri_reg_set(&framer->regs->cpri_auxmask[index],
+					bitmap);
+			dev_dbg(dev, "aux bit map set inx[%d]: 0x%x\n",
+				index, bitmap);
+			bit_pos = 0;
+			bitmap = 0;
+			index++;
+		}
+	cpri_reg_set(&framer->regs->cpri_auxctrl, AUX_MODE_MASK);
+	cpri_reg_set_val(&framer->regs->cpri_timer_cfg, CPRI_SYNC_ESA_MASK,
+			CPRI_PAIRED_SYNC);
+	cpri_reg_set(&framer->regs->cpri_timeren, CPRI_TMR_EN);
+
+	/* Check hfn sync status again after paired sync*/
+	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK | RX_STATE_MASK);
+	while (framer->timer_expiry_events != TEVENT_LINERATE_SETUP_TEXPIRED) {
+		line_sync_acheived = cpri_reg_get_val(
+					&framer->regs->cpri_status, mask);
+		if (line_sync_acheived & mask)
+			break;
+
+		schedule_timeout_interruptible(msecs_to_jiffies(20));
+		if (count >= 100) {
+			dev_err(dev, "paired sync failed");
+			/*TODO: add state handling and stats for daisy
+			 * chaining
+			 */
+			return;
+		}
+
+	}
+
+	framer->cpri_dev->intr_cpri_frmr_state =
+			CPRI_STATE_AUTONEG_COMPLETE;
+
+}
+
+
 void map_table_struct_entry_ctrl(struct axc *axc, unsigned char cmd)
 {
 	struct device *dev = axc->framer->cpri_dev->dev;
@@ -988,6 +1060,15 @@ void map_table_struct_entry_ctrl(struct axc *axc, unsigned char cmd)
 			k_max = k0;
 	else
 		k_max = k1;
+
+	bit_position = BIT_POS(axc_pos->axc_start_w, word_size,
+				axc_pos->axc_start_b);
+	seg = get_segment_id(axc_pos, word_size);
+	dev_dbg(dev, "aux interface flag: 0x%x\n", axc->flags);
+	if (axc->flags & AXC_AUX_EN) {
+			dev_info(dev, "configure for aux interface\n");
+			program_aux_interface(axc, word_size);
+	}
 
 	for (loop = 0; loop < k_max; loop++) {
 		ki = 0;
