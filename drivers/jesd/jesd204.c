@@ -107,9 +107,13 @@ static int jesd_get_rx_lane_swap_en(struct jesd_transport_dev *tdev,
 {
 	int swap_enable = 0;
 
+	if (tdev->type == JESD_DEV_SRX)
+		goto out;
+
 	if ((lane->flags & LANE_FLAGS_PRIMARY) && (tdev->active_lanes == 2) && (tdev->id != 4))
 		swap_enable = 1;
 
+out:
 	return swap_enable;
 }
 
@@ -162,8 +166,9 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 
 		dev_info(tdev->dev, "%s: [%d] lane_swap %d\n",
 			tdev->name, lane->id, swap_enable);
-		phy_gasket_swap_lanes(tdev->phy, lane->id,
-				swap_enable, tdev->type);
+		if (lane->flags & LANE_FLAGS_PRIMARY)
+			phy_gasket_swap_lanes(tdev->phy, lane->id,
+					swap_enable, tdev->type);
 		rc = phy_gasket_lane_ctrl(tdev->phy, phy_data_src, lane->id);
 		if (rc) {
 			dev_err(tdev->dev, "%s: Phy init Failed, lane %d\n",
