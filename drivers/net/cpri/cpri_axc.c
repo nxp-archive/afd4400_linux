@@ -141,16 +141,33 @@ void cleanup_segment_table_data(struct cpri_framer *framer)
 	kfree(framer->dl_map_table.segments);
 	kfree(framer->ul_map_table.segment_bitmap);
 	kfree(framer->dl_map_table.segment_bitmap);
+
+	framer->ul_map_table.segments = NULL;
+	framer->dl_map_table.segments = NULL;
+	framer->ul_map_table.segment_bitmap = NULL;
+	framer->dl_map_table.segment_bitmap = NULL;
+
 	for (loop = 0; loop < framer->max_segments; loop++) {
 		kfree(framer->ul_map_table.k0_bitmap[loop]);
 		kfree(framer->dl_map_table.k0_bitmap[loop]);
 		kfree(framer->ul_map_table.k1_bitmap[loop]);
 		kfree(framer->dl_map_table.k1_bitmap[loop]);
+
+		framer->ul_map_table.k0_bitmap[loop] = NULL;
+		framer->dl_map_table.k0_bitmap[loop] = NULL;
+		framer->ul_map_table.k1_bitmap[loop] = NULL;
+		framer->dl_map_table.k1_bitmap[loop] = NULL;
 	}
 	kfree(framer->ul_map_table.k0_bitmap);
 	kfree(framer->dl_map_table.k0_bitmap);
 	kfree(framer->ul_map_table.k1_bitmap);
 	kfree(framer->dl_map_table.k1_bitmap);
+
+	framer->ul_map_table.k0_bitmap = NULL;
+	framer->dl_map_table.k0_bitmap = NULL;
+	framer->ul_map_table.k1_bitmap = NULL;
+	framer->dl_map_table.k1_bitmap = NULL;
+
 }
 
 int populate_segment_table_data(struct cpri_framer *framer)
@@ -446,6 +463,7 @@ struct axc_buf *axc_alloc(struct axc *axc, u32 size)
 		}
 
 	spin_lock(&mblk->lock);
+
 	condition1 = ((mblk->blocks[0].base + mblk->blocks[0].size) <
 			(mblk->blocks[0].next_free_addr + size)) ? 0 : 1;
 	condition2 = ((mblk->blocks[1].base + mblk->blocks[1].size) <
@@ -458,10 +476,11 @@ struct axc_buf *axc_alloc(struct axc *axc, u32 size)
 			mem_blk = 1;
 	}
 
-	if ((mem_blk == 0) | (mem_blk == 1)) {
+	if (condition1 | condition2) {
 		axc_buf = kzalloc(sizeof(struct axc_buf), GFP_KERNEL);
 		if (axc_buf == NULL) {
 			dev_err(dev, "System mem exhausted !! kzalloc fail\n");
+			spin_unlock(&mblk->lock);
 			return NULL;
 		}
 
@@ -475,10 +494,14 @@ struct axc_buf *axc_alloc(struct axc *axc, u32 size)
 		mblk->allocated_bufs++;
 		goto out;
 	}
+
 	/* check if axc_buf size is available in free list
 	*/
-	if (list_empty(&mblk->free_list))
+	dev_info(dev, "no mem block - allocation from free list");
+	if (list_empty(&mblk->free_list)) {
+		axc_buf = NULL;
 		goto out;
+	}
 
 	list_for_each_safe(pos, nx, &mblk->free_list) {
 		axc_buf = list_entry(pos, struct axc_buf, list);
@@ -488,6 +511,7 @@ struct axc_buf *axc_alloc(struct axc *axc, u32 size)
 						GFP_KERNEL);
 				if (axc_buf == NULL) {
 					dev_err(dev, "memory exhausted !!\n");
+					spin_unlock(&mblk->lock);
 					return NULL;
 				}
 
@@ -545,6 +569,7 @@ void axc_free(struct axc_buf *axc_buf)
 				list_axc_buf->size +=
 					axc_buf->size;
 				kfree(axc_buf);
+				axc->axc_buf = NULL;
 				goto out;
 			} else if ((axc_buf->addr + axc_buf->size) ==
 					list_axc_buf->addr) {
@@ -552,6 +577,7 @@ void axc_free(struct axc_buf *axc_buf)
 				list_axc_buf->addr =
 					axc_buf->addr;
 				kfree(axc_buf);
+				axc->axc_buf = NULL;
 				goto out;
 			}
 	}
@@ -1430,7 +1456,7 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 		}
 		if (fill_axc_param(framer, param, axc, flag) != 0) {
 			dev_err(dev, "error while setting axc param\n");
-			kfree(axc->pos);
+			kfree(param->pos);
 			kfree(axc);
 			kfree(axc_param);
 			/* free allocated buffers in dl_axc_list */
@@ -1575,9 +1601,11 @@ void delete_axc(struct cpri_framer *framer, unsigned char axc_id,
 		reg_rcmd1 = &regs->cpri_rcmd1;
 		reg_cr = &regs->cpri_rcr;
 	}
-	if (axc == NULL)
+	if (axc == NULL) {
 		dev_err(dev, "axc delete failed 'axc %d not configured'\n",
 				axc_id);
+		return;
+	}
 	size = calculate_axc_size(axc);
 	for (loop = 0; loop < axc->K; loop++) {
 		axc_size = size;
@@ -1628,6 +1656,8 @@ void clear_axc_buff(struct cpri_framer *framer)
 	rx_mblk->blocks[0].next_free_addr = rx_mblk->blocks[0].base;
 	rx_mblk->blocks[1].next_free_addr = rx_mblk->blocks[1].base;
 
+	framer->tx_buf_head.allocated_bufs = 0;
+	framer->rx_buf_head.allocated_bufs = 0;
 	return;
 }
 
@@ -2077,11 +2107,12 @@ int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction)
 			continue;
 		}
 		axc = axcs[loop];
-		loop++;
 
 		cpri_reg_clear(reg_accr,
 				(AXC_ENABLE_MASK << axc->id));
 		delete_axc(framer, axc->id, direction);
+		axcs[loop] = NULL;
+		loop++;
 	}
 	/* enable axc recieve and transmit control reg */
 	cpri_reg_clear(reg_cr, AXC_ENABLE_MASK);
@@ -2205,16 +2236,16 @@ int cpri_axc_param_get(struct cpri_framer *framer, unsigned long arg_ioctl)
 	}
 
 	/* axc allocation */
-	if (flag & DL_AXCS) {
-		axcs = framer->dl_axcs;
-		map_table = &framer->dl_map_table;
-		axc_hardware_base_addr0 = framer->rx_mblk_hardware_addr0;
-		axc_hardware_base_addr1 = framer->rx_mblk_hardware_addr1;
-	} else {
+	if (flag & UL_AXCS) {
 		axcs = framer->ul_axcs;
 		map_table = &framer->ul_map_table;
 		axc_hardware_base_addr0 = framer->tx_mblk_hardware_addr0;
 		axc_hardware_base_addr1 = framer->tx_mblk_hardware_addr1;
+	} else {
+		axcs = framer->dl_axcs;
+		map_table = &framer->dl_map_table;
+		axc_hardware_base_addr0 = framer->rx_mblk_hardware_addr0;
+		axc_hardware_base_addr1 = framer->rx_mblk_hardware_addr1;
 	}
 
 	for (loop = 0; loop < count; loop++) {

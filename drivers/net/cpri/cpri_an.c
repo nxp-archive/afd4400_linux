@@ -726,6 +726,7 @@ void cpri_eth_autoneg(struct work_struct *work)
 				== CPRI_ETH_PTR_AVAIL) {
 			break;
 		}
+		schedule_timeout_interruptible(msecs_to_jiffies(10));
 	}
 
 	while (1) {
@@ -765,8 +766,11 @@ void cpri_eth_autoneg(struct work_struct *work)
 					(framer->timer_expiry_events ==
 						TEVENT_ETHRATE_SETUP_TEXPIRED))
 					break;
+				schedule_timeout_interruptible(
+						msecs_to_jiffies(1));
 			}
 		}
+		schedule_timeout_interruptible(msecs_to_jiffies(1));
 	}
 
 out_fail:
@@ -884,6 +888,7 @@ void cpri_proto_ver_autoneg(struct work_struct *work)
 					break;
 			}
 		}
+		schedule_timeout_interruptible(msecs_to_jiffies(1));
 	}
 
 	if (framer->timer_expiry_events == TEVENT_PROTVER_SETUP_TEXPIRED)
@@ -1193,7 +1198,7 @@ void cpri_autoneg_all(struct work_struct *work)
 				CPRI_STATE_AUTONEG_COMPLETE);
 			break;
 		}
-
+		schedule_timeout_interruptible(msecs_to_jiffies(1));
 	}
 
 
