@@ -630,6 +630,7 @@ static const struct of_device_id spi_imx_dt_ids[] = {
 	{ .compatible = "fsl,imx31-cspi", .data = &imx31_cspi_devtype_data, },
 	{ .compatible = "fsl,imx35-cspi", .data = &imx35_cspi_devtype_data, },
 	{ .compatible = "fsl,imx51-ecspi", .data = &imx51_ecspi_devtype_data, },
+	{ .compatible = "fsl,d4400-ecspi", .data = &imx51_ecspi_devtype_data, },
 	{ /* sentinel */ }
 };
 
@@ -818,25 +819,38 @@ static int spi_imx_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	const struct of_device_id *of_id =
 			of_match_device(spi_imx_dt_ids, &pdev->dev);
+#ifndef CONFIG_ARCH_D4400
 	struct spi_imx_master *mxc_platform_info =
 			dev_get_platdata(&pdev->dev);
+#endif
 	struct spi_master *master;
 	struct spi_imx_data *spi_imx;
 	struct resource *res;
 	struct pinctrl *pinctrl;
 	int i, ret, num_cs, bus_num;
 
+#ifdef CONFIG_ARCH_D4400
+       if (!np) {
+               dev_err(&pdev->dev, "can't get the device node\n");
+               return -EINVAL;
+       }
+#else
 	if (!np && !mxc_platform_info) {
 		dev_err(&pdev->dev, "can't get the platform data\n");
 		return -EINVAL;
 	}
+#endif
 
 	ret = of_property_read_u32(np, "fsl,spi-num-chipselects", &num_cs);
 	if (ret < 0) {
+#ifdef CONFIG_ARCH_D4400
+               return ret;
+#else
 		if (mxc_platform_info)
 			num_cs = mxc_platform_info->num_chipselect;
 		else
 			return ret;
+#endif
 	}
 
 	master = spi_alloc_master(&pdev->dev,
@@ -862,8 +876,10 @@ static int spi_imx_probe(struct platform_device *pdev)
 
 	for (i = 0; i < master->num_chipselect; i++) {
 		int cs_gpio = of_get_named_gpio(np, "cs-gpios", i);
+#ifndef CONFIG_ARCH_D4400
 		if (!gpio_is_valid(cs_gpio) && mxc_platform_info)
 			cs_gpio = mxc_platform_info->chipselect[i];
+#endif
 
 		spi_imx->chipselect[i] = cs_gpio;
 		if (!gpio_is_valid(cs_gpio))

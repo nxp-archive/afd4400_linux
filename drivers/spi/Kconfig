@@ -179,7 +179,7 @@ config SPI_GPIO
 
 config SPI_IMX
 	tristate "Freescale i.MX SPI controllers"
-	depends on ARCH_MXC
+	depends on ARCH_MXC || ARCH_D4400
 	select SPI_BITBANG
 	default m if IMX_HAVE_PLATFORM_SPI_IMX
 	help
@@ -187,16 +187,8 @@ config SPI_IMX
          master mode.
 
          It is SPI controller driver for chips like  i.MX1, i.MX21, i.MX27,
-         i.MX31, i.MX35, i.MX51.
+         i.MX31, i.MX35, i.MX51, D4400.
 
-config SPI_D4400
-	tristate "Freescale D4400 SPI controllers"
-	depends on ARCH_D4400
-	help
-         This enables using the Freescale D4400 SPI controller in
-         master mode.
-
-         It is SPI controller driver for chips like D4400.
 
 config SPI_LM70_LLP
 	tristate "Parallel port adapter for LM70 eval board (DEVELOPMENT)"
