@@ -1001,9 +1001,6 @@ void program_aux_interface(struct axc *axc, u16 word_size)
 			index++;
 		}
 	cpri_reg_set(&framer->regs->cpri_auxctrl, AUX_MODE_MASK);
-	cpri_reg_set_val(&framer->regs->cpri_timer_cfg, CPRI_SYNC_ESA_MASK,
-			CPRI_PAIRED_SYNC);
-	cpri_reg_set(&framer->regs->cpri_timeren, CPRI_TMR_EN);
 
 	/* Check hfn sync status again after paired sync*/
 	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK | RX_STATE_MASK);

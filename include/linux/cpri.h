@@ -111,7 +111,6 @@ struct cpri_dev {
 	struct tasklet_struct *err_tasklet_frmr1;
 	unsigned int framers;
 	u32 dev_flags;
-#define CPRI_MEDUSA_OCRAM			(1 << 5)
 #define CPRI_D4400				(1 << 6)
 	struct list_head list;
 	struct cpri_framer **framer;
@@ -779,6 +778,15 @@ enum cpri_linerate {
 
 #define CLEAR_LINE_RATE	0
 #define SET_LINE_RATE	1
+
+/* CPRI daisy chaining defines */
+#define CPRI_SYNC_ESA_MASK			0x30000000
+#define CPRI_PAIRED_SYNC			0x2
+#define CPRI_SELF_SYNC				0x3
+#define CPRI_TMR_EN				0x80000000
+
+/* CPRI n frame difference calculation logic */
+#define CPRI_FRAME_DIFF_STATUS_BIT		0x1
 
 static inline u32 cpri_read(const void __iomem *addr)
 {

@@ -315,6 +315,8 @@ struct cpri_autoneg_params {
 #define CPRI_UPDATE_CnM_AUTONEG_PARAMS		(1 << 3)
 #define CPRI_RX_SCRAMBLER_EN			(1 << 4)
 #define CPRI_SERDES_LOOPBACK			(1 << 5)
+#define CPRI_FRMR_SELF_SYNC_MODE		(1 << 6)
+#define CPRI_FRMR_PAIR_SYNC_MODE		(1 << 7)
 	unsigned int l1_setup_timeout;
 	/* Line rate auto neg parameters */
 	unsigned int tx_on_time;
@@ -547,6 +549,9 @@ enum mem_type {
 #define CPRI_GET_EVENT				_IOW(CPRI_MAGIC, 17, \
 						enum event_type)
 #define CPRI_BFN_RESET				_IO(CPRI_MAGIC, 18)
+
+#define CPRI_GET_NFRAME_DIFF			_IOR(CPRI_MAGIC, 19, \
+						 unsigned int)
 
 /* Link start-up IOCTLS */
 #define CPRI_START_AUTONEG			_IOW(CPRI_MAGIC, 20, \

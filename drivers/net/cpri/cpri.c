@@ -687,12 +687,8 @@ static int cpri_probe(struct platform_device *pdev)
 		goto err_mem;
 	}
 
-	if (id) {
-		if (!strcmp(id->compatible, "fsl,medusa-cpri"))
-			cpri_dev->dev_flags |= CPRI_MEDUSA_OCRAM;
-	else
-			cpri_dev->dev_flags |= CPRI_D4400;
-	}
+	if (id)
+		cpri_dev->dev_flags |= CPRI_D4400;
 
 	sprintf(dev_name, "%s%d", DEV_NAME, cpri_dev->dev_id);
 

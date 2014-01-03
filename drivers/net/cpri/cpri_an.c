@@ -97,7 +97,8 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 
 	if (serdes_init_lane(framer->serdes_handle, &lane_param))
 		return -EINVAL;
-	if (framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) {
+	if ((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
+		(framer->autoneg_param.flags & CPRI_FRMR_SELF_SYNC_MODE)) {
 		serdes_jcpll_enable(framer->serdes_handle, &lane_param,
 				&pll_param);
 		gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
@@ -151,6 +152,15 @@ static void cpri_init_framer(struct cpri_framer *framer)
 	if (framer->autoneg_param.flags & CPRI_RX_SCRAMBLER_EN)
 		cpri_reg_set(&regs->cpri_rscrseed,
 				RX_SCR_EN_MASK);
+	if (framer->autoneg_param.flags & CPRI_FRMR_PAIR_SYNC_MODE) {
+		cpri_reg_set_val(&framer->regs->cpri_timer_cfg,
+			CPRI_SYNC_ESA_MASK, CPRI_PAIRED_SYNC);
+		cpri_reg_set(&framer->regs->cpri_timeren, CPRI_TMR_EN);
+	} else if (framer->autoneg_param.flags & CPRI_FRMR_SELF_SYNC_MODE) {
+		cpri_reg_set_val(&framer->regs->cpri_timer_cfg,
+				CPRI_SYNC_ESA_MASK, CPRI_SELF_SYNC);
+		cpri_reg_set(&framer->regs->cpri_timeren, CPRI_TMR_EN);
+	}
 
 	/* Disable Tx and Rx AxCs */
 	cpri_reg_set_val(&regs->cpri_raccr,

@@ -323,6 +323,26 @@ static void cpri_set_test_mode(unsigned int mode, struct cpri_framer *framer)
 				TX_TRANSPARENT_MODE_MASK);
 }
 
+static int calc_nframe_delay(struct cpri_framer *framer)
+{
+	u32 nframer_diff_read = 0;
+	u32 count = 0;
+
+	cpri_write(CPRI_FRAME_DIFF_STATUS_BIT,
+			&framer->regs->cpri_framediffstatus);
+	cpri_write(CPRI_FRAME_DIFF_STATUS_BIT,
+			&framer->regs->cpri_framediffctrl);
+	/* Waiting for nframediff cal to be over */
+	while ((nframer_diff_read == 0) || (count == 100)) {
+		nframer_diff_read = cpri_reg_get_val(
+				&framer->regs->cpri_framediffstatus,
+				MASK_ALL);
+		schedule_timeout_interruptible(msecs_to_jiffies(200));
+		count++;
+	}
+	return nframer_diff_read;
+}
+
 static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
@@ -525,6 +545,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 	int err = 0, count, i;
 	void __user *ioargp = (void __user *)arg;
+	u32 val;
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
 		dev_err(dev, "invalid case, CMD=%d\n", cmd);
@@ -578,6 +599,16 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		break;
+
+	case CPRI_GET_NFRAME_DIFF:
+		val = calc_nframe_delay(framer);
+		if (copy_to_user((u32 *)ioargp,	&val, sizeof(u32))) {
+			err = -EFAULT;
+			goto out;
+		}
+
+		break;
+
 
 	case CPRI_BD_DUMP:
 		bd_dump(framer->eth_priv->ndev);
