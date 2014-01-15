@@ -149,7 +149,7 @@ void framer_int_enable(struct cpri_framer *framer)
 			&framer->regs->cpri_errinten, MASK_ALL, val);
 }
 
-static void cpri_interrupt_enable(struct cpri_dev *cpdev)
+void cpri_interrupt_enable(struct cpri_dev *cpdev)
 {
 
 	int loop = 0;
@@ -837,10 +837,6 @@ static int cpri_probe(struct platform_device *pdev)
 		dev_err(dev, "cpri dev irq init failure\n");
 		goto err_cdev;
 	}
-
-	/* enable interrupt here */
-	cpri_interrupt_enable(cpri_dev);
-
 
 	/* Add to the list of cpri devices - this is required
 	 * as the probe is called for multiple cpri complexes

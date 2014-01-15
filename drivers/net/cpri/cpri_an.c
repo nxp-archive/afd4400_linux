@@ -61,6 +61,14 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 	 */
 	if (pair_framer->framer_state <
 			CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS) {
+
+		if (framer->id == 2)
+			cpri_reg_clear(&framer->cpri_dev->regs->cpri_ctrlclk,
+					C2_CLK_MASK);
+		else
+			cpri_reg_clear(&framer->cpri_dev->regs->cpri_ctrlclk,
+					C1_CLK_MASK);
+
 		gcr_config_cpri_line_rate(framer->cpri_dev->dev_id, 0,
 			CLEAR_LINE_RATE);
 		gcr_config_cpri_line_rate(framer->cpri_dev->dev_id, linerate,
@@ -1090,37 +1098,17 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 	linerate_timer.data = (unsigned long) framer;
 
 	for (rate = high; rate >= low; rate--) {
-		dev_dbg(dev, "trying new link rate\n");
+		dev_dbg(dev, "trying new link rate %d\n", rate);
 		cpri_state_machine(framer,
 				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS);
 		framer->cpri_dev->intr_cpri_frmr_state =
 				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS;
-#if 0
-		/* Disable framer clock */
-		if (framer->id == 2)
-			cpri_reg_clear(
-				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
-		else
-			cpri_reg_clear(
-				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
-		/* Init and set highest possible line rate for serdes only when
-		 *  the previous state is STANDBY & the framer config in
-		 *  SLAVE mode
-		 */
-		if (framer->framer_param.ctrl_flags & SLAVE_MODE) {
-			if (framer->framer_state == STANDBY)
-				/* TBD: serdes_init needs to be called */
-		}
-#endif
-
-		/* TBD: wait for serdes PLL to be locked if not come out
-		 * if timeout happen
-		 */
 
 		if (linkrate_autoneg_reset(framer, rate)) {
 			dev_err(dev, "line autoneg reset failed\n");
 			return;
-		}
+		} else
+			printk("Pass line autoneg reset\n");
 
 		mdelay(10);
 		/* Enable framer clock */
@@ -1133,6 +1121,10 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 
 		mdelay(1);
 
+		/* enable cpri complex interrupt here */
+		cpri_interrupt_enable(framer->cpri_dev);
+
+		/* enable framer interrupt */
 		cpri_init_framer(framer);
 		/* Start timer */
 		timer_dur = jiffies + (param->linerate_timeout) * HZ;
