@@ -1108,7 +1108,7 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 			dev_err(dev, "line autoneg reset failed\n");
 			return;
 		} else
-			printk("Pass line autoneg reset\n");
+			dev_dbg(dev, "Pass line autoneg reset\n");
 
 		mdelay(10);
 		/* Enable framer clock */
