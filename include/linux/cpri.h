@@ -107,8 +107,10 @@ struct cpri_dev {
 	unsigned int irq_gen3;
 	unsigned int irq_gen4;
 	unsigned int irq_err;
+	unsigned int sfp_int;
 	struct tasklet_struct *err_tasklet_frmr0;
 	struct tasklet_struct *err_tasklet_frmr1;
+	struct tasklet_struct *sfp_irq_tasklet;
 	unsigned int framers;
 	u32 dev_flags;
 #define CPRI_D4400				(1 << 6)
@@ -136,9 +138,9 @@ struct sfp_dev {
 	u8 *writebuf;
 	unsigned write_max;
 	/* TODO: stats */
-	unsigned int irq_txfault;
-	unsigned int irq_rxlos;
-	unsigned int irq_prs;
+	unsigned int txfault;
+	unsigned int rxlos;
+	unsigned int prs;
 	unsigned int tx_disable;
 	struct list_head list;
 	struct i2c_client *client[];
@@ -923,6 +925,8 @@ void cpri_eth_parm_init(struct cpri_framer *framer);
 extern struct cpri_framer
 	*get_attached_cpri_dev(struct device_node **sfp_dev_node);
 extern struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node);
+void handle_sfp_irq(unsigned long arg);
+void fill_sfp_detail(struct sfp_dev *sfp_dev, u8 *buf);
 extern void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value);
 extern int sfp_raw_write(struct sfp_dev *sfp, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
@@ -952,4 +956,6 @@ void clear_axc_buff(struct cpri_framer *framer);
 void init_eth(struct cpri_framer *framer);
 struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev);
 void cpri_interrupt_enable(struct cpri_dev *cpdev);
+signed int set_sfp_input_amp_limit(struct cpri_framer *framer,
+		u32 max_volt, u8 flag);
 #endif /* __CPRI_H */

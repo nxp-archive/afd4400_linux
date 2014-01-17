@@ -30,6 +30,42 @@
 #include <linux/qixis.h>
 #include <mach/serdes-d4400.h>
 
+
+signed int set_sfp_input_amp_limit(struct cpri_framer *framer,
+		u32 max_volt, u8 flag)
+{
+	s32 ret;
+	u32 lane_id;
+	struct device_node *child = NULL;
+	unsigned int framer_id;
+	struct device *dev = framer->cpri_dev->dev;
+
+	for_each_child_of_node(framer->cpri_node, child) {
+
+		of_property_read_u32(child, "framer-id", &framer_id);
+		if (framer_id < 0) {
+			dev_err(dev, "Failed to get framer id\n");
+			return -EINVAL;
+		}
+		if (framer_id == framer->id)
+			break;
+	}
+	if (of_get_named_serdes(child, &framer->serdesspec,
+			"serdes-handle", 0)) {
+			dev_err(dev, "Failed to get serdes-handle\n");
+			return -EINVAL;
+	}
+	framer->serdes_handle = get_attached_serdes_dev(framer->serdesspec.np);
+	if (framer->serdes_handle == NULL) {
+		dev_err(dev, "Failed to get serdes handle\n");
+		return -EINVAL;
+	}
+	lane_id = framer->serdesspec.args[0];
+	ret = serdes_sfp_amp_set(framer->serdes_handle, lane_id,
+			max_volt, flag);
+	return ret;
+}
+
 int linkrate_autoneg_reset(struct cpri_framer *framer,
 		enum cpri_link_rate linerate)
 {
@@ -1019,6 +1055,7 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 		/* Turn ON Tx for 'tx_on_dur_sec' */
 		cpri_reg_set(&regs->cpri_config,
 				CONF_TX_EN_MASK);
+		set_sfp_txdisable(framer->sfp_dev, 0);
 #if 0
 		/* Enable SFP Tx */
 		set_sfp_txdisable(framer->sfp_dev, 1);

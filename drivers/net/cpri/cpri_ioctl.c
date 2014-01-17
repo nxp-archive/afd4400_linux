@@ -84,69 +84,6 @@ static void cpri_fill_framer_stats(struct cpri_framer *framer)
 						&regs->cpri_lcv, CNT_LCV_MASK);
 }
 
-static void fill_sfp_info(struct cpri_framer *framer,
-			struct cpri_dev_info *dev_info)
-{
-	int status;
-	struct sfp *info = &(framer->sfp_dev->info);
-
-	status = sfp_raw_read(framer->sfp_dev, (u8 *)&info->type,
-			0, sizeof(struct sfp), SFP_MEM_EEPROM);
-	if (status < 0) {
-		dev_err(framer->cpri_dev->dev, "SFP read error");
-		return;
-	}
-
-	dev_info->sfp_info.type = info->type;
-	dev_info->sfp_info.ext_type = info->ext_type;
-	dev_info->sfp_info.connector_type = info->connector_type;
-
-	memcpy(dev_info->sfp_info.compatibility_code,
-		info->compatibility_code, sizeof(info->compatibility_code));
-
-	dev_info->sfp_info.encoding = info->encoding;
-	dev_info->sfp_info.bitrate = info->bitrate;
-	dev_info->sfp_info.link_len_9u_km = info->link_len_9u_km;
-	dev_info->sfp_info.link_len_9u_100m = info->link_len_9u_100m;
-	dev_info->sfp_info.link_len_50u_10m = info->link_len_50u_10m;
-	dev_info->sfp_info.link_len_62_5u_10m = info->link_len_62_5u_10m;
-	dev_info->sfp_info.link_len_cu_m = info->link_len_cu_m;
-
-	memcpy(dev_info->sfp_info.vendor_name,
-		info->vendor_name, sizeof(info->vendor_name));
-
-	memcpy(dev_info->sfp_info.vendor_oui,
-		info->vendor_oui, sizeof(info->vendor_oui));
-
-	memcpy(dev_info->sfp_info.vendor_pn,
-		info->vendor_pn, sizeof(info->vendor_pn));
-
-	memcpy(dev_info->sfp_info.vendor_rev,
-		info->vendor_rev, sizeof(info->vendor_rev));
-
-	memcpy(dev_info->sfp_info.wavelength,
-		info->wavelength, sizeof(info->wavelength));
-
-	dev_info->sfp_info.check_code_b = info->check_code_b;
-
-	memcpy(dev_info->sfp_info.options,
-		info->options, sizeof(info->options));
-
-	dev_info->sfp_info.bitrate_max = info->bitrate_max;
-	dev_info->sfp_info.bitrate_min = info->bitrate_min;
-
-	memcpy(dev_info->sfp_info.vendor_sn,
-		info->vendor_sn, sizeof(info->vendor_sn));
-
-	memcpy(dev_info->sfp_info.manf_date,
-		info->manf_date, sizeof(info->manf_date));
-
-	dev_info->sfp_info.diag_type = info->diag_type;
-	dev_info->sfp_info.enhanced_options = info->enhanced_options;
-	dev_info->sfp_info.sfp_compliance = info->sfp_compliance;
-	dev_info->sfp_info.check_code_e = info->check_code_e;
-}
-
 static void cpri_fill_framer_info(struct cpri_dev_info *info,
 			struct cpri_framer *framer)
 {
@@ -243,7 +180,7 @@ static void cpri_fill_framer_info(struct cpri_dev_info *info,
 
 	/* SFP info */
 	if (framer->sfp_dev != NULL)
-		fill_sfp_info(framer, info);
+		fill_sfp_detail(framer->sfp_dev, info->sfp_detail);
 
 	/* Current framer param settings */
 	memcpy((struct cpri_dev_init_params *)&info->init_params,
@@ -540,6 +477,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	struct sfp_reg_write_buf sfp_wreg;
 	struct sfp_reg *sfp_wregset;
 	struct sfp_reg_read_buf sfp_rreg;
+	struct sfp_amp_data sfp_amp;
 	u8 *sfp_buf = NULL;
 
 	int err = 0, count, i;
@@ -767,6 +705,23 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 		kfree(wregset);
 		break;
+
+	case SFP_AMP_SET:
+		if (copy_from_user(&sfp_amp,
+				(struct sfp_amp_data *)ioargp,
+				sizeof(struct sfp_amp_data)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		err = set_sfp_input_amp_limit(framer, sfp_amp.max_volt,
+				sfp_amp.flag);
+		if (err) {
+			err = -EINVAL;
+			goto out;
+		}
+
+		break;
+
 
 	case SFP_READ_REG:
 		if (copy_from_user(&sfp_rreg, (struct sfp_reg_read_buf *)ioargp,

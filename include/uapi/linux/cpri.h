@@ -86,38 +86,6 @@ struct cpri_dev_init_params {
 	unsigned int k1;
 };
 
-struct sfp_info {
-	/* Basic ID fields */
-	__u8 type;
-	__u8 ext_type;
-	__u8 connector_type;
-	__u8 compatibility_code[8];
-	__u8 encoding;
-	__u8 bitrate;
-	__u8 link_len_9u_km;
-	__u8 link_len_9u_100m;
-	__u8 link_len_50u_10m;
-	__u8 link_len_62_5u_10m;
-	__u8 link_len_cu_m;
-	__u8 vendor_name[16];
-	__u8 vendor_oui[3];
-	__u8 vendor_pn[16];
-	__u8 vendor_rev[4];
-	__u8 wavelength[2];
-	__u8 check_code_b;
-
-	/* Extended ID fields */
-	__u8 options[2];
-	__u8 bitrate_max;
-	__u8 bitrate_min;
-	__u8 vendor_sn[16];
-	__u8 manf_date[8];
-	__u8 diag_type;
-	__u8 enhanced_options;
-	__u8 sfp_compliance;
-	__u8 check_code_e;
-};
-
 enum cpri_state {
 	CPRI_STATE_SFP_DETACHED = 1,
 	/* Initial state */
@@ -161,7 +129,7 @@ struct cpri_dev_info {
 #define RESET_DETECT_STATUS			(1 << 12)
 	__u16 current_bfn;
 	__u8 current_hfn;
-	struct sfp_info sfp_info;
+	__u8 sfp_detail[33];
 	struct cpri_dev_init_params init_params;
 };
 
@@ -232,6 +200,12 @@ struct sfp_reg_read_buf {
 struct sfp_reg {
 	__u8 offset;
 	__u8 value;
+};
+
+
+struct sfp_amp_data {
+	__u32 max_volt;
+	__u8 flag;
 };
 
 struct sfp_reg_write_buf {
@@ -586,6 +560,8 @@ enum mem_type {
 						struct axc_map_table_get *)
 #define CPRI_BD_DUMP				_IOW(CPRI_MAGIC, 36, \
 							unsigned int)
+#define SFP_AMP_SET				_IOW(CPRI_MAGIC, 37, \
+						struct sfp_amp_data *)
 
 /* VSS channel configuration and data Tx/Rx IOCTLS */
 #define CPRI_OPEN_VSS				_IOW(CPRI_MAGIC, 40, \

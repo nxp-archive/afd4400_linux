@@ -373,6 +373,7 @@
 				ranges = <0x0 0x100000 0x10000>;
 				reg = <0x00107E00 0x400>;
 				status = "okay";
+				sfp-plug-int = <&gpioA 15 0x0>;
 				interrupts = <0 67 0x4>,
 					<0 68 0x4>,
 					<0 69 0x4>,
@@ -844,6 +845,7 @@
                                 ranges = <0x0 0x100000 0x10000>;
                                 reg = <0x00107E00 0x400>;
                                 status = "okay";
+				sfp-plug-int = <&gpioA 15 0x0>;
                                 interrupts = <0 80 0x4>,
                                         <0 81 0x4>,
                                         <0 82 0x4>,

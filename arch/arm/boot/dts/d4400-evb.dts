@@ -20,7 +20,9 @@
                 reg = <0x90000000 0x60000000>;
         };
 
+
         soc@0 {
+
                 aips-bus@1000000 { /* AIPS1 */
                         uart4: serial@f8000 {
                                 pinctrl-names = "default";
@@ -84,12 +86,22 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_i2c1_1>;
 
+				pca9555: pca9555@24 {
+					compatible = "nxp,pca9555";
+					gpio-controller;
+					#gpio-cells = <2>;
+					reg = <0x24>;
+				};
+
 				cpriphy0: sfp0@50 {
-					compatible = "finisar-FTLF8526P3";
-					reg = <0x50 0x51 0x24>;
-					max-addr = <0x3>;
+					compatible = "sfp-dev";
+					reg = <0x50>;
+					max-addr = <0x1>;
+					gpio-sfp-txdisable= <&pca9555 0 0>;
+					gpio-sfp-txfault = <&pca9555 1 0>;
+					gpio-sfp-prs = <&pca9555 2 0>;
+					gpio-sfp-rxlos = <&pca9555 3 0>;
 					};
-			
 			};
 
 			i2c2: i2c@C8000 {
@@ -100,9 +112,13 @@
 				pinctrl-0 = <&pinctrl_i2c2_1>;
 
 				cpriphy1: sfp1@50 {
-					compatible = "finisar-FTLF8526P3";
-					reg = <0x50 0x51 0x24>;
-					max-addr = <0x3>;
+					compatible = "sfp-dev";
+					reg = <0x50>;
+					max-addr = <0x1>;
+					gpio-sfp-txdisable= <&pca9555 4 0>;
+					gpio-sfp-txfault = <&pca9555 5 0>;
+					gpio-sfp-prs = <&pca9555 6 0>;
+					gpio-sfp-rxlos = <&pca9555 7 0>;
 					};
 
 			};
@@ -115,15 +131,18 @@
 				pinctrl-0 = <&pinctrl_i2c3_1>;
 
 				cpriphy2: sfp2@50 {
-					compatible = "finisar-FTLF8526P3";
-					reg = <0x50 0x51 0x24>;
-					max-addr = <0x3>;
+					compatible = "sfp-dev";
+					reg = <0x50>;
+					max-addr = <0x1>;
+					gpio-sfp-txdisable = <&pca9555 8 0>;
+					gpio-sfp-txfault = <&pca9555 9 0>;
+					gpio-sfp-prs = <&pca9555 10 0>;
+					gpio-sfp-rxlos = <&pca9555 11 0>;
 					};
 
 			};
 
                 };
-
                 aips-bus@1200000 { /* AIPS2 */
                         #address-cells = <1>;
                         #size-cells = <1>;
@@ -136,10 +155,15 @@
 				pinctrl-0 = <&pinctrl_i2c5_1>;
 
 				cpriphy3: sfp3@50 {
-					compatible = "finisar-FTLF8526P3";
-					reg = <0x50 0x51 0x24>;
-					max-addr = <0x3>;
-					};
+			      		compatible = "sfp-dev";
+				      	reg = <0x50>;
+				      	max-addr = <0x1>;
+				      	gpio-sfp-txdisable = <&pca9555 12 0>;
+				      	gpio-sfp-txfault = <&pca9555 13 0>;
+			      		gpio-sfp-prs = <&pca9555 14 0>;
+				      	gpio-sfp-rxlos = <&pca9555 15 0>;
+			      	};
+
 			};
 
 			i2c11: i2c@F4000 {

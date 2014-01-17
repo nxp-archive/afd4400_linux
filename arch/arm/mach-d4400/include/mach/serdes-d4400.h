@@ -19,6 +19,40 @@
 
 #define MAX_NUMBER_OF_LANES 8
 
+
+
+#define SERDES_AMP_RED_MASK 0xffffffd0
+
+#define SFP_MAX_LIMIT_1 1320
+#define SFP_MAX_LIMIT_2 1200
+#define SFP_MAX_LIMIT_3 1100
+#define SFP_MAX_LIMIT_4 1008
+#define SFP_MAX_LIMIT_5 902
+#define SFP_MAX_LIMIT_6 800
+#define SFP_MAX_LIMIT_7 702
+#define SFP_MAX_LIMIT_8 600
+#define SFP_MAX_LIMIT_9 550
+#define SFP_MAX_LIMIT_10 500
+#define SFP_MAX_LIMIT_11 450
+#define SFP_MAX_LIMIT_12 400
+#define SFP_MAX_LIMIT_13 350
+#define SFP_MAX_LIMIT_14 200
+
+#define SFP_MAX_LIMIT_1_VAL	0x20
+#define SFP_MAX_LIMIT_2_VAL	0x0
+#define SFP_MAX_LIMIT_3_VAL	0x1
+#define SFP_MAX_LIMIT_4_VAL	0x3
+#define SFP_MAX_LIMIT_5_VAL	0x2
+#define SFP_MAX_LIMIT_6_VAL	0x6
+#define SFP_MAX_LIMIT_7_VAL	0x7
+#define SFP_MAX_LIMIT_8_VAL	0x10
+#define SFP_MAX_LIMIT_9_VAL	0x11
+#define SFP_MAX_LIMIT_10_VAL	0x13
+#define SFP_MAX_LIMIT_11_VAL	0x12
+#define SFP_MAX_LIMIT_12_VAL	0x16
+#define SFP_MAX_LIMIT_13_VAL	0x17
+#define SFP_MAX_LIMIT_14_VAL	0x1f
+
 enum srds_grp_prot_id {
 	SERDES_PROT_SGMII,
 	SERDES_PROT_CPRI_1,
@@ -442,4 +476,21 @@ int serdes_lane_power_up(void *sdev_handle, enum srds_lane_id lane_id);
 
 void serdes_jcpll_enable(void *sdev_handle,
 	struct serdes_lane_params *lane_param, struct serdes_pll_params *pll);
+
+/* --------------------------------------------------------------------------*/
+/**
+ *@Synopsis sfp ampliture reduction logic
+ *
+ * @Param sdev_handle
+ * @Param lane_id
+ *@Param amp max val
+ *@Param flag sfp boost logic enable disable
+ *
+ * @Returns 0: On success
+ *     Error code: On failure
+ */
+/* --------------------------------------------------------------------------*/
+
+signed int serdes_sfp_amp_set(void *sdev_handle, u32 lane_id,
+		u32 max_volt, u8 flag);
 #endif

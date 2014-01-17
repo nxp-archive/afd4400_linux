@@ -31,9 +31,6 @@
 
 #define F(frate)  ((frate & 0x06) >> 1)
 
-#define SERDES_AMP_RED_MASK 0xffffffd0
-#define SERDES_CPRI_AMP_VAL 0x10
-
 
 static LIST_HEAD(serdes_dev_list);
 raw_spinlock_t serdes_list_lock;
@@ -175,6 +172,63 @@ static u32 serdes_rate_select(u32 vco, u32 frate, u32 brate)
 	return hash[vco][mult][F(frate)];
 }
 
+signed int serdes_sfp_amp_set(void *sdev_handle, u32 lane_id,
+		u32 max_volt, u8 flag)
+{
+	struct serdes_dev *sdev = (struct serdes_dev *)sdev_handle;
+	struct serdes_regs *base_reg = sdev->regs;
+	u32 val = 0, mask = SERDES_AMP_RED_MASK, reg_val;
+	u32 *reg = (u32 *) (&base_reg->lane_csr[lane_id].tx_ecr0);
+
+	if (max_volt <= SFP_MAX_LIMIT_14)
+		val = SFP_MAX_LIMIT_14_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_13)
+		val = SFP_MAX_LIMIT_13_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_12)
+		val = SFP_MAX_LIMIT_12_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_11)
+		val = SFP_MAX_LIMIT_11_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_10)
+		val = SFP_MAX_LIMIT_10_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_9)
+		val = SFP_MAX_LIMIT_9_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_8)
+		val = SFP_MAX_LIMIT_8_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_7)
+		val = SFP_MAX_LIMIT_7_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_6)
+		val = SFP_MAX_LIMIT_6_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_5)
+		val = SFP_MAX_LIMIT_5_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_4)
+		val = SFP_MAX_LIMIT_4_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_3)
+		val = SFP_MAX_LIMIT_3_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_2)
+		val = SFP_MAX_LIMIT_2_VAL;
+	else if (max_volt <= SFP_MAX_LIMIT_1)
+		val = SFP_MAX_LIMIT_1_VAL;
+	else
+		return -EINVAL;
+
+	reg_val = ioread32(reg);
+	reg_val &= mask;
+	reg_val |= val;
+	srds_write_reg(reg, reg_val);
+
+	reg = (u32 *) (&base_reg->lane_csr[lane_id].rx_ecr0);
+	val = 0x1 << 28;
+	reg_val = ioread32(reg);
+	if (flag == 0)
+		reg_val &= (~val);
+	else
+		reg_val |= val;
+	srds_write_reg(reg, reg_val);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(serdes_sfp_amp_set);
+
 /* configure lane
  * 1. verify TPLL and RPLL Value
  * 2. if (TPL != RPL) return error
@@ -199,14 +253,6 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 	/* TPLL_LES and RPLL_LES must be same */
 	if (((cflag & 0x4) >> 2) ^ ((cflag & 0x2) >> 1))
 		return -EINVAL;
-	if (lane_param->gen_conf.lane_prot == SERDES_LANE_PROTS_CPRI) {
-		reg = (u32 *) (&base_reg->lane_csr[lane_id].tx_ecr0);
-		val = ioread32(reg);
-		val &= SERDES_AMP_RED_MASK;
-		val |= SERDES_CPRI_AMP_VAL;
-		srds_write_reg(reg, val);
-		val = ioread32(reg);
-	}
 	/* Get PLL ID according to lane */
 	tpll_id = (cflag & 0x2) >> 1;
 	if ((!tpll_id) && (lane_id > LANE_B))
