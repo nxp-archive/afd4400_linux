@@ -37,73 +37,77 @@ static void __iomem *qixisbase;
 
 void qixis_write(u8 val, u8 offset)
 {
-    __raw_writeb(val, (qixisbase + offset));
+	__raw_writeb(val, (qixisbase + offset));
 }
 
 u8 qixis_read(u8 offset)
 {
-   u8 retval =  __raw_readb(qixisbase + offset);
+	u8 retval =  __raw_readb(qixisbase + offset);
 
-   //Not a good approach to put delay
-   //but without delay some times
-   //read is not correct
-   //TO BE DISCUSS with design team
-   udelay(100);
+	/* Not a good approach to put delay
+	* but without delay some times
+	* read is not correct
+	* TO BE DISCUSS with design team
+	*/
+	usleep_range(MIN_DELAY, MAX_DELAY);
 
-   return retval;
+	return retval;
 }
 
 void write_jcpll_reg(u8 val, u16 offset)
 {
-    // 12 bits (0 - 11) of offset contains register address
-    // MAX offset value is 0x3ff
-    u8 lsb = (u8)(offset & 0x00ff); 
-    u8 nibble0 = (u8) ((offset >> 8) & 0x03);
+	/* 12 bits (0 - 11) of offset contains register address
+	 *  MAX offset value is 0x3ff
+	 */
+	u8 lsb = (u8)(offset & 0x00ff);
+	u8 nibble0 = (u8) ((offset >> 8) & 0x03);
 
-    u8 msb = WRITE_NIBBLE | nibble0;
+	u8 msb = WRITE_NIBBLE | nibble0;
 
-    //wait till previous transaction is completed.
-    while(qixis_read(0x34) & 0x80);
+	/* wait till previous transaction is completed */
+	while (qixis_read(QIXIS_CLK_JCPLL_ADDH) & APPLY_STATUS)
+			;
 
-    qixis_write(val, 0x36);
-    qixis_write(lsb, 0x35);
-    qixis_write(msb, 0x34);
+	qixis_write(val, QIXIS_CLK_JCPLL_DATA);
+	qixis_write(lsb, QIXIS_CLK_JCPLL_ADDL);
+	qixis_write(msb, QIXIS_CLK_JCPLL_ADDH);
 }
 
 u8 read_jcpll_reg(u16 offset)
 {
-    u8 retval = 0x00;
+	u8 retval = 0x00;
 
-    // 12 bits (0 - 11) of offset contains register address
-    // MAX offset value is 0x3ff
-    u8 lsb = (u8)(offset & 0x00ff); 
-    u8 nibble0 = (u8) ((offset >> 8) & 0x03);
+	/* 12 bits (0 - 11) of offset contains register address
+	 * MAX offset value is 0x3ff
+	 */
+	u8 lsb = (u8)(offset & 0x00ff);
+	u8 nibble0 = (u8) ((offset >> 8) & 0x03);
 
-    u8 msb = READ_NIBBLE | nibble0;
+	u8 msb = READ_NIBBLE | nibble0;
 
-    qixis_write(lsb, 0x35);
-    qixis_write(msb, 0x34);
+	qixis_write(lsb, QIXIS_CLK_JCPLL_ADDL);
+	qixis_write(msb, QIXIS_CLK_JCPLL_ADDH);
 
-    //wait till last bit of 0x34 is 0
-    while(qixis_read(0x34) & 0x80);
+	/* wait till last bit is 0 */
+	while (qixis_read(QIXIS_CLK_JCPLL_ADDH) & APPLY_STATUS)
+			;
+	retval = qixis_read(QIXIS_CLK_JCPLL_DATA);
 
-    retval = qixis_read(0x36);
-
-    return retval;
+	return retval;
 }
 
 void qixis_lock_jcpll(void)
 {
-    write_jcpll_reg(0xad, 0x17);
-    write_jcpll_reg(0x01, 0x230);
-    write_jcpll_reg(0x01, 0x232);
+	write_jcpll_reg(VDD_CP_BY_HALF, JCPLL_STATUS_PIN_REG);
+	write_jcpll_reg(PWR_DWN_PLL, JCPLL_PWR_DWN_REG);
+	write_jcpll_reg(UPDATE_IO, JCPLL_IO_UPDATE_REG);
 }
 
 void qixis_unlock_jcpll(void)
 {
-    write_jcpll_reg(0x2d, 0x17);
-    write_jcpll_reg(0x00, 0x230);
-    write_jcpll_reg(0x01, 0x232);
+	write_jcpll_reg(VDD_CP_NORMAL, JCPLL_STATUS_PIN_REG);
+	write_jcpll_reg(PWR_ENB_PLL, JCPLL_PWR_DWN_REG);
+	write_jcpll_reg(UPDATE_IO, JCPLL_IO_UPDATE_REG);
 }
 
 static int __exit d4400_fpga_remove(struct platform_device *pdev)
@@ -130,25 +134,27 @@ static int __init d4400_fpga_probe(struct platform_device *pdev)
 	}
 
 	dev_info(&pdev->dev,
-		"QIXIS fpga probe : %02x:%02x - %02x.%02x\n", 
-		qixis_read(0x00),qixis_read(0x01),
-		qixis_read(0x02),qixis_read(0x03));
+		"QIXIS fpga probe : %02x:%02x - %02x.%02x\n",
+		qixis_read(QIXIS_ID),
+		qixis_read(QIXIS_EVBBRD_VER),
+		qixis_read(QIXIS_FPGA_MAJOR_VER),
+		qixis_read(QIXIS_FPGA_MINOR_VER));
 
 	return ret;
 }
 
 static struct of_device_id d4400_fpga_ids[] = {
-    {.compatible = "fsl,d4400-fpga", },
+	{.compatible = "fsl,d4400-fpga", },
 	{ /* sentinel */ }
 };
 
 static struct platform_driver d4400_fpga_driver = {
-    .remove = __exit_p(d4400_fpga_remove),
-    .driver = {
-        .name   = DRIVER_NAME,
-        .owner  = THIS_MODULE,
-        .of_match_table = d4400_fpga_ids,
-    },
+	.remove = __exit_p(d4400_fpga_remove),
+	.driver = {
+		.name = DRIVER_NAME,
+		.owner = THIS_MODULE,
+		.of_match_table = d4400_fpga_ids,
+	},
 };
 
 static int __init d4400_fpga_init(void)
