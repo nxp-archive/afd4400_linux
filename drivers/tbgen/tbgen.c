@@ -662,7 +662,6 @@ static int tbgen_config_tx_timer_regs(struct tbgen_timer *timer,
 		val |= TXCTRL_SREPEN;
 
 	if (timer_param->config_flags & TIMER_CONF_ACTIVE_LOW) {
-		val |= TMRCTRL_POL_ACTIVE_LOW;
 
 		/* XXX: Active low hack : D4400 uses all the strobes as
 		 * active high to activate the signal that the strobe is
@@ -1130,6 +1129,10 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_DO_NOT_FIRE)) {
 			dev_dbg(tbg->dev, "[%d:%d] Act low hack, abort fire\n",
 				type, timer_id);
+			val = TMRCTRL_POL_ACTIVE_LOW;
+			mask = TMRCTRL_POL_ACTIVE_LOW;
+			tbgen_update_reg(ctrl_reg, val, mask);
+
 			spin_unlock(&timer->lock);
 			retcode = 0;
 			goto out;
@@ -1158,6 +1161,13 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		tbgen_update_reg(ctrl_reg, val, mask);
 		SET_STATUS_FLAG(timer, STATUS_FLG_ENABLED);
 	} else {
+		if (CHECK_STATUS_FLAG(timer, STATUS_FLG_DO_NOT_FIRE)) {
+			val = ~TMRCTRL_POL_ACTIVE_LOW;
+			mask = TMRCTRL_POL_ACTIVE_LOW;
+			tbgen_update_reg(ctrl_reg, val, mask);
+			spin_unlock(&timer->lock);
+			goto out;
+		}
 		val = ~TMRCTRL_EN;
 		mask = TMRCTRL_EN;
 		tbgen_update_reg(ctrl_reg, val, mask);

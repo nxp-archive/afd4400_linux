@@ -1974,6 +1974,8 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 
 	tbgen_timer_enable(tdev->timer_handle);
 
+	udelay(20);
+
 	/*Enable Tx/Rx*/
 	if (tdev->type == JESD_DEV_TX) {
 		reg = &tdev->tx_regs->tx_frm_ctrl;
