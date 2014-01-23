@@ -1968,6 +1968,7 @@ static void jesd_handle_sysref_rose(struct jesd_transport_dev *tdev)
 	mask = IRQ_SYSREF_ROSE;
 	jesd_update_reg(irq_en_reg, val, mask);
 
+
 	if (tdev->type == JESD_DEV_TX)
 		tbgen_timer_enable(tdev->txalign_timer_handle);
 
@@ -2061,25 +2062,25 @@ void jesd_deframer_isr(struct jesd_transport_dev *tdev)
 	struct config_registers_rx *rx_regs = tdev->rx_regs;
 
 	if (ioread32(&rx_regs->rx_cgs)) {
-		dev_info(tdev->dev, "%s: code grp sync %x\n", tdev->name,
+		dev_dbg(tdev->dev, "%s: code grp sync %x\n", tdev->name,
 			ioread32(&rx_regs->rx_cgs));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_cgs);
 	}
 
 	if (ioread32(&rx_regs->rx_fsf)) {
-		dev_info(tdev->dev, "%s: Frame sync %x\n", tdev->name,
+		dev_dbg(tdev->dev, "%s: Frame sync %x\n", tdev->name,
 			ioread32(&rx_regs->rx_fsf));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_fsf);
 	}
 
 	if (ioread32(&rx_regs->rx_ilsf)) {
-		dev_info(tdev->dev, "%s: ILS flag %x\n", tdev->name,
+		dev_dbg(tdev->dev, "%s: ILS flag %x\n", tdev->name,
 			ioread32(&rx_regs->rx_ilsf));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_ilsf);
 	}
 
 	if (ioread32(&rx_regs->rx_g_csum)) {
-		dev_info(tdev->dev, "%s: Good checksum %x\n", tdev->name,
+		dev_dbg(tdev->dev, "%s: Good checksum %x\n", tdev->name,
 			ioread32(&rx_regs->rx_g_csum));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_g_csum);
 	}
