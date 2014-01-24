@@ -445,7 +445,6 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 		/* Enable Rx */
 		cpri_reg_set(&regs->cpri_config,
 			CONF_RX_EN_MASK);
-		mdelay(10);
 		/* Set Rx control interrupt events */
 		cpri_reg_set(&regs->cpri_rcr, IQ_EN_MASK);
 

@@ -53,49 +53,6 @@ static int get_segment_id(struct axc_pos *axc_pos, unsigned short size)
 	return seg_num;
 }
 
-void dump_all_segment(struct cpri_framer *framer, u32 cmd)
-{
-	int loop;
-	struct cpri_framer_regs __iomem *regs = framer->regs;
-	struct device *dev = framer->cpri_dev->dev;
-	u32 val;
-	u32 val1;
-	u32 val2;
-
-	dev_dbg(dev, "========= CPRI Segment dump ==========");
-	dev_dbg(dev, " ");
-	for (loop = 0; loop < 3072; loop++) {
-
-		val = loop;
-
-		if (cmd & UL_AXCS) {
-			cpri_reg_clear(&regs->cpri_tcma, MASK_ALL);
-			cpri_reg_write(&framer->regs_lock, &regs->cpri_tcma,
-				(AXC_TBL_WRITE_MASK | AXC_TBL_SEG_ADDR_MASK),
-				val);
-			mdelay(1);
-			val2  = cpri_reg_get_val(&regs->cpri_tcmd0, MASK_ALL);
-			val1  = cpri_reg_get_val(&regs->cpri_tcmd1, MASK_ALL);
-			dev_dbg(dev, "ul_seg[%d] tcmd0: 0x%x, tcmd1: 0x%x ...",
-					val, val2, val1);
-		} else {
-			cpri_reg_clear(&regs->cpri_rcma, MASK_ALL);
-			cpri_reg_write(&framer->regs_lock, &regs->cpri_rcma,
-				(AXC_TBL_WRITE_MASK | AXC_TBL_SEG_ADDR_MASK),
-				val);
-			mdelay(1);
-			val2 = cpri_reg_get_val(&regs->cpri_rcmd0, MASK_ALL);
-			val1  = cpri_reg_get_val(&regs->cpri_rcmd1, MASK_ALL);
-			dev_dbg(dev, "dl_seg[%d] rcmd0: 0x%x, rcmd1: 0x%x ...",
-					val, val2, val1);
-		}
-	}
-	dev_dbg(dev, " ");
-	dev_dbg(dev, " ");
-
-}
-
-
 void clear_axc_map_tx_rx_table(struct cpri_framer *framer)
 {
 	int loop;
@@ -103,25 +60,16 @@ void clear_axc_map_tx_rx_table(struct cpri_framer *framer)
 	u32 val;
 
 	for (loop = 0; loop < 3072; loop++) {
-		cpri_reg_clear(&regs->cpri_tcma, MASK_ALL);
-		cpri_reg_clear(&regs->cpri_rcma, MASK_ALL);
-		cpri_reg_clear(&regs->cpri_tcmd0, MASK_ALL);
-		cpri_reg_clear(&regs->cpri_tcmd1, MASK_ALL);
-		cpri_reg_clear(&regs->cpri_rcmd0, MASK_ALL);
-		cpri_reg_clear(&regs->cpri_rcmd1, MASK_ALL);
 		val = (AXC_TBL_WRITE_MASK | loop);
-		cpri_reg_write(&framer->regs_lock, &regs->cpri_rcma,
-			(AXC_TBL_WRITE_MASK | AXC_TBL_SEG_ADDR_MASK),
-			val);
-		mdelay(1);
-		cpri_reg_clear(&regs->cpri_rcma, MASK_ALL);
-		cpri_reg_write(&framer->regs_lock, &regs->cpri_tcma,
-			(AXC_TBL_WRITE_MASK | AXC_TBL_SEG_ADDR_MASK),
-			val);
-		mdelay(1);
+		cpri_write(0, &regs->cpri_rcmd0);
+		cpri_write(0, &regs->cpri_rcmd1);
+		cpri_write(val, &regs->cpri_rcma);
+
+		cpri_write(0, &regs->cpri_tcmd0);
+		cpri_write(0, &regs->cpri_tcmd1);
+		cpri_write(val, &regs->cpri_tcma);
+
 	}
-	cpri_reg_clear(&regs->cpri_tcma, MASK_ALL);
-	cpri_reg_clear(&regs->cpri_rcma, MASK_ALL);
 	cpri_reg_clear(&regs->cpri_map_tbl_config, MASK_ALL);
 	cpri_reg_clear(&regs->cpri_map_config, MASK_ALL);
 
@@ -1614,10 +1562,7 @@ void delete_axc(struct cpri_framer *framer, unsigned char axc_id,
 					reg_cma, AXC_TBL_WRITE_MASK);
 			bit_mapped = clear_segment_param(segment, axc,
 					reg_rcmd0);
-			cpri_reg_set_val(reg_cma,
-					AXC_TBL_SEG_ADDR_MASK, seg);
-			cpri_reg_set(reg_cma,
-					AXC_TBL_WRITE_MASK);
+                        cpri_write((AXC_TBL_WRITE_MASK | seg), reg_cma);
 
 			axc_size -= bit_mapped;
 			if ((axc_size) && (axc_size > SEG0_OFFSET))
@@ -1983,7 +1928,6 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 	loop = 1;
 	while ((loop & 0x1)) {
 		loop = cpri_reg_get_val(cpri_status, AXC_ENABLE_MASK);
-		mdelay(1);
 	}
 	cpri_write(0x0, reg_accr);
 	cpri_write(0x0, &regs->cpri_map_tbl_config);

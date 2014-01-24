@@ -147,19 +147,19 @@ static void cpri_configure_irq_events(struct cpri_framer *framer)
 }
 
 
-static void cpri_init_framer(struct cpri_framer *framer)
+static void cpri_init_framer(struct cpri_framer *framer,
+				enum cpri_link_rate rate)
 {
 	struct cpri_dev_init_params *param = &framer->framer_param;
+	struct cpri_autoneg_params *autoneg_param = &(framer->autoneg_param);
 	struct cpri_framer_regs __iomem *regs = framer->regs;
+	enum cpri_prot_ver tproto_ver;
+	u32 tx_seed;
 
 	clear_axc_buff(framer);
 	cpri_reg_set_val(&regs->cpri_rdelay_ctrl,
 				 MASK_ALL, 0x20);
 	init_eth(framer);
-	/* Rx scrambler setting */
-	if (framer->autoneg_param.flags & CPRI_RX_SCRAMBLER_EN)
-		cpri_reg_set(&regs->cpri_rscrseed,
-				RX_SCR_EN_MASK);
 	if (framer->autoneg_param.flags & CPRI_FRMR_PAIR_SYNC_MODE) {
 		cpri_reg_set_val(&framer->regs->cpri_timer_cfg,
 			CPRI_SYNC_ESA_MASK, CPRI_PAIRED_SYNC);
@@ -175,9 +175,25 @@ static void cpri_init_framer(struct cpri_framer *framer)
 		MASK_ALL, 0);
 
 	cpri_reg_set_val(&regs->cpri_taccr,
-			MASK_ALL, 0);
+		MASK_ALL, 0);
+	/* Use user's first eth pointer */
+	if (autoneg_param->eth_rates)
+		cpri_reg_set_val(&regs->cpri_cmconfig,
+				TX_FAST_CM_PTR_MASK, (u32)autoneg_param->eth_rates[0]);
 
-	cpri_reg_clear(&regs->cpri_cmconfig, MASK_ALL);
+	/* Setup init ptoto version */
+	if ((rate < RATE5_4915_2M) ||
+			(autoneg_param->tx_prot_ver == VER_1)) {
+		tproto_ver = VER_1;
+		tx_seed = 0;
+	} else {
+		tproto_ver = VER_2;
+		tx_seed = autoneg_param->tx_scr_seed;
+	}
+	cpri_reg_set_val(&regs->cpri_tprotver,
+				PROTO_VER_MASK, tproto_ver);
+	cpri_reg_set_val(&regs->cpri_tscrseed,
+				SCR_SEED_MASK, tx_seed);
 
 	/* Clear all control interrupt events */
 	cpri_reg_clear(&regs->cpri_rcr,
@@ -405,11 +421,6 @@ static void link_reconfig(struct interface_reconf_param *recnf_parm,
 	u32 i = 0;
 	u32 mask = 0;
 
-	/* Rx scrambler setting */
-	if (param->flags & CPRI_RX_SCRAMBLER_EN)
-		cpri_reg_clear(&regs->cpri_rscrseed,
-				RX_SCR_EN_MASK);
-
 	/* Clear bf data */
 	output->cpri_bf_word_size = 0;
 	output->cpri_bf_iq_datablock_size = 0;
@@ -575,12 +586,7 @@ static void cpri_init_autoneg_timers(struct cpri_framer *framer)
 static void set_autoneg_param(struct cpri_framer *framer,
 		struct cpri_autoneg_params *param)
 {
-	struct cpri_framer_regs __iomem  *regs = framer->regs;
 
-	/* Rx scrambler setting */
-	if (param->flags & CPRI_RX_SCRAMBLER_EN)
-		cpri_reg_set(&regs->cpri_rscrseed,
-				RX_SCR_EN_MASK);
 	framer->l1_expiry_dur_sec = param->l1_setup_timeout;
 	cpri_init_autoneg_timers(framer);
 
@@ -1110,7 +1116,7 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		} else
 			dev_dbg(dev, "Pass line autoneg reset\n");
 
-		mdelay(10);
+		mdelay(1);
 		/* Enable framer clock */
 		if (framer->id == 2)
 			cpri_reg_set(
@@ -1125,7 +1131,7 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 		cpri_interrupt_enable(framer->cpri_dev);
 
 		/* enable framer interrupt */
-		cpri_init_framer(framer);
+		cpri_init_framer(framer, rate);
 		/* Start timer */
 		timer_dur = jiffies + (param->linerate_timeout) * HZ;
 		linerate_timer.expires = timer_dur;
