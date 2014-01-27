@@ -71,6 +71,9 @@ static int jesd_conf_auto_sync(struct jesd_transport_dev *tdev,
 static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
 	struct lane_device *lane_dev, int idx);
 
+static int jesd_init_serdes_lanes(struct jesd_transport_dev *tdev);
+static int jesd_stop_serdes_lanes(struct jesd_transport_dev *tdev);
+
 void jesd_update_reg(u32 *reg, u32 val, u32 mask)
 {
 	u32 reg_val;
@@ -599,6 +602,20 @@ static int jesd_setup_transport(struct jesd_transport_dev *tdev)
 	return rc;
 }
 
+static int jesd_serdes_lane_stop(struct jesd_transport_dev *tdev,
+	struct lane_device *lane)
+{
+	int rc = 0;
+
+	rc = serdes_lane_power_down(tdev->serdes_handle, lane->serdes_lane_id);
+	if (rc) {
+		dev_err(tdev->dev, "%s: Failed to power down lane %d\n",
+			tdev->name, lane->serdes_lane_id);
+	}
+
+	return rc;
+}
+
 static int jesd_serdes_lane_init(struct jesd_transport_dev *tdev,
 	struct lane_device *lane)
 {
@@ -713,6 +730,12 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 	rc = jesd_set_delays(tdev);
 	if (rc) {
 		dev_err(tdev->dev, "Failed to set delays, err %d\n", rc);
+		goto out;
+	}
+
+	rc = jesd_init_serdes_lanes(tdev);
+	if (rc) {
+		dev_err(tdev->dev, "Failed setup serdes lanes, err %d\n", rc);
 		goto out;
 	}
 
@@ -1271,10 +1294,43 @@ static void config_version(struct jesd_transport_dev *tdev)
 	jesd_update_reg(reg, val, mask);
 }
 
+static int jesd_init_serdes_lanes(struct jesd_transport_dev *tdev)
+{
+	int rc = 0, i;
+
+	for (i = 0; i < tdev->active_lanes; i++) {
+		rc = jesd_serdes_lane_init(tdev, tdev->lane_devs[i]);
+		if (rc) {
+			dev_err(tdev->dev, "%s: SERDES lane init failed %d\n",
+				tdev->name, rc);
+			goto out;
+		}
+	}
+
+out:
+	return rc;
+}
+
+static int jesd_stop_serdes_lanes(struct jesd_transport_dev *tdev)
+{
+	int rc = 0, i;
+
+	for (i = 0; i < tdev->active_lanes; i++) {
+		rc = jesd_serdes_lane_stop(tdev, tdev->lane_devs[i]);
+		if (rc) {
+			dev_err(tdev->dev, "%s: SERDES lane init failed %d\n",
+				tdev->name, rc);
+			goto out;
+		}
+	}
+
+out:
+	return rc;
+}
 
 static int jesd_set_ils_pram(struct jesd_transport_dev *tdev)
 {
-	int rc = 0, i;
+	int rc = 0;
 	u32 *reg = NULL, val, mask;
 
 	set_did_bid(tdev);
@@ -1299,15 +1355,6 @@ static int jesd_set_ils_pram(struct jesd_transport_dev *tdev)
 		dev_err(tdev->dev, "Failed to configure SEDRDES, err %d\n",
 			rc);
 		goto out;
-	}
-
-	for (i = 0; i < tdev->active_lanes; i++) {
-		rc = jesd_serdes_lane_init(tdev, tdev->lane_devs[i]);
-		if (rc) {
-			dev_err(tdev->dev, "%s: SERDES lane init failed %d\n",
-				tdev->name, rc);
-			goto out;
-		}
 	}
 
 	if (tdev->type == JESD_DEV_TX)
@@ -1446,6 +1493,8 @@ static int jesd_dev_stop(struct jesd_transport_dev *tdev)
 		rc = jesd_tx_stop(tdev);
 	else
 		rc = jesd_rx_stop(tdev);
+
+	jesd_stop_serdes_lanes(tdev);
 
 	return rc;
 out:
