@@ -21,7 +21,7 @@
 
 
 
-#define SERDES_AMP_RED_MASK 0xffffffd0
+#define SERDES_AMP_RED_MASK 0x3f
 
 #define SFP_MAX_LIMIT_1 1320
 #define SFP_MAX_LIMIT_2 1200

@@ -53,6 +53,9 @@
 #define NUM_SUBSEG				3
 #define INVALIDE_MBLK_ADDR			0xffffffff
 
+#define SUB_SEG0_SIZE				10
+#define SUB_SEG1_SIZE				10
+
 #define CEIL_FUNC(val, count) ((((val / count) * count) == val) ? \
 	(val / count) : ((val / count) + 1))
 #define BIT_POS(word, size, bit) ((((word - 1) * size) + bit) % SEG_SIZE)

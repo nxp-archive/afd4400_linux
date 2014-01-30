@@ -101,7 +101,7 @@ struct cpri_dev {
 	unsigned int dev_id;
 	struct cpri_common_regs __iomem *regs;
 	struct device *dev;
-	raw_spinlock_t lock;
+	spinlock_t lock;
 	unsigned int irq_gen1;
 	unsigned int irq_gen2;
 	unsigned int irq_gen3;
@@ -392,7 +392,7 @@ struct cpri_framer {
 	struct cpri_dev *cpri_dev;
 	struct cdev cdev;
 	dev_t dev_t;
-	raw_spinlock_t regs_lock;
+	spinlock_t regs_lock;
 	struct device_node *sfp_dev_node;
 	struct sfp_dev *sfp_dev;
 	struct of_phandle_args serdesspec;
@@ -429,8 +429,8 @@ struct cpri_framer {
 	struct axc *axcs;
 	struct axc_map_table ul_map_table;
 	struct axc_map_table dl_map_table;
-	raw_spinlock_t ul_map_tbl_lock;
-	raw_spinlock_t dl_map_tbl_lock;
+	spinlock_t ul_map_tbl_lock;
+	spinlock_t dl_map_tbl_lock;
 	struct axc_buf_head tx_buf_head;
 	struct axc_buf_head rx_buf_head;
 	/* Ethernet data structures per framer */
@@ -443,7 +443,7 @@ struct cpri_framer {
 	/* Control word channel data structures per framer */
 	struct hf_ctrl_chans tx_hf_ctrl_chans;
 	struct hf_ctrl_chans rx_hf_ctrl_chans;
-	raw_spinlock_t tx_cwt_lock;
+	spinlock_t tx_cwt_lock;
 	/* Daisy chain data structures per framer */
 	struct daisy_chain_param chain_param;
 	/* SRC */
@@ -822,18 +822,18 @@ static inline void cpri_reg_set(void __iomem *addr,
 	cpri_write(val, addr);
 }
 
-static inline void cpri_reg_write(raw_spinlock_t *lock,
+static inline void cpri_reg_write(spinlock_t *lock,
 		void __iomem *addr,  u32 mask, u32 val)
 {
 	u32 tmp = 0;
 	unsigned long flags;
 
-	raw_spin_lock_irqsave(lock, flags);
+	spin_lock_irqsave(lock, flags);
 	tmp = cpri_read(addr);
 	tmp |= mask;
 	tmp &= (~mask | val);
 	cpri_write(tmp, addr);
-	raw_spin_unlock_irqrestore(lock, flags);
+	spin_unlock_irqrestore(lock, flags);
 }
 
 static inline void cpri_reg_set_val(void __iomem *addr,

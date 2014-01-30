@@ -48,7 +48,7 @@ static struct of_device_id cpri_match[] = {
 static struct class *cpri_class;
 
 static LIST_HEAD(cpri_dev_list);
-raw_spinlock_t cpri_list_lock;
+spinlock_t cpri_list_lock;
 
 struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev)
 {
@@ -71,7 +71,7 @@ struct cpri_framer *get_attached_cpri_dev(struct device_node **sfp_dev_node)
 	struct device_node *node = NULL;
 	int i;
 
-	raw_spin_lock(&cpri_list_lock);
+	spin_lock(&cpri_list_lock);
 	list_for_each_entry(cpri_dev, &cpri_dev_list, list) {
 
 		for (i = 0; i < cpri_dev->framers; i++) {
@@ -91,7 +91,7 @@ struct cpri_framer *get_attached_cpri_dev(struct device_node **sfp_dev_node)
 			break;
 		}
 	}
-	raw_spin_unlock(&cpri_list_lock);
+	spin_unlock(&cpri_list_lock);
 
 	return framer;
 }
@@ -148,7 +148,7 @@ void framer_int_enable(struct cpri_framer *framer)
 		TX_VSS_UNDERRUN | RX_VSS_OVERRUN |
 		ECC_CONFIG_MEM | ECC_DATA_MEM | RX_ETH_MEM_OVERRUN |
 		TX_ETH_UNDERRUN | RX_ETH_BD_UNDERRUN | RX_ETH_DMA_OVERRUN |
-		ETH_FORWARD_REM_FIFO_FULL);
+		ETH_FORWARD_REM_FIFO_FULL | RAI);
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_errinten, MASK_ALL, val);
 }
@@ -525,7 +525,7 @@ static void cpri_err_tasklet(unsigned long arg)
 		TX_VSS_UNDERRUN | RX_VSS_OVERRUN |
 		ECC_CONFIG_MEM | ECC_DATA_MEM | RX_ETH_MEM_OVERRUN |
 		TX_ETH_UNDERRUN | RX_ETH_BD_UNDERRUN | RX_ETH_DMA_OVERRUN |
-		ETH_FORWARD_REM_FIFO_FULL);
+		ETH_FORWARD_REM_FIFO_FULL | RAI);
 	if (err_evt && mask) {
 		if (err_evt & RX_ETH_MEM_OVERRUN)
 			cpri_reg_get_val(&framer->regs->cpri_rethexstatus,
@@ -877,8 +877,8 @@ static int cpri_probe(struct platform_device *pdev)
 		device_create(cpri_class, framer->cpri_dev->dev, framer->dev_t,
 			NULL, "%s_frmr%d", dev_name, framer->id-1);
 
-		raw_spin_lock_init(&framer->regs_lock);
-		raw_spin_lock_init(&framer->tx_cwt_lock);
+		spin_lock_init(&framer->regs_lock);
+		spin_lock_init(&framer->tx_cwt_lock);
 
 		cpri_mask_irq_events(framer);
 		if (process_framer_irqs(child, framer) < 0) {
@@ -918,11 +918,11 @@ static int cpri_probe(struct platform_device *pdev)
 	/* Add to the list of cpri devices - this is required
 	 * as the probe is called for multiple cpri complexes
 	 */
-	raw_spin_lock(&cpri_list_lock);
+	spin_lock(&cpri_list_lock);
 
 	cpri_dev_pair = get_pair_cpri_dev(framer->cpri_dev);
 	list_add_tail(&cpri_dev->list, &cpri_dev_list);
-	raw_spin_unlock(&cpri_list_lock);
+	spin_unlock(&cpri_list_lock);
 
 	dev_set_drvdata(dev, cpri_dev);
 	if (!cpri_dev_pair)
@@ -999,7 +999,7 @@ static int cpri_remove(struct platform_device *pdev)
 	tasklet_kill(cpri_dev->err_tasklet_frmr1);
 
 	/* Deleting the cpri device from list */
-	raw_spin_lock(&cpri_list_lock);
+	spin_lock(&cpri_list_lock);
 	list_for_each_safe(pos, nx, &cpri_dev_list) {
 		cpdev = list_entry(pos, struct cpri_dev, list);
 		if (cpdev == cpri_dev) {
@@ -1008,7 +1008,7 @@ static int cpri_remove(struct platform_device *pdev)
 			break;
 		}
 	}
-	raw_spin_unlock(&cpri_list_lock);
+	spin_unlock(&cpri_list_lock);
 
 	dev_set_drvdata(cpri_dev->dev, NULL);
 
@@ -1037,6 +1037,7 @@ static int __init cpri_mod_init(void)
 		rc = PTR_ERR(cpri_class);
 		return rc;
 	}
+	spin_lock_init(&cpri_list_lock);
 
 	return platform_driver_register(&cpri_driver);
 }
@@ -1050,13 +1051,13 @@ static void __exit cpri_exit(void)
 
 	class_destroy(cpri_class);
 
-	raw_spin_lock(&cpri_list_lock);
+	spin_lock(&cpri_list_lock);
 	list_for_each_safe(pos, nx, &cpri_dev_list) {
 		cpdev = list_entry(pos, struct cpri_dev, list);
 		list_del(&cpdev->list);
 		kfree(cpdev);
 	}
-	raw_spin_unlock(&cpri_list_lock);
+	spin_unlock(&cpri_list_lock);
 }
 
 module_init(cpri_mod_init);

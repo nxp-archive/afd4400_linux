@@ -177,7 +177,7 @@ signed int serdes_sfp_amp_set(void *sdev_handle, u32 lane_id,
 {
 	struct serdes_dev *sdev = (struct serdes_dev *)sdev_handle;
 	struct serdes_regs *base_reg = sdev->regs;
-	u32 val = 0, mask = SERDES_AMP_RED_MASK, reg_val;
+	u32 val = 0, mask = ~SERDES_AMP_RED_MASK, reg_val;
 	u32 *reg = (u32 *) (&base_reg->lane_csr[lane_id].tx_ecr0);
 
 	if (max_volt <= SFP_MAX_LIMIT_14)

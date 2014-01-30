@@ -816,6 +816,12 @@ void set_segment_map(struct segment_param *seg_param)
 		axc_size = axc_size - (12 - bit_position);
 	}
 
+	/* Detailed in valid mapping case 1 in reference mannual*/
+	if (axc_size < SUB_SEG0_SIZE) {
+		map_size = subsegment->map_size;
+		subsegment->map_size = (cmd) ? (map_size + axc_size) : 0;
+		goto mapping_done;
+	}
 
 	segment = (segment + 1);
 	num_seg = CEIL_FUNC(axc_size, SEG_SIZE);
@@ -826,7 +832,8 @@ void set_segment_map(struct segment_param *seg_param)
 		subsegment = &segment->subsegments[subseg_num];
 		subsegment->offset = 0;
 		subsegment->axc = (cmd) ? axc : NULL;
-		if (axc_size < (2 * SEG_SIZE))
+		/* Detialed in valid mapping case 2 */
+		if (axc_size < (SEG_SIZE + SUB_SEG0_SIZE))
 			map_size = axc_size;
 		else
 			map_size = (SEG_SIZE < axc_size) ? SEG_SIZE : axc_size;
@@ -1037,7 +1044,7 @@ void map_table_struct_entry_ctrl(struct axc *axc, unsigned char cmd)
 	seg = get_segment_id(axc_pos, word_size);
 	dev_dbg(dev, "aux interface flag: 0x%x\n", axc->flags);
 	if (axc->flags & AXC_AUX_EN) {
-			dev_info(dev, "configure for aux interface\n");
+			dev_dbg(dev, "configure for aux interface\n");
 			program_aux_interface(axc, word_size);
 	}
 
@@ -1683,7 +1690,7 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 		cpri_write(0, reg_rcmd0);
 		cpri_write(0, reg_rcmd1);
 		if (subsegloop == 2) {
-			dev_dbg(dev, "rcmd1 -> subsegNum[%d], sbseg_offst: %d",
+			dev_dbg(dev, "regcmd1->subsegNum[%d], sbseg_offst: %d",
 					subsegloop, subsegment->offset);
 			dev_dbg(dev, "tcm_enable: 0x%x, pos[0x%x] - 0x%x\n",
 					tcm_enable, position,
@@ -1698,7 +1705,7 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 			dev_dbg(dev, "axcid: %d val: 0x%x", axc->id, val);
 			break;
 		} else {
-			dev_dbg(dev, "rcmd0 -> subsegNum[%d], sbseg_offst: %d",
+			dev_dbg(dev, "regcmd0->subsegNum[%d], sbseg_offst: %d",
 					subsegloop, subsegment->offset);
 			dev_dbg(dev, "pos[0x%x] - 0x%x\n",
 					position, (subsegment->offset / 2));
@@ -1761,7 +1768,7 @@ int check_for_kval_overlap(struct cpri_framer *framer, unsigned int flag)
 		k1_map[1] = (map_table->k1_bitmap[loop])[1];
 
 		if ((k0_map[0] & k1_map[0]) || (k0_map[1] & k1_map[1])) {
-			dev_info(dev, "k0[0]:%d, k0[1]:%d, k1[0]:%d, k1[1]:%d",
+			dev_err(dev, "k0[0]:%d, k0[1]:%d, k1[0]:%d, k1[1]:%d",
 				k0_map[0], k0_map[1], k1_map[0], k1_map[1]);
 			return -EINVAL;
 		}
@@ -1843,7 +1850,7 @@ int check_for_kval_overlap(struct cpri_framer *framer, unsigned int flag)
 
 		return 0;
 INVAL:
-	dev_info(dev, "k0[0]/k1[0]:0x%x/0x%x, k0[1].k1[1]:0x%x/0x%x, msk:0x%x",
+	dev_err(dev, "k0[0]/k1[0]:0x%x/0x%x, k0[1].k1[1]:0x%x/0x%x, msk:0x%x",
 		k0_map[0], k1_map[0], k0_map[1], k1_map[1], mask);
 	return -EINVAL;
 

@@ -1028,7 +1028,7 @@ static int check_framesync(struct cpri_framer *framer)
 		if (line_sync_acheived)
 			return 0;
 
-		schedule_timeout_interruptible(msecs_to_jiffies(20));
+		schedule_timeout_interruptible(msecs_to_jiffies(2));
 	}
 
 	return -ETIME;
@@ -1037,17 +1037,10 @@ static int check_framesync(struct cpri_framer *framer)
 static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
-#if 0
-	struct cpri_autoneg_params *param = &(framer->autoneg_param);
-#endif
 	struct device *dev = framer->cpri_dev->dev;
 	u32 rai_cleared;
 	int err = 0;
 
-	/* TBD: Setup hw before starting autoneg with REC - Not clear
-	 * Set Tx protocol ver ? Set Tx seed ?
-	 * Identify channels and what data to send ?
-	 */
 	cpri_reg_set(&regs->cpri_config,
 				CONF_RX_EN_MASK);
 
@@ -1056,28 +1049,10 @@ static int check_linesync(struct cpri_framer *framer, enum cpri_link_rate rate)
 		cpri_reg_set(&regs->cpri_config,
 				CONF_TX_EN_MASK);
 		set_sfp_txdisable(framer->sfp_dev, 0);
-#if 0
-		/* Enable SFP Tx */
-		set_sfp_txdisable(framer->sfp_dev, 1);
-
-		schedule_timeout_interruptible(param->tx_on_time * HZ);
-
-		/* Turn OFF Tx for 'tx_off_dur_sec'*/
-		cpri_reg_clear(&regs->cpri_config,
-				CONF_TX_EN_MASK);
-
-		/* Disable SFP Tx */
-		set_sfp_txdisable(framer->sfp_dev, 0);
-
-		schedule_timeout_interruptible(param->tx_off_time * HZ);
-#endif
-		/* TBD: check whether REC signal received
-		 * Need to handle LOS here
-		 * LOS will go down when REC signal is recieved
-		 */
 
 		err = check_framesync(framer);
-		if (err == -ETIME)
+		if ((err == -ETIME) || (framer->timer_expiry_events
+				!= TEVENT_LINERATE_SETUP_TEXPIRED))
 			break;
 
 		/* Check for remote alarm indication cleared */
@@ -1149,6 +1124,8 @@ void cpri_linkrate_autoneg(struct work_struct *work)
 
 		if (linkrate_autoneg_reset(framer, rate)) {
 			dev_err(dev, "line autoneg reset failed\n");
+			cpri_state_machine(framer,
+					CPRI_STATE_LINK_ERROR);
 			return;
 		} else
 			dev_dbg(dev, "Pass line autoneg reset\n");

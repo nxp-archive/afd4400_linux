@@ -47,7 +47,7 @@ MODULE_PARM_DESC(io_limit, "Maximum bytes per I/O (default 128)");
 /* Specs often allow 5 msec for a page write, sometimes 20 msec;
  * it's important to recover from write timeouts.
  */
-static unsigned write_timeout = 25;
+static unsigned write_timeout = 100;
 module_param(write_timeout, uint, 0);
 MODULE_PARM_DESC(write_timeout, "Time (in ms) to try writes (default 25)");
 
@@ -135,6 +135,7 @@ int sfp_raw_write(struct sfp_dev *sfp,
 				ret = status;
 			break;
 		}
+
 		buf += status;
 		offset += status;
 		count -= status;
@@ -162,19 +163,19 @@ EXPORT_SYMBOL(fill_sfp_detail);
 static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 		u8 offset, unsigned int count)
 {
-	struct i2c_client *client;
-	u8 msgbuf[2];
+	struct i2c_client *client = NULL;
+	u8 msgbuf[2] = {0};
 	struct i2c_msg msg[2];
-	unsigned long timeout, read_time;
-	int status, i;
+	unsigned long timeout = 0, read_time = 0;
+	int status = 0, i = 0;
 
-	if (offset > io_limit)
-		return -1;
 
 	memset(msg, 0, sizeof(msg));
-
 	/* Determine the memory (eeprom/diagnostics) to read */
 	client = sfp->client[0];
+
+	if ((offset > io_limit) || (!client))
+		return -1;
 
 	if (count > io_limit)
 		count = io_limit;
@@ -272,7 +273,9 @@ int sfp_raw_read(struct sfp_dev *sfp,
 			if (ret == 0)
 				ret = status;
 			break;
-		}
+		} else if (status > count)
+			status = count;
+
 		buf += status;
 		offset += status;
 		count -= status;
