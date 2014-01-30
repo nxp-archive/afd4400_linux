@@ -23,6 +23,7 @@
 #include <linux/device.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
+#include <linux/sched.h>
 #include <linux/param.h>
 #include <linux/delay.h>
 #include <linux/of.h>
@@ -44,17 +45,10 @@ u8 qixis_read(u8 offset)
 {
 	u8 retval =  __raw_readb(qixisbase + offset);
 
-	/* Not a good approach to put delay
-	* but without delay some times
-	* read is not correct
-	* TO BE DISCUSS with design team
-	*/
-	usleep_range(MIN_DELAY, MAX_DELAY);
-
 	return retval;
 }
 
-void write_jcpll_reg(u8 val, u16 offset)
+int write_jcpll_reg(u8 val, u16 offset)
 {
 	/* 12 bits (0 - 11) of offset contains register address
 	 *  MAX offset value is 0x3ff
@@ -63,19 +57,28 @@ void write_jcpll_reg(u8 val, u16 offset)
 	u8 nibble0 = (u8) ((offset >> 8) & 0x03);
 
 	u8 msb = WRITE_NIBBLE | nibble0;
+	int n = TRY_COUNT;
 
 	/* wait till previous transaction is completed */
-	while (qixis_read(QIXIS_CLK_JCPLL_ADDH) & APPLY_STATUS)
-			;
+	/* try n times only */
+	while((qixis_read(QIXIS_CLK_JCPLL_ADDH) & APPLY_STATUS)
+			&& --n) {
+		schedule_timeout_interruptible(msecs_to_jiffies(MAX_DELAY));
+	}
+
+	if(!n)
+		return JCPLL_XFER_ERR;
 
 	qixis_write(val, QIXIS_CLK_JCPLL_DATA);
 	qixis_write(lsb, QIXIS_CLK_JCPLL_ADDL);
 	qixis_write(msb, QIXIS_CLK_JCPLL_ADDH);
+
+	return JCPLL_SUCCESS;
 }
 
 u8 read_jcpll_reg(u16 offset)
 {
-	u8 retval = 0x00;
+	u8 retval = 0xFF;
 
 	/* 12 bits (0 - 11) of offset contains register address
 	 * MAX offset value is 0x3ff
@@ -84,30 +87,61 @@ u8 read_jcpll_reg(u16 offset)
 	u8 nibble0 = (u8) ((offset >> 8) & 0x03);
 
 	u8 msb = READ_NIBBLE | nibble0;
+	int n = TRY_COUNT;
 
 	qixis_write(lsb, QIXIS_CLK_JCPLL_ADDL);
 	qixis_write(msb, QIXIS_CLK_JCPLL_ADDH);
 
 	/* wait till last bit is 0 */
-	while (qixis_read(QIXIS_CLK_JCPLL_ADDH) & APPLY_STATUS)
-			;
+	while((qixis_read(QIXIS_CLK_JCPLL_ADDH) & APPLY_STATUS)
+			&& --n) {
+		schedule_timeout_interruptible(msecs_to_jiffies(MAX_DELAY));
+	}
+
+	if(!n)
+		return retval;
+
 	retval = qixis_read(QIXIS_CLK_JCPLL_DATA);
 
 	return retval;
 }
 
-void qixis_lock_jcpll(void)
+int qixis_lock_jcpll(void)
 {
-	write_jcpll_reg(VDD_CP_BY_HALF, JCPLL_STATUS_PIN_REG);
-	write_jcpll_reg(PWR_DWN_PLL, JCPLL_PWR_DWN_REG);
-	write_jcpll_reg(UPDATE_IO, JCPLL_IO_UPDATE_REG);
+	int ret = JCPLL_SUCCESS;
+
+	ret = write_jcpll_reg(VDD_CP_BY_HALF, JCPLL_STATUS_PIN_REG);
+	if(ret != JCPLL_SUCCESS)
+		return ret;
+
+	ret = write_jcpll_reg(PWR_DWN_PLL, JCPLL_PWR_DWN_REG);
+	if(ret != JCPLL_SUCCESS)
+		return ret;
+
+	ret = write_jcpll_reg(UPDATE_IO, JCPLL_IO_UPDATE_REG);
+	if(ret != JCPLL_SUCCESS)
+		return ret;
+
+	return ret;
 }
 
-void qixis_unlock_jcpll(void)
+int qixis_unlock_jcpll(void)
 {
-	write_jcpll_reg(VDD_CP_NORMAL, JCPLL_STATUS_PIN_REG);
+	int ret = JCPLL_SUCCESS;
+
+	ret = write_jcpll_reg(VDD_CP_NORMAL, JCPLL_STATUS_PIN_REG);
+	if(ret != JCPLL_SUCCESS)
+		return ret;
+
 	write_jcpll_reg(PWR_ENB_PLL, JCPLL_PWR_DWN_REG);
+	if(ret != JCPLL_SUCCESS)
+		return ret;
+
 	write_jcpll_reg(UPDATE_IO, JCPLL_IO_UPDATE_REG);
+	if(ret != JCPLL_SUCCESS)
+		return ret;
+
+	return ret;
 }
 
 static int __exit d4400_fpga_remove(struct platform_device *pdev)

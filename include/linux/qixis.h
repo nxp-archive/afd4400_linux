@@ -35,9 +35,9 @@
 
 #define	APPLY_STATUS	0x80
 
-/* in micro sec */
-#define	MIN_DELAY	80
-#define MAX_DELAY	100
+/* in milli sec */
+#define MAX_DELAY	2
+#define TRY_COUNT	5
 
 #define	JCPLL_STATUS_PIN_REG	0x17
 #define JCPLL_PWR_DWN_REG	0x230
@@ -51,11 +51,16 @@
 
 #define	UPDATE_IO	0x01
 
+enum {
+	JCPLL_SUCCESS = 0,
+	JCPLL_XFER_ERR = 1
+};
+
 void qixis_write(u8 val, u8 offset);
 u8 qixis_read(u8 offset);
-void write_jcpll_reg(u8 val, u16 offset);
+int write_jcpll_reg(u8 val, u16 offset);
 u8 read_jcpll_reg(u16 offset);
-void qixis_lock_jcpll(void);
-void qixis_unlock_jcpll(void);
+int qixis_lock_jcpll(void);
+int qixis_unlock_jcpll(void);
 
 #endif
