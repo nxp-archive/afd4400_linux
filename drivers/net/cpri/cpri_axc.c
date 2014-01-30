@@ -1293,7 +1293,7 @@ void clean_curr_allocate_axc(struct axc **axcs, u32 axc_pos)
 		if ((axc_pos >> temp) & 0x1) {
 			axc = axcs[temp];
 			axcs[temp] = NULL;
-			axc_free(axc->axc_buf);
+			kfree(axc->axc_buf);
 			kfree(axc->pos);
 			kfree(axc);
 			axc_pos &= ~(0x1 << temp);
@@ -1513,7 +1513,7 @@ void clear_axc_param(struct axc *axc)
 	/* sample width and thresold paramter setting */
 	cpri_reg_set_val(reg_acprmsb, AXC_SW_MASK, 0);
 	cpri_reg_set_val(reg_acprmsb, AXC_TH_MASK, 0);
-	axc_free(axc->axc_buf);
+	kfree(axc->axc_buf);
 	return;
 }
 
