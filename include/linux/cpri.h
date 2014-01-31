@@ -72,6 +72,9 @@ struct subsegment {
 struct segment {
 	struct subsegment subsegments[3];
 	unsigned char k;
+#define STUFFING_DATA	0
+#define AXC_DATA	1
+	unsigned char flag;
 };
 
 struct axc_mem_blk {

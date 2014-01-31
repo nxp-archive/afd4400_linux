@@ -71,6 +71,7 @@ struct segment_param {
 	unsigned char cmd;
 	unsigned int bit_position;
 	unsigned int axc_size;
+	unsigned int offset;
 };
 
 struct axc_mem_info {
