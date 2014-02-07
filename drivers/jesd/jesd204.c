@@ -1516,7 +1516,13 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 	if (new_state == old_state)
 		goto out;
 
+	if (new_state == JESD_STATE_STOPPED) {
+		rc = 0;
+		goto change_state;
+	}
+
 	switch (old_state) {
+
 	case JESD_STATE_STANDBY:
 		if (new_state == JESD_STATE_CONFIGURED)
 			if (JESD_CHCK_CONFIG_MASK(tdev, JESD_CONFIGURED_MASK))
@@ -1564,6 +1570,7 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 		goto out;
 	}
 
+change_state:
 	if (!rc) {
 		dev_info(tdev->dev, "%s: Transitioning state %d -> %d\n",
 			tdev->name, old_state, new_state);
