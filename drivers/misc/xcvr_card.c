@@ -948,7 +948,7 @@ static irqreturn_t xcvr_jesdtx_isr(int irq, void *dev_id)
 	struct rf_phy_dev *phy_dev;
 	struct xcvr_dev *xcvrdev = dev_id;
 	phy_dev = xcvrdev->phy_dev[DEVICE_ID_AD93682];
-	dev_info(xcvrdev->dev, "JESD Tx interrupt received");
+	dev_dbg(xcvrdev->dev, "JESD Tx interrupt received");
 	if (phy_dev == NULL)
 		return IRQ_NONE;
 
