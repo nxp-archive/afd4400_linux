@@ -38,6 +38,7 @@
 
 
 #include <linux/cpri.h>
+#include <linux/qixis.h>
 
 static struct of_device_id cpri_match[] = {
 	{.compatible = "fsl,d4400-cpri",},
@@ -455,62 +456,62 @@ static void do_framer_state_update(struct cpri_framer *framer, u32 mask)
 static void do_err_stats_update(struct cpri_framer *framer,
 			unsigned long mask)
 {
-	struct device *dev = framer->cpri_dev->dev;
 	if (mask & RX_IQ_OVERRUN)
 		framer->stats.rx_iq_overrun_err_count++;
-	else if (mask & TX_IQ_UNDERRUN)
+	if (mask & TX_IQ_UNDERRUN)
 		framer->stats.tx_iq_underrun_err_count++;
-	else if (mask & RX_ETH_MEM_OVERRUN)
+	if (mask & RX_ETH_MEM_OVERRUN)
 		framer->stats.rx_eth_mem_overrun_err_count++;
-	else if (mask & TX_ETH_UNDERRUN)
+	if (mask & TX_ETH_UNDERRUN)
 		framer->stats.tx_eth_underrun_err_count++;
-	else if (mask & RX_ETH_BD_UNDERRUN)
+	if (mask & RX_ETH_BD_UNDERRUN)
 		framer->stats.rx_eth_bd_underrun_err_count++;
-	else if (mask & RX_HDLC_OVERRUN)
+	if (mask & RX_HDLC_OVERRUN)
 		framer->stats.rx_hdlc_overrun_err_count++;
-	else if (mask & TX_HDLC_UNDERRUN)
+	if (mask & TX_HDLC_UNDERRUN)
 		framer->stats.tx_hdlc_underrun_err_count++;
-	else if (mask & RX_HDLC_BD_UNDERRUN)
+	if (mask & RX_HDLC_BD_UNDERRUN)
 		framer->stats.rx_hdlc_bd_underrun_err_count++;
-	else if (mask & RX_VSS_OVERRUN)
+	if (mask & RX_VSS_OVERRUN)
 		framer->stats.rx_vss_overrun_err_count++;
-	else if (mask & TX_VSS_UNDERRUN)
+	if (mask & TX_VSS_UNDERRUN)
 		framer->stats.tx_vss_underrun_err_count++;
-	else if (mask & ECC_CONFIG_MEM)
+	if (mask & ECC_CONFIG_MEM)
 		framer->stats.ecc_config_mem_err_count++;
-	else if (mask & ECC_DATA_MEM)
+	if (mask & ECC_DATA_MEM)
 		framer->stats.ecc_data_mem_err_count++;
-	else if (mask & RX_ETH_DMA_OVERRUN)
+	if (mask & RX_ETH_DMA_OVERRUN)
 		framer->stats.rx_eth_dma_overrun_err_count++;
-	else if (mask & ETH_FORWARD_REM_FIFO_FULL)
+	if (mask & ETH_FORWARD_REM_FIFO_FULL)
 		framer->stats.eth_fwd_rem_fifo_full_err_count++;
-	else if (mask & EXT_SYNC_LOSS)
+	if (mask & EXT_SYNC_LOSS)
 		framer->stats.ext_sync_loss_err_count++;
-	else if (mask & RLOS)
+	if (mask & RLOS)
 		framer->stats.rlos_err_count++;
-	else if (mask & RLOF)
+	if (mask & RLOF)
 		framer->stats.rlof_err_count++;
-	else if (mask & RAI)
+	if (mask & RAI)
 		framer->stats.rai_err_count++;
-	else if (mask & RSDI)
+	if (mask & RSDI)
 		framer->stats.rsdi_err_count++;
-	else if (mask & LLOS)
+	if (mask & LLOS)
 		framer->stats.llos_err_count++;
-	else if (mask & LLOF)
+	if (mask & LLOF)
 		framer->stats.llof_err_count++;
-	else if (mask & RRE)
+	if (mask & RRE)
 		framer->stats.rr_err_count++;
-	else if (mask & FAE)
+	if (mask & FAE)
 		framer->stats.fa_err_count++;
-	else if (mask & RRA)
+	if (mask & RRA)
 		framer->stats.rra_err_count++;
-	else
-		dev_err(dev, "Invalid mask during stats update");
+	if (mask & JCPLL_LOCK_LOSS)
+		framer->stats.jcpll_lock_fail++;
 }
 
 static void cpri_err_tasklet(unsigned long arg)
 {
 	struct cpri_framer *framer = (struct cpri_framer *) arg;
+	struct device *dev = framer->cpri_dev->dev;
 	u32 err_evt;
 	u32 mask;
 
@@ -538,6 +539,16 @@ static void cpri_err_tasklet(unsigned long arg)
 	if (framer->framer_param.ctrl_flags & CPRI_DAISY_CHAINED) {
 		if (framer->cpri_dev->intr_cpri_frmr_state >=
 				CPRI_STATE_AUTONEG_COMPLETE) {
+			if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) &
+						APPLY_STATUS) &&
+			((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
+			(framer->autoneg_param.flags &
+			  CPRI_FRMR_SELF_SYNC_MODE))) {
+				dev_dbg(dev, " jcpll lock fail status: 0x%x",
+					qixis_read(QIXIS_CLK_JCPLL_STATUS));
+				err_evt |= JCPLL_LOCK_LOSS;
+			}
+
 			/* Update stats */
 			do_err_stats_update(framer, err_evt);
 
@@ -549,6 +560,15 @@ static void cpri_err_tasklet(unsigned long arg)
 				cpri_eth_handle_error(framer);
 		}
 	} else {
+			if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) &
+						APPLY_STATUS) &&
+			((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
+			(framer->autoneg_param.flags &
+			  CPRI_FRMR_SELF_SYNC_MODE))) {
+				dev_dbg(dev, " jcpll lock fail status: 0x%x",
+					qixis_read(QIXIS_CLK_JCPLL_STATUS));
+				err_evt |= JCPLL_LOCK_LOSS;
+			}
 			/* Update stats */
 			do_err_stats_update(framer, err_evt);
 

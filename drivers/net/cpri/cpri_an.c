@@ -74,6 +74,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 	struct cpri_framer *pair_framer;
 	int serdes_init;
 	struct cpri_dev *cpri_dev_pair = NULL;
+	struct device *dev = framer->cpri_dev->dev;
 	u32 line_rate[7] = {0, 1228800, 2457600, 3072000, 4915200,
 		6144000, 9830400};
 
@@ -148,10 +149,16 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 		gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
 		d4400_rev_clk_select(framer->cpri_dev->dev_id, REV_CLK_DIV_1);
 		qixis_unlock_jcpll();
+
+		if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) & APPLY_STATUS)) {
+			dev_err(dev, "Failed to lock jcpll status: 0x%x",
+					qixis_read(QIXIS_CLK_JCPLL_STATUS));
+			return -EINVAL;
+		}
+
 	} else {
 		qixis_lock_jcpll();
 	}
-
 	return 0;
 }
 

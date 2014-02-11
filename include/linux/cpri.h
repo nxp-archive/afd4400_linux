@@ -652,6 +652,7 @@ enum cpri_linerate {
 #define RRE					(1 << 22)
 #define FAE					(1 << 23)
 #define RRA					(1 << 24)
+#define JCPLL_LOCK_LOSS				(1 << 24)
 
 #define CPRI_ERR_EVT_ALL	(RX_IQ_OVERRUN \
 				| TX_IQ_UNDERRUN \

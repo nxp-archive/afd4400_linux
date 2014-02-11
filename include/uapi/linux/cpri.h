@@ -173,6 +173,7 @@ struct cpri_dev_stats {
 	unsigned int fa_err_count;
 	unsigned int rra_err_count;
 	unsigned int rx_line_coding_violation;
+	unsigned int jcpll_lock_fail;
 };
 
 struct cpri_reg_read_buf {
