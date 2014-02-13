@@ -393,7 +393,6 @@ struct axc_buf *axc_alloc(struct axc *axc, u32 size)
 	unsigned int condition1 = 0;
 	unsigned int condition2 = 0;
 
-
 	if (axc->flags & UL_AXCS) {
 		mblk = &axc->framer->tx_buf_head;
 		blk_present0 = (mblk->blk_bitmap & 0x1);
@@ -498,6 +497,13 @@ void axc_free(struct axc_buf *axc_buf)
 	struct list_head *pos, *nx;
 	struct axc *axc = axc_buf->axc;
 	struct axc_buf *list_axc_buf;
+
+	if (axc->framer->autoneg_param.flags &
+				CPRI_FRMR_USER_APP_AXC_MEM_ALLOC) {
+		kfree(axc_buf);
+		axc->axc_buf = NULL;
+		return;
+	}
 
 	if (axc->flags & UL_AXCS)
 		mblk = &axc->framer->tx_buf_head;
@@ -648,6 +654,7 @@ static unsigned short get_nst_size(struct axc *axc)
 		 * segmets which need be programmed for axc size for stuffing
 		 * segments need not to program
 		 */
+
 	       if (nst_len > axc_size)
 			while (nst_len > axc_size)
 				nst_len -= axc_size;
@@ -1336,7 +1343,16 @@ int fill_axc_param(struct cpri_framer *framer, struct axc_info *axc_parm,
 	axc->K = axc_parm->K;
 	axc->na = axc_parm->na;
 	axc->nst = axc_parm->ns;
-	axc->axc_buf = axc_alloc(axc, axc_parm->buffer_size);
+	if (axc->framer->autoneg_param.flags &
+				CPRI_FRMR_USER_APP_AXC_MEM_ALLOC) {
+		axc->axc_buf = kzalloc(sizeof(struct axc_buf), GFP_KERNEL);
+		axc->axc_buf->size = axc_parm->buffer_size;
+		axc->axc_buf->mem_blk = axc_parm->axc_buf->mem_blk;
+		axc->axc_buf->addr = axc_parm->axc_buf->addr;
+		axc->axc_buf->axc = axc;
+	} else
+		axc->axc_buf = axc_alloc(axc, axc_parm->buffer_size);
+
 	if (axc->axc_buf == NULL)
 			return -ENOMEM;
 	return 0;
@@ -1374,6 +1390,7 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 	struct axc **axcs;
 	struct axc *axc;
 	struct axc_pos *pos;
+	struct axc_param_buf *axc_buf;
 	struct axc_map_table *map_table;
 	u32 axc_pos = 0;
 	unsigned char k0 = framer->framer_param.k0;
@@ -1417,6 +1434,12 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 		map_table = &framer->ul_map_table;
 	}
 
+	axc_buf = kzalloc(size, GFP_KERNEL);
+	if (axc_buf == NULL) {
+		dev_err(dev, "memory exhausted !!\n");
+		return -ENOMEM;
+	}
+
 	for (loop = 0; loop < count; loop++) {
 		pos = NULL;
 		param = (axc_param + loop);
@@ -1425,7 +1448,7 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 		else
 			size = sizeof(struct axc_pos);
 		pos = kzalloc(size, GFP_KERNEL);
-		if (axc_param == NULL) {
+		if (pos == NULL) {
 			dev_err(dev, "memory exhausted !!\n");
 			return -ENOMEM;
 		}
@@ -1436,6 +1459,17 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 			goto mem_err;
 		}
 		param->pos = pos;
+		size = sizeof(struct axc_param_buf);
+		if (framer->autoneg_param.flags &
+				CPRI_FRMR_USER_APP_AXC_MEM_ALLOC) {
+			if (copy_from_user((void *)axc_buf, param->axc_buf,
+						size)) {
+				dev_err(dev, "axc mem copy from user failed\n");
+				ret = -EFAULT;
+				goto mem_err;
+			}
+			param->axc_buf = axc_buf;
+		}
 
 		if (!((!(k0 % param->K)) | (!(k1 % param->K)))) {
 			dev_err(dev, "axc-'K' must be multpl of K0/K1-%d/%d\n",
@@ -1481,15 +1515,18 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 	}
 	/* axc allocation done */
 	kfree(axc_param);
+	kfree(axc_buf);
 	cpri_state_machine(framer, CPRI_STATE_AXC_CONFIG);
 	return 0;
 clean_axc_pos:
 	dev_err(dev, "axc set error free axc_pos\n");
 	clean_curr_allocate_axc(axcs, axc_pos);
 validation_err:
+	kfree(axc_buf);
 	return ret;
 mem_err:
 	clean_curr_allocate_axc(axcs, axc_pos);
+	kfree(axc_buf);
 	return ret;
 }
 

@@ -292,6 +292,7 @@ struct cpri_autoneg_params {
 #define CPRI_SERDES_LOOPBACK			(1 << 5)
 #define CPRI_FRMR_SELF_SYNC_MODE		(1 << 6)
 #define CPRI_FRMR_PAIR_SYNC_MODE		(1 << 7)
+#define CPRI_FRMR_USER_APP_AXC_MEM_ALLOC	(1 << 8)
 	unsigned int l1_setup_timeout;
 	/* Line rate auto neg parameters */
 	unsigned int tx_on_time;
@@ -350,6 +351,11 @@ struct axc_pos {
 	__u8 axc_start_b;
 };
 
+struct axc_param_buf {
+	__u32 addr;
+	__u8 mem_blk;
+};
+
 struct axc_info {
 	unsigned int id;
 	__u32 flags;
@@ -376,6 +382,7 @@ struct axc_info {
 	__u8 sample_width;
 	struct axc_pos *pos;
 	__u32 axc_dma_ptr;
+	struct axc_param_buf *axc_buf;
 };
 
 struct axc_config_params {
