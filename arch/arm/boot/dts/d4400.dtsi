@@ -636,6 +636,40 @@
 				};
 			};
 
+			jesdtx@0x88000{
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "fsl,d4400-jesd204-tx";
+				ranges = <0x0 0x88000 0x4000>;
+				reg = <0x00088000 0x4000>;
+				lanes = <2>;
+
+				transport0@0x0{
+					reg = <0x0000000 0x7FC>;
+					transport-type = <0>;
+					transport-id = <4>;
+					timer-id = <4>;
+					pll-id = <0>;
+					phy-gasket = <&phygasket1>;
+					max-lanes = <2>;
+					serdes-lanes = <&serdes1 4>,
+						<&serdes1 3>;
+					interrupts = <0 123 0x4>;
+				};
+
+				transport1@0x800{
+					reg = <0x00000800 0x7FC>;
+					transport-type = <0>;
+					transport-id = <5>;
+					timer-id = <5>;
+					pll-id = <0>;
+					phy-gasket = <&phygasket1>;
+					max-lanes = <1>;
+					serdes-lanes = <&serdes1 5>;
+					interrupts = <0 124 0x4>;
+				};
+			};
+
 			jesdrx@0x98000{
 				#address-cells = <1>;
 				#size-cells = <1>;
