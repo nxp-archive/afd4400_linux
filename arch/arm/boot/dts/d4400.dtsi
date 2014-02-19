@@ -653,7 +653,7 @@
 					phy-gasket = <&phygasket1>;
 					max-lanes = <2>;
 					serdes-lanes = <&serdes1 4>,
-						<&serdes1 3>;
+						<&serdes1 5>;
 					interrupts = <0 123 0x4>;
 				};
 
