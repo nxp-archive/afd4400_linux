@@ -652,8 +652,16 @@ static int jesd_serdes_lane_init(struct jesd_transport_dev *tdev,
 	if (serdes_init_lane(tdev->serdes_handle, &lane_param))
 		return -EINVAL;
 
+	rc = serdes_lane_power_up(tdev->serdes_handle, lane_param.lane_id);
+	if (rc) {
+		dev_err(tdev->dev, "%s: power up failed lane id %d",
+			tdev->name, lane_param.lane_id);
+		goto out;
+	}
+
 	lane->flags |= LANE_FLAGS_ENABLED;
 
+out:
 	return rc;
 }
 
