@@ -621,17 +621,18 @@ int serdes_lane_power_up(void *sdev_handle,
 	}
 
 	/* Power up the Rx portion of the lane */
-	reg = (u32 *)sdev->regs->lane_csr[lane_id].gcr0;
+	reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
 	val = ~SRDS_LN_GCR_RX_PD_MASK;
 	mask = SRDS_LN_GCR_RX_PD_MASK;
 	srds_update_reg(reg, val, mask);
 
 	/* Power up the Tx portion of the lane */
-	reg = (u32 *)sdev->regs->lane_csr[lane_id].gcr0;
+	reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
 	val = ~SRDS_LN_GCR_TX_PD_MASK;
 	mask = SRDS_LN_GCR_TX_PD_MASK;
 	srds_update_reg(reg, val, mask);
 
+	udelay(50);
 out:
 	return rc;
 }
@@ -649,7 +650,6 @@ int serdes_lane_power_down(void *sdev_handle,
 		rc = -EINVAL;
 		goto out;
 	}
-
 	if (lane_id >= LANE_INVAL) {
 		dev_err(sdev->dev, "Invalid lane Params\n");
 		rc = -EINVAL;
@@ -657,17 +657,18 @@ int serdes_lane_power_down(void *sdev_handle,
 	}
 
 	/* Power down the Rx portion of the lane */
-	reg = (u32 *)sdev->regs->lane_csr[lane_id].gcr0;
+	reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
 	val = SRDS_LN_GCR_RX_PD_MASK;
 	mask = SRDS_LN_GCR_RX_PD_MASK;
 	srds_update_reg(reg, val, mask);
 
 	/* Power down the Tx portion of the lane */
-	reg = (u32 *)sdev->regs->lane_csr[lane_id].gcr0;
+	reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
 	val = SRDS_LN_GCR_TX_PD_MASK;
 	mask = SRDS_LN_GCR_TX_PD_MASK;
 	srds_update_reg(reg, val, mask);
 
+	udelay(50);
 out:
 	return rc;
 }
@@ -788,7 +789,8 @@ static int serdes_d4400_probe(struct platform_device *pdev)
 	list_add_tail(&serdes_dev->list, &serdes_dev_list);
 	raw_spin_unlock(&serdes_list_lock);
 
-	dev_info(dev, "%s probe successfull\n", __func__);
+	dev_info(dev, "%s: dev 0x%p, regs 0x%p\n", __func__,
+		serdes_dev, serdes_dev->regs);
 
 	return rc;
 
