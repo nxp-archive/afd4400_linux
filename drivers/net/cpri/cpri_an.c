@@ -73,6 +73,7 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 	struct serdes_lane_params lane_param;
 	struct cpri_framer *pair_framer;
 	int serdes_init;
+	int count = 0;
 	struct cpri_dev *cpri_dev_pair = NULL;
 	struct device *dev = framer->cpri_dev->dev;
 	u32 line_rate[7] = {0, 1228800, 2457600, 3072000, 4915200,
@@ -92,25 +93,27 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 		pll_param.frate_sel = PLL_FREQ_4_9152_GHZ;
 		pll_param.vco_type = SERDES_LC_VCO;
 	}
-	/* cpri hardware support common link rate for both framers
-	 * below logic will take care of if either of cpri framer is
-	 * up than next will follow first framer
-	 */
 	if (pair_framer->framer_state <
 			CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS) {
-
 		if (framer->id == 2)
 			cpri_reg_clear(&framer->cpri_dev->regs->cpri_ctrlclk,
 					C2_CLK_MASK);
 		else
 			cpri_reg_clear(&framer->cpri_dev->regs->cpri_ctrlclk,
 					C1_CLK_MASK);
-
 		gcr_config_cpri_line_rate(framer->cpri_dev->dev_id, 0,
 			CLEAR_LINE_RATE);
 		gcr_config_cpri_line_rate(framer->cpri_dev->dev_id, linerate,
 			SET_LINE_RATE);
 		gcr_linkrate_autoneg_reset(framer->cpri_dev->dev_id);
+	}
+	/* cpri hardware support common link rate for both framers
+	 * below logic will take care of if either of cpri framer is
+	 * up than next will follow first framer
+	 */
+retry:	if (pair_framer->framer_state <
+			CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS) {
+
 		if ((cpri_dev_pair) && (cpri_dev_pair->intr_cpri_frmr_state <
 				CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)) {
 			serdes_init = serdes_init_pll(framer->serdes_handle,
@@ -142,22 +145,32 @@ int linkrate_autoneg_reset(struct cpri_framer *framer,
 
 	if (serdes_init_lane(framer->serdes_handle, &lane_param))
 		return -EINVAL;
-	if ((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
+	if (pair_framer->framer_state <
+			CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS) {
+		if ((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
 		(framer->autoneg_param.flags & CPRI_FRMR_SELF_SYNC_MODE)) {
-		serdes_jcpll_enable(framer->serdes_handle, &lane_param,
+			serdes_jcpll_enable(framer->serdes_handle, &lane_param,
 				&pll_param);
-		gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
-		d4400_rev_clk_select(framer->cpri_dev->dev_id, REV_CLK_DIV_1);
-		qixis_unlock_jcpll();
+			gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
+			d4400_rev_clk_select(SERDES_PLL_1, REV_CLK_DIV_1);
+			qixis_unlock_jcpll();
 
-		if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) & APPLY_STATUS)) {
-			dev_err(dev, "Failed to lock jcpll status: 0x%x",
-					qixis_read(QIXIS_CLK_JCPLL_STATUS));
-			return -EINVAL;
+			if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) &
+						APPLY_STATUS)) {
+				count++;
+				if (count == SERDES_PLL_LOCK_RETRY_CNT) {
+					dev_err(dev, "Failed to unlock jcpll");
+					return 0;
+				}
+				mdelay(1);
+				goto retry;
+			}
+
+		} else {
+			if (!(framer->autoneg_param.flags &
+						CPRI_FRMR_PAIR_SYNC_MODE))
+				qixis_lock_jcpll();
 		}
-
-	} else {
-		qixis_lock_jcpll();
 	}
 	return 0;
 }

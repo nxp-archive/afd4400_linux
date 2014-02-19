@@ -997,13 +997,13 @@ void program_aux_interface(struct axc *axc, u16 word_size)
 	axc_pos.axc_start_b = axc->pos->axc_start_b;
 	index = get_segment_id(&axc_pos, word_size);
 	size = calculate_axc_size(axc);
-	last_bit_pos = size;
 	bit_pos = BIT_POS(axc_pos.axc_start_w, word_size,
 				axc_pos.axc_start_b);
 
 	dev_dbg(dev, "AUx configured for AxCId: %d\n", axc->id);
 	while (size) {
-			size = (size >= SEG_SIZE) ? (size -
+			last_bit_pos = size;
+			size = ((size + bit_pos) >= SEG_SIZE) ? (size -
 				(SEG_SIZE - bit_pos)) : 0;
 			if (size) {
 				while (bit_pos < SEG_SIZE)
@@ -1013,6 +1013,7 @@ void program_aux_interface(struct axc *axc, u16 word_size)
 				while (bit_pos < last_bit_pos)
 					bitmap |= (0x1 << bit_pos++);
 			}
+			bitmap = be32_to_cpu(bitmap);
 			cpri_reg_set(&framer->regs->cpri_auxmask[index],
 					bitmap);
 			dev_dbg(dev, "aux bit map set inx[%d]: 0x%x\n",

@@ -270,10 +270,13 @@ static int calc_nframe_delay(struct cpri_framer *framer)
 	cpri_write(CPRI_FRAME_DIFF_STATUS_BIT,
 			&framer->regs->cpri_framediffctrl);
 	/* Waiting for nframediff cal to be over */
-	while ((nframer_diff_read == 0) || (count == 100)) {
+	while (!(nframer_diff_read & CPRI_FRAME_DIFF_STATUS_BIT) ||
+			(count == NFRAME_DIFF_COUNT_LOOP)) {
 		nframer_diff_read = cpri_reg_get_val(
 				&framer->regs->cpri_framediffstatus,
 				MASK_ALL);
+		if (nframer_diff_read & CPRI_FRAME_DIFF_STATUS_BIT)
+			break;
 		schedule_timeout_interruptible(msecs_to_jiffies(200));
 		count++;
 	}

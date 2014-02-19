@@ -328,8 +328,7 @@ struct cpri_framer_regs {
 	u32 reserved45[8];
 	u32 cpri_tacprmsb[24]; /* 0x980 to 0x9DC - ,, Param MSB */
 	u32 reserved46[72];
-	u32 cpri_auxmask[8];	/* 0xB00 to 0xBFC - Aux Interface Mask */
-	u32 reserved47[56];
+	u32 cpri_auxmask[64];	/* 0xB00 to 0xBFC - Aux Interface Mask */
 	u32 cpri_tcmd0;	/* 0xC00 - Tx Config Memory Address */
 	u32 cpri_tcmd1;	/* 0xC04 - Tx Config Memory Address */
 	u32 cpri_rcmd0;	/* 0xC08 - Rx Config Memory Data */
@@ -793,6 +792,9 @@ enum cpri_linerate {
 
 /* CPRI n frame difference calculation logic */
 #define CPRI_FRAME_DIFF_STATUS_BIT		0x1
+#define NFRAME_DIFF_COUNT_LOOP			100
+
+#define SERDES_PLL_LOCK_RETRY_CNT		500
 
 static inline u32 cpri_read(const void __iomem *addr)
 {

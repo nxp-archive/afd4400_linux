@@ -446,10 +446,11 @@ static void do_framer_state_update(struct cpri_framer *framer, u32 mask)
 			del_timer_sync(&framer->l1_timer);
 	}
 
+#if 0
 	if (mask & FAE)
 		cpri_state_machine(framer,
 				CPRI_STATE_LINK_ERROR);
-
+#endif
 }
 
 /* Stats update during error events */
