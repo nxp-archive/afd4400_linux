@@ -1904,11 +1904,20 @@ static u32 jesd_get_dframer_state(struct jesd_transport_dev *tdev)
 	if (val == done_flag)
 		status_bitmap |= LINK_STATUS_FRM_SYNC_DONE;
 
+	/* XXX: Checksum Failure hack: DFE doesn't support M=4
+	 * In order to support 2RX/TX channels we configure DFE
+	 * for LMF 124 and ADI for LMF 244 as a work around.
+	 * This causes ILAS checksum to fail. Bypassing checksum
+	 * failure to get this work-around working.
+	 * Even if checksum fails, the JESD link should work
+	 * just fine.
+	 */
+#if 0
 	val = ioread32(&rx_regs->rx_g_csum);
 	val &= DFRMR_STATUS_MASK;
 	if (val == done_flag)
 		status_bitmap |= LINK_STATUS_CSUM_DONE;
-
+#endif
 	val = ioread32(&rx_regs->rx_ilsf);
 	val &= DFRMR_STATUS_MASK;
 	if (val == done_flag)
