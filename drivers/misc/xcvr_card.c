@@ -1099,7 +1099,7 @@ static int xcvr_probe(struct platform_device *pdev)
 	}
 
 	xcvr_dev->dev = device_create(drv_priv->class, &pdev->dev,
-			xcvr_dev->dev_t, xcvr_dev, "xcvr_dev%d", drv_priv->minor - 2);
+			xcvr_dev->dev_t, xcvr_dev, "xcvr%d", drv_priv->minor - 2);
 	ret = IS_ERR(xcvr_dev->dev) ? PTR_ERR(xcvr_dev->dev) : 0;
 
 	INIT_WORK(&xcvr_dev->err_task, xcvr_jesdtx_error_monitor);
