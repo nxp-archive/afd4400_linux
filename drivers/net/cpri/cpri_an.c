@@ -258,10 +258,12 @@ static void cpri_init_framer(struct cpri_framer *framer,
 	cpri_reg_clear(&regs->cpri_tcr,
 		ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
 
-	if (param->ctrl_flags & CPRI_DAISY_CHAINED)
+	if (param->ctrl_flags & CPRI_DAISY_CHAINED) {
 		cpri_reg_set(&regs->cpri_auxctrl,
 				AUX_MODE_MASK);
-	else
+		if (framer->autoneg_param.flags & CPRI_FRMR_SELF_SYNC_MODE)
+			cpri_reg_set(&regs->cpri_cwddelay, CW_DELAY_EN);
+	} else
 		cpri_reg_clear(&regs->cpri_auxctrl,
 			AUX_MODE_MASK);
 

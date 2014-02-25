@@ -186,7 +186,8 @@ struct cpri_framer_regs {
 	u32 cpri_tprotver;	/* 0x58 - Tx Protocol Version */
 	u32 cpri_tscrseed;	/* 0x5C - Tx Scrambler Seed */
 	u32 cpri_rscrseed;	/* 0x60 - Rx Scrambler Seed */
-	u32 reserved4[2];
+	u32 reserved4[1];
+	u32 cpri_txsyncdelay;	/* 0x6C - Tx Control */
 	u32 cpri_tx_control;	/* 0x6C - Tx Control */
 	u32 reserved5[4];
 	u32 cpri_serdescfg;	/* 0x80 - SerDes Interface Config */
@@ -559,6 +560,9 @@ enum cpri_linerate {
 #define RX_ALIGN_DELAY_MASK			0x7F0000
 #define RX_BUF_DELAY_MASK			0x3FC
 #define RX_BYTE_DELAY_MASK			0x3
+
+/* cw dealy enable mask */
+#define CW_DELAY_EN				0x1
 
 /* CPRI Round Trip Delay (CPRIn_ROUND_DELAY) */
 #define RX_ROUND_TRIP_DELAY_MASK		0xFFFFF
