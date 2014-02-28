@@ -33,6 +33,7 @@
 #define QIXIS_CLK_JCPLL_ADDH	0x34
 #define	QIXIS_CLK_JCPLL_ADDL	0x35
 #define	QIXIS_CLK_JCPLL_DATA	0x36
+#define QIXIS_STAT_PRESENT	0x0B
 
 #define	APPLY_STATUS	0x80
 
@@ -63,5 +64,6 @@ int write_jcpll_reg(u8 val, u16 offset);
 u8 read_jcpll_reg(u16 offset);
 int qixis_lock_jcpll(void);
 int qixis_unlock_jcpll(void);
+int qixis_get_xcvr_present_status(int xcvr_id);
 
 #endif

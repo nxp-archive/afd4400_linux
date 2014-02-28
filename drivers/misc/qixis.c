@@ -26,6 +26,8 @@
 #include <linux/sched.h>
 #include <linux/param.h>
 #include <linux/delay.h>
+#include <linux/of_platform.h>
+#include <linux/of_address.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/io.h>
@@ -46,6 +48,27 @@ u8 qixis_read(u8 offset)
 	u8 retval =  __raw_readb(qixisbase + offset);
 
 	return retval;
+}
+
+int qixis_get_xcvr_present_status(int xcvr_id)
+{
+	u8 present_stat, mask = 0x2;
+	int ret = 0;
+
+	if (!qixisbase) {
+		ret = -EPROBE_DEFER;
+		goto out;
+	}
+	present_stat = qixis_read(QIXIS_STAT_PRESENT);
+	mask = (mask >> (xcvr_id - 1));
+
+	pr_info("qixis present detect: present stat 0x%x, mask 0x%x",
+		present_stat, mask);
+
+	if (!(present_stat & mask))
+		ret = 1;
+out:
+	return ret;
 }
 
 int write_jcpll_reg(u8 val, u16 offset)
@@ -153,15 +176,8 @@ static int __exit d4400_fpga_remove(struct platform_device *pdev)
 static int __init d4400_fpga_probe(struct platform_device *pdev)
 {
 	int ret = 0;
-	struct resource *res;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		dev_err(&pdev->dev, "can't get device resources\n");
-		return -ENODEV;
-	}
-
-	qixisbase = devm_request_and_ioremap(&pdev->dev, res);
+	qixisbase = of_iomap(pdev->dev.of_node, 0);
 	if (!qixisbase) {
 		dev_err(&pdev->dev, "ioremap failed\n");
 		return -ENOMEM;
