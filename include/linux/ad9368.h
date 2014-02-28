@@ -250,7 +250,8 @@ struct rf_phy_ops {
 };
 
 extern struct rf_phy_dev *get_attached_phy_dev(struct device_node *rf_dev_node);
-extern struct xcvr_dev *get_attached_xcvr_dev(struct device_node **dev_node);
+extern struct xcvr_dev *get_attached_xcvr_dev(struct device_node **dev_node,
+	struct rf_phy_dev *phy_dev);
 extern int ad9368_read(struct rf_phy_dev *phy_dev, u32 start, u32 count,
 		u32 *buff);
 extern int ad9368_write(struct rf_phy_dev *phy_dev, u32 reg,

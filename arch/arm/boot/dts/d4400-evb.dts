@@ -276,6 +276,7 @@
 				<&gpioC 19 0>;
 			src-resets = <&src 3>,
 				<&src 5>;
+			xcvr_id = <1>;
 			9368-1-handle = <&adrx1>;
 			9368-2-handle = <&adtx1>;
 			9525-handle = <&clkgen1>;
@@ -292,6 +293,7 @@
 				<&gpioC 23 0>;
 			src-resets = <&src 4>,
 				<&src 6>;
+			xcvr_id = <2>;
 			9368-1-handle = <&adrx2>;
 			9368-2-handle = <&adtx2>;
 			9525-handle = <&clkgen2>;

@@ -550,7 +550,7 @@ static void ad_reset_phy(struct ad_dev_info *phy_info, struct device *dev)
 	if ((phy_info->reset_gpio == GPIO_INVAL) ||
 		(phy_info->lna_en_gpio == GPIO_INVAL) ||
 		(phy_info->pa_en_gpio == GPIO_INVAL))
-		dev_info(dev, "Control GPIOs not intialized in dtb\n");
+		dev_dbg(dev, "Control GPIOs not intialized in dtb\n");
 
 	if ((phy_info->reset_gpio != GPIO_INVAL)) {
 		/* Toggle reset gpio to reset AD9368 */
@@ -563,13 +563,14 @@ static void ad_reset_phy(struct ad_dev_info *phy_info, struct device *dev)
 
 static int ad9368_probe(struct spi_device *spi)
 {
-	static struct rf_phy_dev *phy_dev;
+	static struct rf_phy_dev *phy_dev = NULL;
 	struct device *dev = &spi->dev;
-	struct ad_dev_info *phy_info;
+	struct ad_dev_info *phy_info = NULL;
 	struct device_node *np = spi->dev.of_node;
 	char dev_name[RF_NAME_SIZE];
-
+	struct xcvr_dev *xcvr_dev;
 	int ret = 0, size;
+
 	memset(dev_name, 0, RF_NAME_SIZE);
 	size = sizeof(struct rf_phy_dev) + sizeof(struct ad_dev_info);
 	phy_dev = kzalloc(size, GFP_KERNEL);
@@ -578,11 +579,20 @@ static int ad9368_probe(struct spi_device *spi)
 		return -ENOMEM;
 	}
 
+	xcvr_dev = get_attached_xcvr_dev(&np, phy_dev);
+	dev_err(dev, "node %x, phy %x\n", np, phy_dev);
+	if (!xcvr_dev) {
+		dev_err(dev, "Failed to attach XCVR\n");
+		ret = -EPROBE_DEFER;
+		goto out;
+	}
+
 	phy_dev->priv = (void *) ((u32) phy_dev + sizeof(struct rf_phy_dev));
 /*	phy_dev->ops = &ad9368_ops;*/
 	strncpy(&phy_dev->name[0], DEV_NAME, sizeof(phy_dev->name));
 	phy_dev->phy_id = (u32) np;
 	phy_dev->rf_dev_node = np;
+	phy_dev->xcvr_dev = xcvr_dev;
 	phy_info = (struct ad_dev_info *) phy_dev->priv;
 	phy_info->ad_spi = spi;
 
@@ -604,7 +614,6 @@ static int ad9368_probe(struct spi_device *spi)
 	if (ad_init_gpio(np, dev, phy_info))
 		goto out;
 
-	phy_dev->xcvr_dev = get_attached_xcvr_dev(&phy_dev->rf_dev_node);
 	ad_reset_phy(phy_info, dev);
 	dev_set_drvdata(&spi->dev, phy_dev);
 	dev_set_drvdata(dev, phy_dev);
@@ -620,7 +629,7 @@ static int ad9368_probe(struct spi_device *spi)
 	}
 	return ret;
 out:
-	if (phy_info->reset_gpio != GPIO_INVAL)
+	if (phy_info && phy_info->reset_gpio != GPIO_INVAL)
 		gpio_free(phy_info->reset_gpio);
 
 	kfree(phy_dev);

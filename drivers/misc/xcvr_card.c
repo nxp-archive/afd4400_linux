@@ -51,6 +51,7 @@
 #include <linux/string.h>
 #include <linux/ad9368.h>
 #include <linux/gpio.h>
+#include <linux/qixis.h>
 #include <mach/src.h>
 
 #define DEV_NAME "XCVR"
@@ -67,8 +68,6 @@ static struct of_device_id xcvr_match[] = {
 struct xcvr_drv_priv {
 	bool reset_status;
 	struct class *class;
-	unsigned int minor;
-	unsigned int minor_max;
 	dev_t dev_t;
 	struct list_head dev_list;
 };
@@ -797,19 +796,22 @@ static int xcvr_remove(struct platform_device *pdev)
 }
 
 
-struct xcvr_dev *get_attached_xcvr_dev(struct device_node **dev_node)
+struct xcvr_dev *get_attached_xcvr_dev(struct device_node **dev_node,
+	struct rf_phy_dev *phy_dev)
 {
 	struct xcvr_dev *xcvr_dev = NULL;
-	struct rf_phy_dev *phy_dev = NULL;
+	struct device_node *rf_dev_node;
 	int i, found_node = 0;
+
 	if (list_empty(&drv_priv->dev_list))
 		return NULL;
 
 	list_for_each_entry(xcvr_dev, &drv_priv->dev_list, list) {
 		for (i = 0; i < xcvr_dev->phy_devs; i++) {
-			phy_dev = xcvr_dev->phy_dev[i];
-			if (*dev_node == phy_dev->rf_dev_node) {
+			rf_dev_node = xcvr_dev->rf_dev_node[i];
+			if (*dev_node == rf_dev_node) {
 				found_node = 1;
+				xcvr_dev->phy_dev[i] = phy_dev;
 				break;
 			}
 		}
@@ -979,15 +981,32 @@ static int xcvr_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	struct rf_phy_dev	*phy_dev;
 	struct device_node *rf_dev_node;
-	int ret = 0, size, irq;
+	int ret = 0, size, irq, xcvr_id;
 	const struct of_device_id *id;
 	struct of_phandle_args src_phandle;
-	int resets[2], i;
+	int resets[2], i, xcvr_present;
 
 	if (!np || !of_device_is_available(np)) {
 		dev_err(dev, "No XCVR device available\n");
 		return -ENODEV;
 	}
+
+	of_property_read_u32(np, "xcvr_id", &xcvr_id);
+	if (xcvr_id < 0) {
+		dev_err(dev, "xcvr_id property not found\n");
+		return -EINVAL;
+	}
+
+	xcvr_present = qixis_get_xcvr_present_status(xcvr_id);
+	dev_dbg(dev, "xcvr%d present %d\n", xcvr_id, xcvr_present);
+
+	if (xcvr_present == -EPROBE_DEFER) {
+		return xcvr_present;
+	} else if (!xcvr_present) {
+		dev_err(dev, "xcvr%d not connected\n", xcvr_id);
+		return -ENODEV;
+	}
+
 	size = sizeof(struct xcvr_dev);
 	xcvr_dev = kzalloc(size, GFP_KERNEL);
 	if (!xcvr_dev) {
@@ -998,12 +1017,7 @@ static int xcvr_probe(struct platform_device *pdev)
 	rf_dev_node = of_parse_phandle(np, "9368-1-handle", 0);
 	xcvr_dev->rf_dev_node[xcvr_dev->phy_devs] = rf_dev_node;
 
-	drv_priv->minor++;
 	phy_dev = get_attached_phy_dev(rf_dev_node);
-	if (IS_ERR_OR_NULL(phy_dev)) {
-		kfree(xcvr_dev);
-		return -EPROBE_DEFER;
-	}
 	xcvr_dev->phy_dev[xcvr_dev->phy_devs] = phy_dev;
 
 	xcvr_dev->phy_devs++;
@@ -1011,10 +1025,6 @@ static int xcvr_probe(struct platform_device *pdev)
 	rf_dev_node = of_parse_phandle(np, "9525-handle", 0);
 	xcvr_dev->rf_dev_node[xcvr_dev->phy_devs] = rf_dev_node;
 	phy_dev = get_attached_phy_dev(rf_dev_node);
-	if (IS_ERR_OR_NULL(phy_dev)) {
-		kfree(xcvr_dev);
-		return -EPROBE_DEFER;
-	}
 	xcvr_dev->phy_dev[xcvr_dev->phy_devs] = phy_dev;
 
 	xcvr_dev->phy_devs++;
@@ -1022,10 +1032,6 @@ static int xcvr_probe(struct platform_device *pdev)
 	rf_dev_node = of_parse_phandle(np, "9368-2-handle", 0);
 	xcvr_dev->rf_dev_node[xcvr_dev->phy_devs] = rf_dev_node;
 	phy_dev = get_attached_phy_dev(rf_dev_node);
-	if (IS_ERR_OR_NULL(phy_dev)) {
-		kfree(xcvr_dev);
-		return -EPROBE_DEFER;
-	}
 	xcvr_dev->phy_dev[xcvr_dev->phy_devs] = phy_dev;
 
 	xcvr_dev->phy_devs++;
@@ -1084,13 +1090,7 @@ static int xcvr_probe(struct platform_device *pdev)
 	}
 
 
-	if (drv_priv->minor - 2 > drv_priv->minor_max) {
-		dev_dbg(dev, "XCVR:abort probe, devices more than max [%d]\n",
-				drv_priv->minor_max);
-		goto out;
-	}
-
-	xcvr_dev->dev_t = MKDEV(MAJOR(drv_priv->dev_t), drv_priv->minor - 2);
+	xcvr_dev->dev_t = MKDEV(MAJOR(drv_priv->dev_t), xcvr_id);
 	cdev_init(&xcvr_dev->cdev, &xcvr_fops);
 	ret = cdev_add(&xcvr_dev->cdev, xcvr_dev->dev_t, 1);
 	if (ret) {
@@ -1099,7 +1099,7 @@ static int xcvr_probe(struct platform_device *pdev)
 	}
 
 	xcvr_dev->dev = device_create(drv_priv->class, &pdev->dev,
-			xcvr_dev->dev_t, xcvr_dev, "xcvr%d", drv_priv->minor - 2);
+			xcvr_dev->dev_t, xcvr_dev, "xcvr%d", xcvr_id);
 	ret = IS_ERR(xcvr_dev->dev) ? PTR_ERR(xcvr_dev->dev) : 0;
 
 	INIT_WORK(&xcvr_dev->err_task, xcvr_jesdtx_error_monitor);
@@ -1184,8 +1184,6 @@ static int __init xcvr_init(void)
 		goto out;
 	}
 
-	drv_priv->minor = MINOR(drv_priv->dev_t);
-	drv_priv->minor_max = drv_priv->minor + MAX_RFICS - 1;
 
 	ret = platform_driver_register(&xcvr_driver);
 	return ret;
