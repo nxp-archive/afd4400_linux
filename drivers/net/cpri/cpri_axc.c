@@ -59,17 +59,17 @@ void clear_axc_map_tx_rx_table(struct cpri_framer *framer)
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	u32 val;
 
+	cpri_write(0, &regs->cpri_rcmd0);
+	cpri_write(0, &regs->cpri_rcmd1);
+	cpri_write(0, &regs->cpri_tcmd0);
+	cpri_write(0, &regs->cpri_tcmd1);
+	wmb();	
 	for (loop = 0; loop < 3072; loop++) {
 		val = (AXC_TBL_WRITE_MASK | loop);
-		cpri_write(0, &regs->cpri_rcmd0);
-		cpri_write(0, &regs->cpri_rcmd1);
 		cpri_write(val, &regs->cpri_rcma);
-
-		cpri_write(0, &regs->cpri_tcmd0);
-		cpri_write(0, &regs->cpri_tcmd1);
 		cpri_write(val, &regs->cpri_tcma);
-
 	}
+
 	cpri_reg_clear(&regs->cpri_map_tbl_config, MASK_ALL);
 	cpri_reg_clear(&regs->cpri_map_config, MASK_ALL);
 
@@ -1485,12 +1485,14 @@ int cpri_axc_param_set(struct cpri_framer *framer, unsigned long arg_ioctl)
 		}
 
 
+	/*	
 		if (axc_validate(framer, param, count, flag) != 0) {
 			dev_err(dev, "axc info parameter error\n");
 			kfree(axc_param);
 			ret = -EINVAL;
 			goto clean_axc_pos;
 		}
+	*/
 		/* allocate axc and map with values and axc_buff */
 		axc = kzalloc(sizeof(struct axc), GFP_KERNEL);
 		if (axc == NULL) {
@@ -1668,7 +1670,7 @@ int cpri_axc_param_ctrl(struct cpri_framer *framer, unsigned long arg)
 }
 
 int segment_param_set(struct segment *segment, struct axc *axc,
-		u32 *reg_rcmd0)
+			u32 *cmd0, u32 *cmd1, int seg)
 {
 	unsigned char subsegloop;
 	unsigned char shift;
@@ -1681,7 +1683,6 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 	u32 axc_num;
 	u32 tcm_enable;
 	u32 tcm_width;
-	u32 *reg_rcmd1 = (reg_rcmd0 + 1);
 	u32 val;
 
 
@@ -1705,15 +1706,14 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 		bit_mapped += subsegment->map_size;
 		map_width = subsegment->map_size;
 
-		cpri_write(0, reg_rcmd0);
-		cpri_write(0, reg_rcmd1);
 		if (subsegloop == 2) {
 			dev_dbg(dev, "regcmd1->subsegNum[%d], sbseg_offst: %d",
 					subsegloop, subsegment->offset);
 			val = (((subsegment->offset / 2) << position) |
 					((map_width / 2) << tcm_width) |
 				(axc->id << axc_num) | (1 << tcm_enable));
-			cpri_write(val, reg_rcmd1);
+			/* cpri_write(val, reg_rcmd1); */
+			cmd1[seg] = val;
 			dev_dbg(dev, "axcid: %d val: 0x%x", axc->id, val);
 			break;
 		} else {
@@ -1724,7 +1724,8 @@ int segment_param_set(struct segment *segment, struct axc *axc,
 			val = (((subsegment->offset / 2) << position) |
 					((map_width / 2) << tcm_width) |
 				(axc->id << axc_num) | (1 << tcm_enable));
-			cpri_write(val, reg_rcmd0);
+			/* cpri_write(val, reg_rcmd0); */
+			cmd0[seg] = val;
 			dev_dbg(dev, "axcid: %d, val: 0x%x", axc->id, val);
 			break;
 		}
@@ -1893,9 +1894,10 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 	u32 *reg_rcmd1;
 	u32 *reg_accr;
 	u32 *reg_cr;
-	u32 val;
 	u32 nst_len;
-
+	int i;
+	u32 *cmd0, *cmd1;
+	
 	if (check_for_kval_overlap(framer, direction)) {
 		dev_err(dev, "k0/k1 overlaps! '- delete axcs and set again'\n");
 		return -EINVAL;
@@ -1906,7 +1908,10 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 	cpri_reg_set_val(&regs->cpri_map_config,
 			AXC_MODE_MASK,
 			0x0);
-
+	
+	/* create temp mapping buffer */
+	cmd0 = kzalloc(sizeof(u32) * 3072, GFP_KERNEL);
+	cmd1 = kzalloc(sizeof(u32) * 3072, GFP_KERNEL);
 
 	if (direction & UL_AXCS) {
 		reg_cma = &regs->cpri_tcma;
@@ -2000,10 +2005,11 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 							__func__, seg);
 					program_axc_conf_reg(axc);
 					bit_mapped = segment_param_set(segment,
-								axc, reg_rcmd0);
-					val = AXC_TBL_WRITE_MASK | seg;
+								axc, cmd0, cmd1, seg);
+					/* val = AXC_TBL_WRITE_MASK | seg;
 
 					cpri_write(val, reg_cma);
+					*/
 					axc_size -= bit_mapped;
 					if (axc_size > 0)
 						seg++;
@@ -2014,10 +2020,64 @@ int cpri_axc_map_tbl_init(struct cpri_framer *framer, unsigned long direction)
 			loop2 += k;
 		}
 	}
+	/* write to real mapping table */
+/*
+	for (i = 0; i < 3072; i++) {
+		if (cmd0[i] || cmd1[i]) {
+			//cpri_write(cmd0[i], reg_rcmd0);
+			//cpri_write(cmd1[i], reg_rcmd1);
+			//wmb();
+			//cpri_write(AXC_TBL_WRITE_MASK | i, reg_cma);
+			//printk("cmd0 = %08x\n", cmd0[i]);
+			//printk("cmd1 = %08x\n", cmd1[i]);
+			//printk("seg = %d\n", i);
+		}
+
+	}
+*/
+	kfree(cmd0);
+	kfree(cmd1);
 
 	cpri_state_machine(framer, CPRI_STATE_AXC_MAP_INIT);
 	return 0;
 }
+
+void axc_mapping_raw(struct cpri_framer *framer, u32 *cmd0,
+			u32 *cmd1, int cnt, int dir)
+{
+	struct cpri_framer_regs __iomem *regs = framer->regs;
+	u32 *reg_cma, *reg_cmd0, *reg_cmd1;
+	int i;
+	
+	if (dir & AXC_MAPPING_TX) {
+		reg_cma = &regs->cpri_tcma;
+		reg_cmd0 = &regs->cpri_tcmd0;
+		reg_cmd1 = &regs->cpri_tcmd1;
+	} else {
+		reg_cma = &regs->cpri_rcma;
+		reg_cmd0 = &regs->cpri_rcmd0;
+		reg_cmd1 = &regs->cpri_rcmd1;
+	}
+	/* clear the mapping table first */
+	cpri_write(0, reg_cmd0);
+	cpri_write(0, reg_cmd1);
+	wmb();
+	for (i = 0; i < 3072; i++)
+		cpri_write(AXC_TBL_WRITE_MASK | i, reg_cma);
+	
+	/* program the mapping table again */
+	for (i = 0; i < cnt; i++) {
+		if (cmd0[i] || cmd1[i]) {
+			cpri_write(cmd0[i], reg_cmd0);
+			cpri_write(cmd1[i], reg_cmd1);
+			wmb();
+			cpri_write(AXC_TBL_WRITE_MASK | i, reg_cma);
+	
+		}
+	}
+
+}
+
 
 int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction)
 {

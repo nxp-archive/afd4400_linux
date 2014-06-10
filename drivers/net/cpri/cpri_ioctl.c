@@ -424,43 +424,6 @@ static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
 	return 0;
 }
 
-static int validate_cpri_state(struct cpri_framer *framer, unsigned int cmd)
-{
-	int ret = 0;
-
-	/* this is commented temporarily need to enable after sfp functionality
-	 */
-#if 0
-	if (framer->framer_state == CPRI_STATE_SFP_DETACHED &&
-			(framer->sfp_dev == NULL)) {
-		ret = -EINVAL;
-	}
-#endif
-
-	switch (cmd) {
-
-	case CPRI_SET_AXC_PARAM:
-	case CPRI_GET_AXC_PARAM:
-	case CPRI_GET_MAP_TABLE:
-	case CPRI_CTRL_AXC:
-		ret = cpri_state_validation(framer->framer_state,
-				CPRI_STATE_AXC_CONFIG);
-		break;
-
-	case CPRI_MAP_INIT_AXC:
-	case CPRI_MAP_CLEAR_AXC:
-		ret = cpri_state_validation(framer->framer_state,
-				CPRI_STATE_AXC_MAP_INIT);
-		break;
-	case CPRI_START_AUTONEG:
-	case CPRI_START_RECONFIG:
-		ret = cpri_state_validation(framer->framer_state,
-				CPRI_STATE_LINE_RATE_AUTONEG);
-		break;
-	}
-
-	return ret;
-}
 
 long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 {
@@ -482,6 +445,15 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	struct sfp_reg_read_buf sfp_rreg;
 	struct sfp_amp_data sfp_amp;
 	u8 *sfp_buf = NULL;
+	
+	struct rx_cw_params rx_cw_param;
+	struct tx_cw_params tx_cw_param;
+	struct vss_buf rx_vss_buf;
+	struct vss_buf tx_vss_buf;
+	u8 *cw_data;
+		
+	struct mapping_raw_config mapping_raw;
+	u32 *cmd0, *cmd1;
 
 	int err = 0, count, i;
 	void __user *ioargp = (void __user *)arg;
@@ -489,11 +461,6 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
 		dev_err(dev, "invalid case, CMD=%d\n", cmd);
-		return -EINVAL;
-	}
-	if (validate_cpri_state(framer, cmd)) {
-		dev_err(dev, "cpri cmd discarded 'check cpri_state': %d\n",
-				framer->framer_state);
 		return -EINVAL;
 	}
 
@@ -826,6 +793,135 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		break;
 
+	case CPRI_RX_CTRL_TABLE:
+		if (copy_from_user(&rx_cw_param, 
+				(struct rx_cw_params *) ioargp,
+				sizeof(struct rx_cw_params)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		cw_data = kmalloc(16 * sizeof(u8), GFP_KERNEL);
+		read_rx_cw(framer, rx_cw_param.bf_index, cw_data);
+
+		if (copy_to_user(rx_cw_param.data,
+			cw_data, 16 * sizeof(u8))) {
+			err = -EFAULT;
+			kfree(cw_data);
+			goto out;
+		}
+		kfree(cw_data);
+		break;
+
+	case CPRI_TX_CTRL_TABLE:
+		if (copy_from_user(&tx_cw_param,
+				(struct tx_cw_params *) ioargp,
+				sizeof(struct tx_cw_params)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		cw_data = kmalloc(16 * sizeof(u8), GFP_KERNEL);
+
+		if (tx_cw_param.operation & TX_CW_WRITE) {
+			if (copy_from_user(cw_data, tx_cw_param.data,
+					16 * sizeof(u8)) != 0) {
+				err = -EFAULT;
+				kfree(cw_data);
+				goto out;
+			}
+		}
+		rdwr_tx_cw(framer, tx_cw_param.bf_index,
+				tx_cw_param.operation, cw_data);
+
+		if (tx_cw_param.operation & TX_CW_READ) {
+			if (copy_to_user(tx_cw_param.data, cw_data,
+				16 * sizeof(u8))) {
+				err = -EFAULT;
+				kfree(cw_data);
+				goto out;
+			}
+		}
+		kfree(cw_data);
+		break;
+
+	case CPRI_RX_VSS_GET:
+		if (copy_from_user(&rx_vss_buf, (struct vss_buf *) ioargp,
+				sizeof(struct vss_buf)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		cw_data = kmalloc(rx_vss_buf.cnt, GFP_KERNEL);
+		rx_vss_data_read(framer, rx_vss_buf.cnt, cw_data);
+
+		if (copy_to_user(rx_vss_buf.data,
+			cw_data, rx_vss_buf.cnt)) {
+			err = -EFAULT;
+			kfree(cw_data);
+			goto out;
+		}
+		kfree(cw_data);
+		break;
+
+	case CPRI_TX_VSS_CONFIG:
+		if (copy_from_user(&tx_vss_buf, (struct vss_buf *) ioargp,
+				sizeof(struct vss_buf)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		cw_data = kmalloc(tx_vss_buf.cnt, GFP_KERNEL);
+		if (copy_from_user(cw_data, tx_vss_buf.data,
+				tx_vss_buf.cnt) != 0) {
+			err = -EFAULT;
+			kfree(cw_data);
+			goto out;
+		}
+		tx_vss_data_write(framer, tx_vss_buf.cnt, cw_data);
+		kfree(cw_data);
+		break;
+
+	case CPRI_MAPPING_RAW:
+		if (copy_from_user(&mapping_raw,
+				(struct mapping_raw_config *) ioargp,
+				sizeof(struct mapping_raw_config)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		cmd0 = kmalloc(sizeof(u32) * mapping_raw.count, GFP_KERNEL);
+		cmd1 = kmalloc(sizeof(u32) * mapping_raw.count, GFP_KERNEL);
+		
+		if (copy_from_user(cmd0, mapping_raw.cmd0,
+				mapping_raw.count * sizeof(u32)) != 0) {
+			err = -EFAULT;
+			kfree(cmd0);
+			kfree(cmd1);
+			goto out;
+		}
+		
+		if (copy_from_user(cmd1, mapping_raw.cmd1,
+				mapping_raw.count * sizeof(u32)) != 0) { 
+			err = -EFAULT;
+			kfree(cmd0);
+			kfree(cmd1);
+			goto out;
+		}
+
+		axc_mapping_raw(framer, cmd0, cmd1,
+				mapping_raw.count,
+				mapping_raw.flag);
+		kfree(cmd0);
+		kfree(cmd1);
+		break;
+
+	case CPRI_GET_ERRSTATS:
+		if (!(fp->f_flags & O_NONBLOCK))
+			wait_event_interruptible(framer->event_queue,
+					framer->stats.current_event);
+		if (copy_to_user((struct cpri_dev_stats *) ioargp,
+			&framer->stats, sizeof(struct cpri_dev_stats))) {
+			err = -EFAULT;
+			goto out;
+		}
+		framer->stats.current_event = 0;
+	break;
 
 	default:
 		err = cpri_autoneg_ioctl(framer, cmd, arg);

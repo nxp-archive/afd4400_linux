@@ -95,6 +95,7 @@ struct axc_buf_head {
 
 struct vss_buf_ctrl {
 	u32  base_addr_phys;
+	u32  base_addr_virt;
 	unsigned int buff_size;
 	unsigned int curr_idx;
 	unsigned int threshold;
@@ -387,6 +388,7 @@ struct cpri_framer_regs {
 	u32 cpri_taxcorunintstatus; /* 0xF2C - Tx Ant Carr Orun Int Status */
 };
 
+
 struct cpri_framer {
 	/* Overall data structures per framer */
 	unsigned int id;
@@ -419,8 +421,9 @@ struct cpri_framer {
 	struct work_struct lineautoneg_task;
 	struct work_struct protoautoneg_task;
 	struct work_struct ethautoneg_task;
-	struct work_struct vendorautoneg_task;
 	struct work_struct allautoneg_task;
+	struct work_struct vss_rx_task;
+	struct work_struct vss_tx_task;
 	/* Delay data structures */
 	struct cpri_delays_raw_cfg delay_cfg;
 	struct cpri_delays_raw delay_out;
@@ -434,6 +437,8 @@ struct cpri_framer {
 	struct axc_map_table dl_map_table;
 	spinlock_t ul_map_tbl_lock;
 	spinlock_t dl_map_tbl_lock;
+	spinlock_t rx_cwt_lock;
+	spinlock_t tx_cwt_lock;
 	struct axc_buf_head tx_buf_head;
 	struct axc_buf_head rx_buf_head;
 	/* Ethernet data structures per framer */
@@ -443,22 +448,12 @@ struct cpri_framer {
 	struct vss_buf_ctrl vss_rx_ctrl;
 	u8 rx_vss_axi_transaction_size;
 	u8 tx_vss_axi_transaction_size;
-	/* Control word channel data structures per framer */
-	struct hf_ctrl_chans tx_hf_ctrl_chans;
-	struct hf_ctrl_chans rx_hf_ctrl_chans;
-	spinlock_t tx_cwt_lock;
 	/* Daisy chain data structures per framer */
 	struct daisy_chain_param chain_param;
-	/* SRC */
-	int src_bypass_status;
-	unsigned int src_bypass_dur_sec;
 	/* Poller variables */
-	unsigned long link_poll_dur_sec;
-	unsigned long passive_poll_dur_sec;
-	unsigned long l1_expiry_dur_sec;
 	struct timer_list link_poller;
-	struct timer_list ethptr_poller;
-	struct timer_list l1_timer;
+	/* wait_queue for event notification */
+	wait_queue_head_t event_queue;
 	/* misc */
 	unsigned char notification_state;
 	unsigned char frmr_ethflag;
@@ -630,41 +625,11 @@ enum cpri_linerate {
 #define CW_EN_MASK				0x1
 #define CW130_EN_MASK				0x2
 
-/* CPRInEIER & CPRInEER */
-#define RX_IQ_OVERRUN				(1 << 0)
-#define TX_IQ_UNDERRUN				(1 << 1)
-#define RX_ETH_MEM_OVERRUN			(1 << 2)
-#define TX_ETH_UNDERRUN				(1 << 3)
-#define RX_ETH_BD_UNDERRUN			(1 << 4)
-#define RX_HDLC_OVERRUN				(1 << 5)
-#define TX_HDLC_UNDERRUN			(1 << 6)
-#define RX_HDLC_BD_UNDERRUN			(1 << 7)
-#define RX_VSS_OVERRUN				(1 << 8)
-#define TX_VSS_UNDERRUN				(1 << 9)
-#define ECC_CONFIG_MEM				(1 << 10)
-#define ECC_DATA_MEM				(1 << 11)
-#define RX_ETH_DMA_OVERRUN			(1 << 12)
-#define ETH_FORWARD_REM_FIFO_FULL		(1 << 13)
-#define EXT_SYNC_LOSS				(1 << 15)
-#define RLOS					(1 << 16)
-#define RLOF					(1 << 17)
-#define RAI					(1 << 18)
-#define RSDI					(1 << 19)
-#define LLOS					(1 << 20)
-#define LLOF					(1 << 21)
-#define RRE					(1 << 22)
-#define FAE					(1 << 23)
-#define RRA					(1 << 24)
-#define JCPLL_LOCK_LOSS				(1 << 24)
-
 #define CPRI_ERR_EVT_ALL	(RX_IQ_OVERRUN \
 				| TX_IQ_UNDERRUN \
 				| RX_ETH_MEM_OVERRUN \
 				| TX_ETH_UNDERRUN \
 				| RX_ETH_BD_UNDERRUN \
-				| RX_HDLC_OVERRUN \
-				| TX_HDLC_UNDERRUN \
-				| RX_HDLC_BD_UNDERRUN \
 				| RX_VSS_OVERRUN \
 				| TX_VSS_UNDERRUN \
 				| ECC_CONFIG_MEM \
@@ -968,4 +933,20 @@ struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev);
 void cpri_interrupt_enable(struct cpri_dev *cpdev);
 signed int set_sfp_input_amp_limit(struct cpri_framer *framer,
 		u32 max_volt, u8 flag);
+void rx_vss_data_read(struct cpri_framer *framer,
+		int cnt, u8 *buf);
+void tx_vss_data_write(struct cpri_framer *framer, int cnt, u8 *buf);
+void vss_rx_processing(struct work_struct *work);
+void vss_tx_processing(struct work_struct *work);
+void read_rx_cw(struct cpri_framer *framer, int bf_index, u8 *buf);
+int rx_vss_config(struct cpri_framer *framer, int buffer_size, int threshold,
+                        int axi_trans_size, int vss_int_en);
+int tx_vss_config(struct cpri_framer *framer, int buffer_size, int threshold,
+                        int axi_trans_size, int vss_int_en);
+void rdwr_tx_cw(struct cpri_framer *framer,
+			int bf_index, int operation, u8 *buf);
+void axc_mapping_raw(struct cpri_framer *framer, u32 *cmd0,
+			u32 *cmd1, int cnt, int dir);
+void vss_deconfig(struct cpri_framer *framer);
+
 #endif /* __CPRI_H */

@@ -108,8 +108,7 @@ static int cpri_open(struct inode *inode, struct file *fp)
 	if (framer != NULL) {
 		fp->private_data = framer;
 		dev_dbg(framer->cpri_dev->dev, "framer id:%d", framer->id);
-	}
-	else
+	} else
 		rc = -ENODEV;
 
 	return rc;
@@ -144,12 +143,7 @@ void framer_int_enable(struct cpri_framer *framer)
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_tctrltiminginten,
 			MASK_ALL, val);
-
-	val = (RX_IQ_OVERRUN | TX_IQ_UNDERRUN |
-		TX_VSS_UNDERRUN | RX_VSS_OVERRUN |
-		ECC_CONFIG_MEM | ECC_DATA_MEM | RX_ETH_MEM_OVERRUN |
-		TX_ETH_UNDERRUN | RX_ETH_BD_UNDERRUN | RX_ETH_DMA_OVERRUN |
-		ETH_FORWARD_REM_FIFO_FULL | RAI);
+	val = CPRI_ERR_EVT_ALL;
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_errinten, MASK_ALL, val);
 }
@@ -197,18 +191,17 @@ static irqreturn_t cpri_txtiming(int irq, void *cookie)
 	u32 mask = 0;
 
 	mask = IEVENT_HFN_MASK | IEVENT_BFN_MASK | IEVENT_IQ_THRESHOLD_MASK;
-	events = cpri_reg_get_val(&framer->regs->cpri_tevent, mask);
+	events = cpri_read(&framer->regs->cpri_tevent) & mask;
 
-	if (events &  IEVENT_HFN_MASK)
+	if (events & IEVENT_HFN_MASK)
 		framer->stats.tx_hfn_irqs++;
-	if (events &  IEVENT_BFN_MASK)
+	if (events & IEVENT_BFN_MASK)
 		framer->stats.tx_bfn_irqs++;
 
 	/* Clear event by writing 1 */
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_tevent,
 				events, events);
-
 	return IRQ_HANDLED;
 }
 
@@ -222,14 +215,15 @@ static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 	 * the interrupt and schedules for bottom half. Interrupt will
 	 * be enabled once the tx packets are processed
 	 */
-	if (events &  IEVENT_ETH_MASK) {
+	if (events & IEVENT_ETH_MASK) {
 		cpri_reg_write(&framer->regs_lock,
 				&framer->regs->cpri_tctrltiminginten,
 				ETH_EVENT_EN_MASK, ~ETH_EVENT_EN_MASK);
 		cpri_eth_handle_tx(framer);
 	}
 
-	/* TODO: Handle VSS threshold event here */
+	if (events & IEVENT_VSS_THRESHOLD_MASK)
+		schedule_work(&framer->vss_tx_task);
 	/* Clear events */
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_tevent,
@@ -256,7 +250,8 @@ static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 		cpri_eth_handle_rx(framer);
 	}
 
-	/* TODO: Handle VSS threshold event here */
+	if (events & IEVENT_VSS_THRESHOLD_MASK)
+		schedule_work(&framer->vss_rx_task);
 
 	/* Clear events */
 	cpri_reg_write(&framer->regs_lock,
@@ -309,8 +304,11 @@ out:
 void cpri_mask_irq_events(struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
+	struct cpri_common_regs __iomem *comm_regs = framer->cpri_dev->regs;
+	int i;
 
-	/* disable timing interrupt events here -
+	/* disable timing and control 
+	 * interrupt events here -
 	 * enabled on there respective init
 	 */
 	cpri_reg_clear(&regs->cpri_rctrltiminginten,
@@ -319,10 +317,14 @@ void cpri_mask_irq_events(struct cpri_framer *framer)
 	cpri_reg_clear(&regs->cpri_tctrltiminginten,
 			MASK_ALL);
 
-	/* TBD: CPRIICR is not set in this driver. It is not clear
-	 * why we have this physical interrupt line and the similar
-	 * configuration like the above
+	/* The driver is not using cpri
+	 * interrupt number 99 - 102
+	 * and 112 - 115, other interrupt lines can
+	 * do the same job
 	 */
+	for (i = 0; i < 4; i++)
+		cpri_reg_clear(&comm_regs->cpri_intctrl[i],
+			MASK_ALL);
 	/* disable all error events by default */
 	cpri_reg_clear(&regs->cpri_errinten,
 			MASK_ALL);
@@ -345,64 +347,6 @@ int process_framer_irqs(struct device_node *child, struct cpri_framer *framer)
 	return cpri_register_framer_irqs(framer);
 }
 
-int cpri_state_validation(enum cpri_state present_state,
-		enum cpri_state new_state)
-{
-	int ret = -EINVAL;
-
-	switch (present_state) {
-	case CPRI_STATE_SFP_DETACHED:
-	case CPRI_STATE_STANDBY:
-		if (new_state <= CPRI_STATE_CONFIGURED ||
-				new_state <= CPRI_STATE_LINK_ERROR)
-			ret = 0;
-		break;
-	case CPRI_STATE_CONFIGURED:
-	case CPRI_STATE_LINK_ERROR:
-	case CPRI_STATE_LINE_RATE_AUTONEG:
-	case CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS:
-		if (new_state <= CPRI_STATE_PROT_VER_AUTONEG ||
-				new_state <= CPRI_STATE_LINK_ERROR)
-			ret = 0;
-
-		break;
-	case CPRI_STATE_PROT_VER_AUTONEG:
-		if (new_state <= CPRI_STATE_ETH_RATE_AUTONEG ||
-				new_state <= CPRI_STATE_LINK_ERROR)
-			ret = 0;
-
-		break;
-	case CPRI_STATE_ETH_RATE_AUTONEG:
-		if (new_state <= CPRI_STATE_AUTONEG_COMPLETE ||
-				new_state <= CPRI_STATE_LINK_ERROR)
-			ret = 0;
-		break;
-	case CPRI_STATE_AUTONEG_COMPLETE:
-		if (new_state <= CPRI_STATE_AXC_CONFIG)
-			ret = 0;
-		break;
-	case CPRI_STATE_AXC_CONFIG:
-		if ((new_state <= CPRI_STATE_AXC_MAP_INIT) ||
-				(new_state <= CPRI_STATE_AXC_CONFIG))
-			ret = 0;
-		break;
-	case CPRI_STATE_AXC_MAP_INIT:
-		if ((new_state <= CPRI_STATE_OPERATIONAL) ||
-				(new_state <= CPRI_STATE_AXC_MAP_INIT))
-			ret = 0;
-		break;
-
-	case CPRI_STATE_OPERATIONAL:
-		if ((new_state <= CPRI_STATE_PROT_VER_AUTONEG) ||
-				(new_state <= CPRI_STATE_OPERATIONAL))
-			ret = 0;
-
-		break;
-	default:
-		break;
-	}
-	return ret;
-}
 
 /* Framer state update during error events. This update is used
  * by autoneg code to determine the proper entry in to the autoneg
@@ -410,48 +354,12 @@ int cpri_state_validation(enum cpri_state present_state,
  */
 void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state)
 {
-	enum cpri_state present_state = framer->framer_state;
-	struct device *dev = framer->cpri_dev->dev;
-
-		if (!cpri_state_validation(present_state, new_state))
-			framer->framer_state = new_state;
-		else {
-			dev_err(dev, "CPRI-Invalid state change request: %d",
-					new_state);
-			return;
-		}
-		if (new_state < CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)
-			framer->cpri_dev->intr_cpri_frmr_state =
-				new_state;
+	framer->framer_state = new_state;
+	if (new_state < CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)
+		framer->cpri_dev->intr_cpri_frmr_state = new_state;
 	return;
 }
 
-static void do_framer_state_update(struct cpri_framer *framer, u32 mask)
-{
-	if ((mask & RLOS) | (mask & RLOF) | (mask & RAI) | (mask & RSDI)) {
-		if (timer_pending(&framer->l1_timer))
-			del_timer_sync(&framer->l1_timer);
-		cpri_state_machine(framer,
-				CPRI_STATE_LINK_ERROR);
-	}
-#if 0
-	if ((mask & LLOS) | (mask & LLOF))
-		cpri_state_machine(framer, CPRI_STATE_SFP_DETACHED);
-#endif
-
-	if (mask & RRE) {
-		cpri_state_machine(framer,
-				CPRI_STATE_LINK_ERROR);
-		if (timer_pending(&framer->l1_timer))
-			del_timer_sync(&framer->l1_timer);
-	}
-
-#if 0
-	if (mask & FAE)
-		cpri_state_machine(framer,
-				CPRI_STATE_LINK_ERROR);
-#endif
-}
 
 /* Stats update during error events */
 static void do_err_stats_update(struct cpri_framer *framer,
@@ -518,77 +426,42 @@ static void cpri_err_tasklet(unsigned long arg)
 
 	err_evt = cpri_reg_get_val(&framer->regs->cpri_errevent,
 				CPRI_ERR_EVT_ALL);
-	/* Handle the error events */
-	/* TBD: Process events and notify user
-	 * synchronously for all the framers here.
-	 */
+	wake_up_interruptible(&framer->event_queue);
 
-	mask = (RX_IQ_OVERRUN | TX_IQ_UNDERRUN |
-		TX_VSS_UNDERRUN | RX_VSS_OVERRUN |
-		ECC_CONFIG_MEM | ECC_DATA_MEM | RX_ETH_MEM_OVERRUN |
-		TX_ETH_UNDERRUN | RX_ETH_BD_UNDERRUN | RX_ETH_DMA_OVERRUN |
-		ETH_FORWARD_REM_FIFO_FULL | RAI);
-	if (err_evt && mask) {
-		if (err_evt & RX_ETH_MEM_OVERRUN)
-			cpri_reg_get_val(&framer->regs->cpri_rethexstatus,
+	mask = CPRI_ERR_EVT_ALL;
+
+	if (err_evt & RX_ETH_MEM_OVERRUN)
+		cpri_reg_get_val(&framer->regs->cpri_rethexstatus,
 				MASK_ALL);
 
-		cpri_reg_write(&framer->regs_lock,
-			&framer->regs->cpri_errevent,
-			err_evt, err_evt);
+	cpri_reg_write(&framer->regs_lock,
+		&framer->regs->cpri_errevent,
+		err_evt, err_evt);
+
+
+	if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) &
+						APPLY_STATUS) &&
+			((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
+			(framer->autoneg_param.flags &
+			  CPRI_FRMR_SELF_SYNC_MODE))) {
+				dev_dbg(dev, " jcpll lock fail status: 0x%x",
+					qixis_read(QIXIS_CLK_JCPLL_STATUS));
+				err_evt |= JCPLL_LOCK_LOSS;
 	}
-	if (framer->framer_param.ctrl_flags & CPRI_DAISY_CHAINED) {
-		if (framer->cpri_dev->intr_cpri_frmr_state >=
-				CPRI_STATE_AUTONEG_COMPLETE) {
-			if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) &
-						APPLY_STATUS) &&
-			((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
-			(framer->autoneg_param.flags &
-			  CPRI_FRMR_SELF_SYNC_MODE))) {
-				dev_dbg(dev, " jcpll lock fail status: 0x%x",
-					qixis_read(QIXIS_CLK_JCPLL_STATUS));
-				err_evt |= JCPLL_LOCK_LOSS;
-			}
 
-			/* Update stats */
-			do_err_stats_update(framer, err_evt);
+	framer->stats.current_event |= err_evt;
+	/* Update stats */
+	do_err_stats_update(framer, err_evt);
 
-			/* Update state */
-			do_framer_state_update(framer, err_evt);
+	/* Handle ethernet error if any */
+	if (framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
+		cpri_eth_handle_error(framer);
 
-			/* Handle ethernet error if any */
-			if (framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
-				cpri_eth_handle_error(framer);
-		}
-	} else {
-			if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) &
-						APPLY_STATUS) &&
-			((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
-			(framer->autoneg_param.flags &
-			  CPRI_FRMR_SELF_SYNC_MODE))) {
-				dev_dbg(dev, " jcpll lock fail status: 0x%x",
-					qixis_read(QIXIS_CLK_JCPLL_STATUS));
-				err_evt |= JCPLL_LOCK_LOSS;
-			}
-			/* Update stats */
-			do_err_stats_update(framer, err_evt);
-
-			/* Update state */
-			do_framer_state_update(framer, err_evt);
-
-			/* Handle ethernet error if any */
-			if (framer->frmr_ethflag == CPRI_ETH_SUPPORTED)
-				cpri_eth_handle_error(framer);
-		}
-
-
-		/* Restore the interrupt mask */
+	/* Restore the interrupt mask */
 	err_evt = mask & err_evt;
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_errinten,
 			err_evt, err_evt);
-
-	return;
 }
 
 
@@ -611,8 +484,6 @@ static irqreturn_t cpri_err_handler(int irq, void *cookie)
 			&framer->regs->cpri_errinten,
 			err_evt, (err_evt ^ err_evt));
 
-		dev_info(dev->dev, "err_evt occur ----- >0x%x", err_evt);
-		/* Schedule the bottom-half for handling error event */
 		tasklet_schedule(dev->err_tasklet_frmr0);
 
 	} else if (err_status & C2_ERR_MASK) {
@@ -624,16 +495,9 @@ static irqreturn_t cpri_err_handler(int irq, void *cookie)
 			&framer->regs->cpri_errinten,
 			err_evt, (err_evt ^ err_evt));
 
-		dev_info(dev->dev, "err_evt occur ----- >0x%x", err_evt);
-		/* Schedule the bottom-half for handling error event */
 		tasklet_schedule(dev->err_tasklet_frmr1);
 
-	} else {
-		dev_err(dev->dev, "spurious error interrupt");
-		return IRQ_NONE;
 	}
-
-
 	return IRQ_HANDLED;
 }
 
@@ -738,10 +602,6 @@ static int cpri_register_irq(struct cpri_dev *cpdev)
 		tasklet_init(cpdev->err_tasklet_frmr1, cpri_err_tasklet,
 				(unsigned long) cpdev->framer[1]);
 	}
-
-	/* TBD: General interrupts are not handled yet - 99-102.
-	 * Purpose of these interrupts are not clear
-	 */
 
 	return err;
 }
@@ -900,6 +760,7 @@ static int cpri_probe(struct platform_device *pdev)
 
 		spin_lock_init(&framer->regs_lock);
 		spin_lock_init(&framer->tx_cwt_lock);
+		spin_lock_init(&framer->rx_cwt_lock);
 
 		cpri_mask_irq_events(framer);
 		if (process_framer_irqs(child, framer) < 0) {
@@ -924,10 +785,11 @@ static int cpri_probe(struct platform_device *pdev)
 		INIT_WORK(&framer->protoautoneg_task, cpri_proto_ver_autoneg);
 		INIT_WORK(&framer->ethautoneg_task, cpri_eth_autoneg);
 		INIT_WORK(&framer->allautoneg_task, cpri_autoneg_all);
-
-		if (cpri_eth_init(pdev, framer, child) < 0) {
+		INIT_WORK(&framer->vss_rx_task, vss_rx_processing);
+		INIT_WORK(&framer->vss_tx_task, vss_tx_processing);
+		init_waitqueue_head(&framer->event_queue);
+		if (cpri_eth_init(pdev, framer, child) < 0)
 			dev_err(dev, "ethernet init failed");
-		}
 	}
 
 	/* Setup cpri device interrupts */
@@ -948,6 +810,7 @@ static int cpri_probe(struct platform_device *pdev)
 	dev_set_drvdata(dev, cpri_dev);
 	if (!cpri_dev_pair)
 		cpri_init_sfp_irq(np, cpri_dev);
+
 
 	dev_info(dev, "cpri probe done");
 
@@ -981,10 +844,6 @@ static int cpri_remove(struct platform_device *pdev)
 		return -ENODEV;
 
 	iounmap(cpri_dev->regs);
-	free_irq(cpri_dev->irq_gen1, cpri_dev);
-	free_irq(cpri_dev->irq_gen2, cpri_dev);
-	free_irq(cpri_dev->irq_gen3, cpri_dev);
-	free_irq(cpri_dev->irq_gen4, cpri_dev);
 	free_irq(cpri_dev->irq_err, cpri_dev);
 
 	/* Removing ethernet interfaces that are bound to this device
@@ -1004,10 +863,10 @@ static int cpri_remove(struct platform_device *pdev)
 		cancel_work_sync(&framer->protoautoneg_task);
 		cancel_work_sync(&framer->ethautoneg_task);
 		cancel_work_sync(&framer->allautoneg_task);
+		cancel_work_sync(&framer->vss_rx_task);
+		cancel_work_sync(&framer->vss_tx_task);
 		device_destroy(cpri_class, framer->dev_t);
 		unregister_chrdev_region(framer->dev_t, 1);
-		if (framer->autoneg_param.eth_rates != NULL)
-			kfree(framer->autoneg_param.eth_rates);
 		kfree(framer);
 	}
 

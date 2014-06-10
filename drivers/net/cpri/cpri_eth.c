@@ -532,11 +532,11 @@ int cpri_eth_close(struct net_device *ndev)
 	cpri_eth_free_skb_resources(ndev);
 
 	/* Reset control word */
-	cpri_reg_set_val(&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK, 0);
+	/* cpri_reg_set_val(&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK, 0); */
 
 	/* Reset write ptr */
-	cpri_reg_clear(&framer->regs->cpri_rethwriteptr, MASK_ALL);
-	cpri_reg_clear(&framer->regs->cpri_tethwriteptr, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_rethwriteptr, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_tethwriteptr, MASK_ALL);
 	priv->framer->frmr_ethflag |= CPRI_ETH_AUTONEG_REQ;
 
 	return 0;
@@ -1657,8 +1657,8 @@ void init_eth(struct cpri_framer *framer)
 		cpri_eth_free_skb_resources(ndev);
 
 		/* Reset control word */
-		cpri_reg_set_val(&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK, 0);
-		cpri_reg_clear(&regs->cpri_config, TX_CW_INSERT_EN_MASK);
+		/* cpri_reg_set_val(&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK, 0);
+		cpri_reg_clear(&regs->cpri_config, TX_CW_INSERT_EN_MASK); */
 
 		/* Reset write ptr */
 		cpri_reg_clear(&framer->regs->cpri_rethwriteptr, MASK_ALL);

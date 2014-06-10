@@ -79,8 +79,6 @@ struct cpri_dev_init_params {
 #define CPRI_SINGLE_BIT_ECC_ERROR_OUTPUT	(1 << 22)
 #define CPRI_MULTI_BIT_ECC_ERROR_OUTPUT		(1 << 23)
 	unsigned int max_axc_count;
-	__u32 axi_vss_rx_trans_size;
-	__u32 axi_vss_tx_trans_size;
 	__u32 tx_framer_buffer_size;
 	unsigned int k0;
 	unsigned int k1;
@@ -134,6 +132,7 @@ struct cpri_dev_info {
 };
 
 struct cpri_dev_stats {
+	unsigned int current_event;
 	unsigned int tx_vss_frames;
 	unsigned int rx_vss_frames;
 	unsigned int tx_hfn_irqs;
@@ -213,6 +212,34 @@ struct sfp_reg_write_buf {
 	struct sfp_reg *regs;
 	int count;
 };
+/* possible cpri errors are listed here */
+#define RX_IQ_OVERRUN                           (1 << 0)
+#define TX_IQ_UNDERRUN                          (1 << 1)
+#define RX_ETH_MEM_OVERRUN                      (1 << 2)
+#define TX_ETH_UNDERRUN                         (1 << 3)
+#define RX_ETH_BD_UNDERRUN                      (1 << 4)
+#define RX_HDLC_OVERRUN                         (1 << 5)
+#define TX_HDLC_UNDERRUN                        (1 << 6)
+#define RX_HDLC_BD_UNDERRUN                     (1 << 7)
+#define RX_VSS_OVERRUN                          (1 << 8)
+#define TX_VSS_UNDERRUN                         (1 << 9)
+#define ECC_CONFIG_MEM                          (1 << 10)
+#define ECC_DATA_MEM                            (1 << 11)
+#define RX_ETH_DMA_OVERRUN                      (1 << 12)
+#define ETH_FORWARD_REM_FIFO_FULL               (1 << 13)
+#define EXT_SYNC_LOSS                           (1 << 15)
+#define RLOS                                    (1 << 16)
+#define RLOF                                    (1 << 17)
+#define RAI                                     (1 << 18)
+#define RSDI                                    (1 << 19)
+#define LLOS                                    (1 << 20)
+#define LLOF                                    (1 << 21)
+#define RRE                                     (1 << 22)
+#define FAE                                     (1 << 23)
+#define RRA                                     (1 << 24)
+#define JCPLL_LOCK_LOSS                         (1 << 25)
+#define PROTO_VER_MISMATCH			(1 << 26)
+#define ETH_PTR_MISMATCH			(1 << 27)
 
 /* Event notification data structures- start */
 struct evt_device_notification_data {
@@ -269,10 +296,6 @@ enum hdlc_link_rate {
 	RATE_7680K
 };
 
-enum cpri_cm_mode {
-	ETH = 1,
-	HDLC
-};
 
 enum cpri_link_rate {
 	RATE2_1228_8M = 1,
@@ -283,32 +306,32 @@ enum cpri_link_rate {
 	RATE7_9830_4M
 };
 
+struct cpri_vss_init_params {
+	unsigned int vss_axi_trans_size;
+	unsigned int vss_buf_size;
+	unsigned int vss_buf_thresh;
+};
+
 struct cpri_autoneg_params {
 	__u32 flags;
-#define CPRI_UPDATE_L1_AUTONEG_PARAMS		(1 << 1)
-#define CPRI_UPDATE_PROTO_AUTONEG_PARAMS	(1 << 2)
-#define CPRI_UPDATE_CnM_AUTONEG_PARAMS		(1 << 3)
-#define CPRI_RX_SCRAMBLER_EN			(1 << 4)
-#define CPRI_SERDES_LOOPBACK			(1 << 5)
-#define CPRI_FRMR_SELF_SYNC_MODE		(1 << 6)
-#define CPRI_FRMR_PAIR_SYNC_MODE		(1 << 7)
-#define CPRI_FRMR_USER_APP_AXC_MEM_ALLOC	(1 << 8)
-	unsigned int l1_setup_timeout;
-	/* Line rate auto neg parameters */
-	unsigned int tx_on_time;
-	unsigned int tx_off_time;
+#define CPRI_SERDES_LOOPBACK			(1 << 4)
+#define CPRI_FRMR_SELF_SYNC_MODE		(1 << 5)
+#define CPRI_FRMR_PAIR_SYNC_MODE		(1 << 6)
+#define CPRI_FRMR_USER_APP_AXC_MEM_ALLOC	(1 << 7)
+#define CPRI_LINK_FORCE_RST			(1 << 8)
+#define CPRI_RX_VSS_INT_EN			(1 << 9)
+#define CPRI_TX_VSS_INT_EN			(1 << 10)
 	unsigned int linerate_timeout;
 	enum cpri_link_rate link_rate_low, link_rate_high;
 	/*C&M rate auto neg parameters */
 	unsigned int cnm_timeout;
-	enum cpri_cm_mode cm_mode;
-	enum hdlc_link_rate hdlc_rate_low, hdlc_rate_high;
-	unsigned int eth_rates_count;
-	unsigned int *eth_rates;
+	unsigned int eth_rate;
 	/* Protocol auto neg parameters */
 	unsigned int proto_timeout;
 	enum cpri_prot_ver tx_prot_ver;
 	__u32 tx_scr_seed;
+	struct cpri_vss_init_params rx_vss_params;
+	struct cpri_vss_init_params tx_vss_params;
 };
 
 struct cpri_delays_raw_cfg {
@@ -320,12 +343,9 @@ struct cpri_autoneg_output {
 	enum cpri_link_rate common_link_rate;
 	__u8 common_eth_link_rate;
 	enum cpri_prot_ver common_prot_ver;
-	__u8 rx_eth_ptr;
 	/* Basic frame */
 	unsigned int cpri_bf_word_size;
 	unsigned int cpri_bf_iq_datablock_size;
-	/*Size of vss data in one hyper frame in bytes*/
-	unsigned int hf_vss_size;
 	/* Scramble seed */
 	unsigned int rx_scramble_seed_val;
 };
@@ -365,12 +385,12 @@ struct axc_info {
 #define AXC_DATA_TYPE_IQ			(1 << 4)
 #define AXC_DATA_TYPE_VSS			(1 << 5)
 #define AXC_OVERSAMPLING_2X			(1 << 12)
-#define AXC_CONVERSION_9E2_EN			(1 << 7)
+#define AXC_CONVERSION_9E2_EN			(1 << 13)
 #define AXC_TX_ROUNDING_EN			(1 << 14)
 #define AXC_INTERLEAVING_EN			(1 << 30)
 #define AXC_IQ_FORMAT_2				(1 << 31)
 #define AXC_FLEXI_POSITION_EN			(1 << 11)
-#define AXC_AUX_EN                              (1 << 12)
+#define AXC_AUX_EN                              (1 << 16)
 	enum mapping_method map_method;
 	unsigned int buffer_size;
 	unsigned int buffer_threshold;
@@ -420,30 +440,23 @@ struct cpri_axc_ctrl {
 	unsigned int direction;
 };
 
-struct cpri_vss_init_params {
-	__u32 flags;
-#define VSS_TX_CHAN				(1 << 1)
-#define VSS_RX_CHAN				(1 << 2)
-#define VSS_TX_STREAMED				(1 << 3)
-#define VSS_TX_NON_STREAMED			(1 << 4)
-#define VSS_TX_STREAMED_BUF			(1 << 5)
-#define VSS_TX_CHANNEL_BUF			(1 << 6)
-	unsigned int vss_buf_size_hf;
-	unsigned int vss_buf_thresh_hf;
-	__u32 buff_virt;
-	__u32 buff_phys;
+struct rx_cw_params {
+	int bf_index;
+	__u8	*data;
 };
 
-struct ctrl_chan {
-	unsigned int chan;
-	__u8 words[4][16];
-	__u8 word_bitmap;
+struct tx_cw_params {
+	int bf_index;
+	__u8 *data;
+	int operation;
+#define TX_CW_READ	(1 << 0)
+#define TX_CW_WRITE	(1 << 1)
+#define TX_CTRL_TBL_BYPASS (1 << 2)
 };
 
-struct hf_ctrl_chans {
-	struct ctrl_chan  *channels;
-	unsigned int channel_count;
-	unsigned int hf;
+struct vss_buf {
+	int cnt;
+	__u8 *data;
 };
 
 struct daisy_chain_param {
@@ -479,17 +492,18 @@ enum mem_type {
 	SFP_MEM_DIAG
 };
 
+struct mapping_raw_config {
+	__u32 *cmd0;
+	__u32 *cmd1;
+	int count;
+#define AXC_MAPPING_TX (1 << 0)
+#define AXC_MAPPING_RX (1 << 1)
+	int flag;
+};
+
 /* AxC mapping direction flags */
 #define AXC_MAPPING_DL				(1 << 1)
 #define AXC_MAPPING_UL				(1 << 2)
-
-/* VSS channel control flags */
-#define VSS_TX_ENABLE				(1 << 1)
-#define VSS_TX_DISABLE				(1 << 2)
-#define VSS_TX_RESET				(1 << 3)
-#define VSS_RX_ENABLE				(1 << 4)
-#define VSS_RX_DISABLE				(1 << 5)
-#define VSS_RX_RESET				(1 << 6)
 
 /* Daisy chain control flags */
 #define DAISY_CHAIN_ENABLE			(1 << 1)
@@ -528,8 +542,8 @@ enum mem_type {
 						struct cpri_reg_write_buf *)
 #define CPRI_REGISTER_EVENT			_IOW(CPRI_MAGIC, 16, \
 						unsigned int)
-#define CPRI_GET_EVENT				_IOW(CPRI_MAGIC, 17, \
-						enum event_type)
+#define CPRI_GET_EVENT				_IOR(CPRI_MAGIC, 17, \
+						unsigned int)
 #define CPRI_BFN_RESET				_IO(CPRI_MAGIC, 18)
 
 #define CPRI_GET_NFRAME_DIFF			_IOR(CPRI_MAGIC, 19, \
@@ -550,9 +564,6 @@ enum mem_type {
 						struct cpri_delays_raw *)
 #define CPRI_SET_RAWDELAY			_IOW(CPRI_MAGIC, 26, \
 						struct cpri_delays_raw_cfg *)
-#define CPRI_START_L1TIMER			_IO(CPRI_MAGIC, 27)
-#define CPRI_STOP_L1TIMER			_IO(CPRI_MAGIC, 28)
-#define CPRI_SET_L1TIMER			_IOW(CPRI_MAGIC, 29, long)
 
 /* AxC mapping & configuration IOCTLS */
 #define CPRI_SET_AXC_PARAM			_IOW(CPRI_MAGIC, 30, \
@@ -571,22 +582,6 @@ enum mem_type {
 #define SFP_AMP_SET				_IOW(CPRI_MAGIC, 37, \
 						struct sfp_amp_data *)
 
-/* VSS channel configuration and data Tx/Rx IOCTLS */
-#define CPRI_OPEN_VSS				_IOW(CPRI_MAGIC, 40, \
-						struct vss_init_params *)
-#define CPRI_CLOSE_VSS				_IOW(CPRI_MAGIC, 41, \
-						unsigned int)
-#define CPRI_CTRL_VSS				_IOW(CPRI_MAGIC, 42, \
-						unsigned int)
-#define CPRI_TX_VSS				_IOW(CPRI_MAGIC, 43, \
-						struct hf_ctrl_chans *)
-
-/* Control word table R/W IOCTLS */
-#define CPRI_RX_CW				_IOR(CPRI_MAGIC, 51, \
-						struct hf_ctrl_chans *)
-#define CPRI_TX_CW				_IOW(CPRI_MAGIC, 50, \
-						struct hf_ctrl_chans *)
-
 /* Daisy chain configuration IOCTLS */
 #define CPRI_INIT_DAISYCHAIN			_IOW(CPRI_MAGIC, 60, \
 						struct daisy_chain_param *)
@@ -594,5 +589,16 @@ enum mem_type {
 						struct daisy_chain_param *)
 #define CPRI_CTRL_DAISYCHAIN			_IOW(CPRI_MAGIC, 62, \
 						unsigned int)
-
+#define CPRI_RX_CTRL_TABLE			_IOR(CPRI_MAGIC, 63, \
+						struct rx_cw_params *) 
+#define CPRI_TX_CTRL_TABLE			_IOWR(CPRI_MAGIC, 64, \
+						struct tx_cw_params *)
+#define CPRI_RX_VSS_GET				_IOR(CPRI_MAGIC, 65, \
+						struct vss_buf *)
+#define CPRI_MAPPING_RAW			_IOW(CPRI_MAGIC, 66, \
+						struct mapping_raw_config *)
+#define CPRI_TX_VSS_CONFIG			_IOW(CPRI_MAGIC, 67, \
+						struct vss_buf *)
+#define CPRI_GET_ERRSTATS			_IOR(CPRI_MAGIC, 68, \
+						struct cpri_dev_stats *)
 #endif /* __CPRI_IOCTL_H */
