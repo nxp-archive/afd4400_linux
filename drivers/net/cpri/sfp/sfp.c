@@ -58,16 +58,17 @@ static int sfp_eeprom_write(struct sfp_dev *sfp, u8 *buf,
 	struct i2c_msg msg;
 	int status;
 	unsigned long timeout, write_time;
+	int i = 0;
 
-	client = sfp->client[0];
+	client = sfp->client;
 
+	/* Use the DIAG address*/
+	client->addr = sfp->addr[1];
 	if (count > sfp->write_max)
 		count = sfp->write_max;
 
 	/* If we'll use I2C calls for I/O, set up the message */
 	if (!sfp->use_smbus) {
-		int i = 0;
-
 		msg.addr = client->addr;
 		msg.flags = 0;
 
@@ -161,9 +162,9 @@ void fill_sfp_detail(struct sfp_dev *sfp, u8 *sfp_detail)
 EXPORT_SYMBOL(fill_sfp_detail);
 
 static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
-		u8 offset, unsigned int count)
+		u8 offset, unsigned int count, enum mem_type type)
 {
-	struct i2c_client *client = NULL;
+	struct i2c_client *client = sfp->client;
 	u8 msgbuf[2] = {0};
 	struct i2c_msg msg[2];
 	unsigned long timeout = 0, read_time = 0;
@@ -172,7 +173,10 @@ static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 
 	memset(msg, 0, sizeof(msg));
 	/* Determine the memory (eeprom/diagnostics) to read */
-	client = sfp->client[0];
+	if (type == SFP_MEM_EEPROM)
+		client->addr = sfp->addr[0];
+	else
+		client->addr = sfp->addr[1];
 
 	if ((offset > io_limit) || (!client))
 		return -1;
@@ -268,7 +272,7 @@ int sfp_raw_read(struct sfp_dev *sfp,
 	while (count) {
 		int status;
 
-		status = sfp_eeprom_read(sfp, buf, offset, count);
+		status = sfp_eeprom_read(sfp, buf, offset, count, type);
 		if (status <= 0) {
 			if (ret == 0)
 				ret = status;
@@ -291,7 +295,7 @@ EXPORT_SYMBOL(sfp_raw_read);
 
 static int read_sfp_info(struct sfp_dev *sfp)
 {
-	struct device *dev = &(sfp->client[0]->dev);
+	struct device *dev = &(sfp->client->dev);
 	u8 offset = 0;
 	int ret = 0;
 	unsigned int count = SFP_EEPROM_INFO_SIZE;
@@ -311,56 +315,6 @@ out:
 	return -EINVAL;
 }
 
-void handle_sfp_irq(unsigned long arg)
-{
-	struct cpri_dev *cpdev = (struct cpri_dev *)arg;
-	struct device *dev = NULL;
-	struct sfp_dev *sfp;
-	u8 loop;
-	u8 sfp_detail[33] = {0};
-	u8 sfp_probe = 0;
-
-	for (loop = 0; loop < MAX_FRAMERS_PER_COMPLEX; loop++)
-		if ((cpdev->framer[loop]) && (cpdev->framer[loop]->sfp_dev)) {
-			sfp = cpdev->framer[loop]->sfp_dev;
-			dev = &(sfp->client[0]->dev);
-			sfp_probe = gpio_get_value_cansleep(sfp->prs);
-			if (sfp_probe)
-				dev_dbg(dev, "cp %d-framer %d <> sfp jack out",
-					sfp->pair_framer->cpri_dev->dev_id,
-					sfp->pair_framer->id);
-			else {
-				read_sfp_info(sfp);
-				memcpy(sfp_detail, sfp->info.vendor_name,
-					sizeof(sfp->info.vendor_name));
-				memcpy(&sfp_detail[sizeof(
-						sfp->info.vendor_name)],
-					sfp->info.vendor_pn,
-					sizeof(sfp->info.vendor_pn));
-				if (strlen(sfp_detail))
-					dev_dbg(dev, "cp %d-framer %d<---->%s",
-					sfp->pair_framer->cpri_dev->dev_id,
-					sfp->pair_framer->id, sfp_detail);
-			}
-		}
-	/* this is to unmask the interrupt line gpio 15 */
-	for (loop = 0; loop < MAX_FRAMERS_PER_COMPLEX; loop++)
-		if ((cpdev->framer[loop]) && (cpdev->framer[loop]->sfp_dev)) {
-			sfp = cpdev->framer[loop]->sfp_dev;
-			dev = &(sfp->client[0]->dev);
-			/*TODO: pca9555 is not accessible from i2c5 node */
-			gpio_get_value_cansleep(sfp->prs);
-			gpio_get_value_cansleep(sfp->rxlos);
-			gpio_get_value_cansleep(sfp->txfault);
-			dev_dbg(dev, "prbs: 0x%x, rxloss: 0x%x, txfault: 0x%x",
-				gpio_get_value_cansleep(sfp->prs),
-				gpio_get_value_cansleep(sfp->rxlos),
-				gpio_get_value_cansleep(sfp->txfault));
-	}
-
-	return;
-}
-EXPORT_SYMBOL(handle_sfp_irq);
 
 struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node)
 {
@@ -391,7 +345,7 @@ EXPORT_SYMBOL(set_sfp_txdisable);
 
 static int config_sfp_lines(struct sfp_dev *sfp)
 {
-	struct device *dev = &(sfp->client[0]->dev);
+	struct device *dev = &(sfp->client->dev);
 
 	/* Get the GPIO pin numbers from device node */
 	sfp->prs = of_get_named_gpio(sfp->dev_node,
@@ -448,27 +402,25 @@ static int sfp_probe(struct i2c_client *client,
 	struct sfp_dev *sfp = NULL;
 	struct device_node *node = NULL;
 	struct device *dev = &client->dev;
-	unsigned int num_addr = 0;
 	int use_smbus = 0, err = 0;
 	unsigned write_max;
-	int i;
-	u32 prop[1] = { 0 };
 	u8 sfp_detail[33] = {0};
 
 	/* Getting the device node from platform */
 	node = client->dev.of_node;
 	/* Get the number of eeproms supported by the transceiver */
+	sfp = kzalloc(sizeof(struct sfp_dev), GFP_KERNEL);
+	if (!sfp) {
+		err = -ENOMEM;
+		goto err_out;
+	}
+
 	if (client->dev.of_node) {
 		of_property_read_u32(client->dev.of_node, "max-addr",
-				&num_addr);
-		sfp = kzalloc((sizeof(struct sfp_dev) +
-				num_addr * sizeof(struct i2c_client *)),
-				GFP_KERNEL);
-		if (!sfp) {
-			err = -ENOMEM;
-			dev_err(dev, "probe error\n");
-			goto err_out;
-		}
+				&sfp->addr_cnt);
+	} else {
+		err = -ENODEV;
+		goto err_struct;
 	}
 
 	/* Chek for smbus support in adapter */
@@ -496,7 +448,6 @@ static int sfp_probe(struct i2c_client *client,
 	/* ------------ Start populating sfp_dev ---------- */
 	sfp->dev_node = node;
 	sfp->write_max = write_max;
-	sfp->num_addresses = num_addr;
 	sfp->use_smbus = use_smbus;
 	mutex_init(&sfp->lock);
 
@@ -507,19 +458,11 @@ static int sfp_probe(struct i2c_client *client,
 		goto err_struct;
 	}
 
-	/* TBD: The 'reg' field is used by the multiplexer driver to create
-	 * nodes and as well by this driver to send notification
-	 * on connected framer
-	 */
-	of_property_read_u32_array(client->dev.of_node, "reg", prop,
-			ARRAY_SIZE(prop));
+	of_property_read_u32_array(client->dev.of_node, "reg", sfp->addr,
+			sfp->addr_cnt);
 
-
-	/* Getting eeprom mem interface address */
-	sfp->client[0] = client;
-	sfp->client[0]->addr = prop[0];
-	sfp->pair_framer = get_attached_cpri_dev(&sfp->dev_node);
-	sfp->id = sfp->pair_framer->id;
+	/* Getting mem interface address */
+	sfp->client = client;
 
 	/* ------------ End populating sfp_dev ---------- */
 	/* Configure transceiver pins */
@@ -546,18 +489,20 @@ static int sfp_probe(struct i2c_client *client,
 			use_smbus == I2C_SMBUS_WORD_DATA ? "word" : "byte");
 	}
 
-	/* Fill SFP info structure and do sanity checks */
-	if (read_sfp_info(sfp) < 0)
+	/* Do SFP presence test */
+	if (gpio_get_value_cansleep(sfp->prs))
 		dev_err(dev, "sfp not inserted\n");
 	else  {
-		memcpy(sfp_detail, sfp->info.vendor_name,
+		if (read_sfp_info(sfp) < 0)
+			dev_err(dev, "sfp i2c read fail");
+		else {
+			memcpy(sfp_detail, sfp->info.vendor_name,
 				sizeof(sfp->info.vendor_name));
-		memcpy(&sfp_detail[sizeof(sfp->info.vendor_name)],
-			sfp->info.vendor_pn, sizeof(sfp->info.vendor_pn));
-		if (strlen(sfp_detail))
-			dev_info(dev, "cpri[%d]--framer[%d]<---->%s",
-					sfp->pair_framer->cpri_dev->dev_id,
-					sfp->pair_framer->id, sfp_detail);
+			memcpy(&sfp_detail[sizeof(sfp->info.vendor_name)],
+				sfp->info.vendor_pn,
+				sizeof(sfp->info.vendor_pn));
+			dev_info(dev, "SFP detected: %s\n", sfp_detail);
+		}
 	}
 
 	raw_spin_lock(&sfp_list_lock);
@@ -570,13 +515,11 @@ static int sfp_probe(struct i2c_client *client,
 	return 0;
 
 err_clients:
-	for (i = 1; i <= num_addr; i++)
-		if (sfp->client[i])
-			i2c_unregister_device(sfp->client[i]);
+	i2c_unregister_device(sfp->client);
 err_struct:
 	kfree(sfp);
 err_out:
-	dev_dbg(dev, "probe error %d", err);
+	dev_err(dev, "probe error %d", err);
 	return err;
 }
 
@@ -584,14 +527,13 @@ static int sfp_remove(struct i2c_client *client)
 {
 	struct sfp_dev *sfp, *sfpdev;
 	struct list_head *pos, *nx;
-	int i;
 
 	sfp = i2c_get_clientdata(client);
-
-	for (i = 1; i < sfp->num_addresses; i++)
-		i2c_unregister_device(sfp->client[i]);
-
 	kfree(sfp->writebuf);
+	gpio_free(sfp->txfault);
+	gpio_free(sfp->rxlos);
+	gpio_free(sfp->prs);
+	gpio_free(sfp->tx_disable);
 
 	/* Deleting the sfp device from list */
 	raw_spin_lock(&sfp_list_lock);
@@ -604,13 +546,6 @@ static int sfp_remove(struct i2c_client *client)
 		}
 	}
 	raw_spin_unlock(&sfp_list_lock);
-
-	kfree(sfp);
-
-	gpio_free(sfp->txfault);
-	gpio_free(sfp->rxlos);
-	gpio_free(sfp->prs);
-	gpio_free(sfp->tx_disable);
 
 	return 0;
 }

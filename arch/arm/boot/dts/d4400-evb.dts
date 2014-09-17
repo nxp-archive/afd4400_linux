@@ -95,8 +95,8 @@
 
 				cpriphy0: sfp0@50 {
 					compatible = "sfp-dev";
-					reg = <0x50>;
-					max-addr = <0x1>;
+					reg = <0x50 0x51>;
+					max-addr = <0x2>;
 					gpio-sfp-txdisable= <&pca9555 0 0>;
 					gpio-sfp-txfault = <&pca9555 1 0>;
 					gpio-sfp-prs = <&pca9555 2 0>;
@@ -113,8 +113,8 @@
 
 				cpriphy1: sfp1@50 {
 					compatible = "sfp-dev";
-					reg = <0x50>;
-					max-addr = <0x1>;
+					reg = <0x50 0x51>;
+					max-addr = <0x2>;
 					gpio-sfp-txdisable= <&pca9555 4 0>;
 					gpio-sfp-txfault = <&pca9555 5 0>;
 					gpio-sfp-prs = <&pca9555 6 0>;
@@ -132,8 +132,8 @@
 
 				cpriphy2: sfp2@50 {
 					compatible = "sfp-dev";
-					reg = <0x50>;
-					max-addr = <0x1>;
+					reg = <0x50 0x51>;
+					max-addr = <0x2>;
 					gpio-sfp-txdisable = <&pca9555 8 0>;
 					gpio-sfp-txfault = <&pca9555 9 0>;
 					gpio-sfp-prs = <&pca9555 10 0>;
@@ -156,8 +156,8 @@
 
 				cpriphy3: sfp3@50 {
 			      		compatible = "sfp-dev";
-				      	reg = <0x50>;
-				      	max-addr = <0x1>;
+					reg = <0x50 0x51>;
+					max-addr = <0x2>;
 				      	gpio-sfp-txdisable = <&pca9555 12 0>;
 				      	gpio-sfp-txfault = <&pca9555 13 0>;
 			      		gpio-sfp-prs = <&pca9555 14 0>;

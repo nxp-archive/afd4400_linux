@@ -19,86 +19,27 @@
 #include <linux/platform_device.h>
 #include <linux/etherdevice.h>
 #include <linux/bitops.h>
+#include <linux/semaphore.h>
 
 #include <uapi/linux/cpri.h>
 #include <linux/sfp.h>
 #include <linux/gcr.h>
 #include <linux/cpri_eth.h>
 
-
-struct axc {
-	unsigned int id;
-	u32 flags;
-	struct list_head list;
-	struct cpri_framer *framer;
-	enum mapping_method map_method;
-	u32 axc_com_param_flag;
-	unsigned char sampling_width;
-	unsigned int buffer_threshold;
-	unsigned int S;
-	unsigned char K;
-	unsigned int na;
-	unsigned int nst;
-	struct axc_buf *axc_buf;
-	struct axc_pos *pos;
-};
-
-struct axc_buf {
-	u32 addr;
-	u32 size;
-	unsigned int mem_blk;
-	struct axc *axc;
-	struct list_head list;
-};
-
-struct axc_map_table {
-	struct cpri_framer *framer;
-	unsigned int max_time_slots;
-	unsigned int slot_map_size;
-	struct segment *segments;
-	u32 *segment_bitmap;
-	unsigned int k0_max;
-	unsigned int k1_max;
-	u32 **k0_bitmap;
-	u32 **k1_bitmap;
-};
-
-struct subsegment {
-	struct axc *axc;
-	u8 offset;
-	u8 map_size;
-};
-
-struct segment {
-	struct subsegment subsegments[3];
-	unsigned char k;
-#define STUFFING_DATA	0
-#define AXC_DATA	1
-	unsigned char flag;
-};
-
-struct axc_mem_blk {
-	u32 base;
-	u32 size;
-	u32 next_free_addr;
-};
-
-struct axc_buf_head {
-	struct axc_mem_blk blocks[2];
-	u8 blk_bitmap;
-	u32 max_bufs;
-	u32 allocated_bufs;
-	struct list_head free_list;
-	spinlock_t lock;
-};
-
-
-struct vss_buf_ctrl {
-	u32  base_addr_phys;
-	u32  base_addr_virt;
-	unsigned int buff_size;
-	unsigned int curr_idx;
-	unsigned int threshold;
+/* Private data structure for driver */
+struct cpri_priv {
+	struct class *cpri_class;
+	struct list_head cpri_dev_list;
+	spinlock_t cpri_list_lock;
+/* The I2C GPIO expander interrupt output is shared
+ * by 4 framers. Only CPRI complex 1 has this entry so
+ * it will initialized once.
+ * @sfp_int: the GPIO number for the I2C GPIO expander interrupt
+ * @sfp_irq: the irq number for I2C GPIO expander interrupt
+ */
+	int sfp_int;
+	int sfp_irq;
+	struct work_struct sfp_irq_wq;
 };
 
 struct cpri_dev {
@@ -111,16 +52,12 @@ struct cpri_dev {
 	unsigned int irq_gen3;
 	unsigned int irq_gen4;
 	unsigned int irq_err;
-	unsigned int sfp_int;
-	struct tasklet_struct *err_tasklet_frmr0;
-	struct tasklet_struct *err_tasklet_frmr1;
-	struct tasklet_struct *sfp_irq_tasklet;
+	struct tasklet_struct err_tasklet_frmr0;
+	struct tasklet_struct err_tasklet_frmr1;
 	unsigned int framers;
 	u32 dev_flags;
-#define CPRI_D4400				(1 << 6)
 	struct list_head list;
 	struct cpri_framer **framer;
-	enum cpri_state intr_cpri_frmr_state;
 };
 
 enum d4400_rev_clk_dev {
@@ -129,11 +66,13 @@ enum d4400_rev_clk_dev {
 	REV_CLK_DIV_4,
 	REV_CLK_DIV_8,
 };
+#define MAX_SFP_ADDR	2
 
 struct sfp_dev {
 	u32 id;
 	struct device_node *dev_node;
-	unsigned int num_addresses;
+	unsigned int addr_cnt;
+	unsigned int addr[MAX_SFP_ADDR];
 	enum mem_type type;
 	int use_smbus;
 	struct cpri_framer *pair_framer;
@@ -141,13 +80,13 @@ struct sfp_dev {
 	struct mutex lock;
 	u8 *writebuf;
 	unsigned write_max;
-	/* TODO: stats */
+	/* SFP stats */
 	unsigned int txfault;
 	unsigned int rxlos;
 	unsigned int prs;
 	unsigned int tx_disable;
 	struct list_head list;
-	struct i2c_client *client[];
+	struct i2c_client *client;
 };
 
 struct cpri_common_regs {
@@ -398,6 +337,10 @@ struct cpri_framer {
 	struct cdev cdev;
 	dev_t dev_t;
 	spinlock_t regs_lock;
+	spinlock_t err_en_lock;
+	spinlock_t rx_cw_lock;
+	spinlock_t tx_cw_lock;
+	struct semaphore axc_sem;
 	struct device_node *sfp_dev_node;
 	struct sfp_dev *sfp_dev;
 	struct of_phandle_args serdesspec;
@@ -407,60 +350,27 @@ struct cpri_framer {
 	unsigned int irq_tx_t;
 	unsigned int irq_rx_c;
 	unsigned int irq_tx_c;
-	unsigned int timer_expiry_events;
+	/* Timer events for autoneg */
+	unsigned long timer_expiry_events;
 	/* Configuration and stats */
-	u32 test_flags;
-	u32 dev_flags;
-	enum cpri_state framer_state;
-	struct cpri_dev_stats stats;
-	struct cpri_dev_init_params framer_param;
-	struct cpri_framer *chained_framer;
+	unsigned long cpri_state;
+	unsigned long cpri_enabled_monitor;
+	/* Each element corresponds to one error */
+	atomic_t err_cnt[CPRI_ERR_CNT];
+	/* Work struct the monitor the sfp */
+	struct work_struct sfp_wq;
 	/* Autoneg data structures per framer*/
-	struct cpri_autoneg_params autoneg_param;
+	struct cpri_autoneg_params autoneg_params;
 	struct cpri_autoneg_output autoneg_output;
-	struct work_struct lineautoneg_task;
-	struct work_struct protoautoneg_task;
-	struct work_struct ethautoneg_task;
-	struct work_struct allautoneg_task;
-	struct work_struct vss_rx_task;
-	struct work_struct vss_tx_task;
-	/* Delay data structures */
-	struct cpri_delays_raw_cfg delay_cfg;
-	struct cpri_delays_raw delay_out;
 	/* AxC data structures per framer */
 	unsigned int max_axcs;
-	unsigned int max_segments;
-	struct axc **ul_axcs;
-	struct axc **dl_axcs;
-	struct axc *axcs;
-	struct axc_map_table ul_map_table;
-	struct axc_map_table dl_map_table;
-	spinlock_t ul_map_tbl_lock;
-	spinlock_t dl_map_tbl_lock;
-	spinlock_t rx_cwt_lock;
-	spinlock_t tx_cwt_lock;
-	struct axc_buf_head tx_buf_head;
-	struct axc_buf_head rx_buf_head;
+	u32 axc_memblk_size;
 	/* Ethernet data structures per framer */
 	struct cpri_eth_priv *eth_priv;
-	/* VSS data structures per framer */
-	struct vss_buf_ctrl vss_tx_ctrl;
-	struct vss_buf_ctrl vss_rx_ctrl;
-	u8 rx_vss_axi_transaction_size;
-	u8 tx_vss_axi_transaction_size;
-	/* Daisy chain data structures per framer */
-	struct daisy_chain_param chain_param;
-	/* Poller variables */
-	struct timer_list link_poller;
-	/* wait_queue for event notification */
-	wait_queue_head_t event_queue;
+	/* The timer to poll the link status */
+	struct timer_list link_monitor_timer;
 	/* misc */
-	unsigned char notification_state;
 	unsigned char frmr_ethflag;
-	u32 rx_mblk_hardware_addr0;
-	u32 rx_mblk_hardware_addr1;
-	u32 tx_mblk_hardware_addr0;
-	u32 tx_mblk_hardware_addr1;
 };
 
 enum cpri_linerate {
@@ -473,14 +383,20 @@ enum cpri_linerate {
 	CPRI_LINE_RATE_7
 };
 
+/* This is to simulate the HW mapping table */
+struct axc_cmd_regs {
+	u32 tcmd0[3072];
+	u32 tcmd1[3072];
+	u32 rcmd0[3072];
+	u32 rcmd1[3072];
+};
 
 #define CLASS_NAME	"cp"
 #define DEV_NAME	"cp"
 
-#define TEVENT_LITIMER_EXPIRED			(1 << 1)
-#define TEVENT_LINERATE_SETUP_TEXPIRED		(1 << 2)
-#define TEVENT_PROTVER_SETUP_TEXPIRED		(1 << 3)
-#define TEVENT_ETHRATE_SETUP_TEXPIRED		(1 << 4)
+#define RATE_TIMEREXP_BITPOS		0
+#define PROTVER_TIMEREXP_BITPOS		1
+#define ETHPTR_TIMEREXP_BITPOS		2
 
 #define IEVENT_SFP_TXFAULT			(1 << 1)
 #define IEVENT_SFP_LOS				(1 << 2)
@@ -625,27 +541,14 @@ enum cpri_linerate {
 #define CW_EN_MASK				0x1
 #define CW130_EN_MASK				0x2
 
-#define CPRI_ERR_EVT_ALL	(RX_IQ_OVERRUN \
-				| TX_IQ_UNDERRUN \
-				| RX_ETH_MEM_OVERRUN \
-				| TX_ETH_UNDERRUN \
-				| RX_ETH_BD_UNDERRUN \
-				| RX_VSS_OVERRUN \
-				| TX_VSS_UNDERRUN \
-				| ECC_CONFIG_MEM \
-				| ECC_DATA_MEM \
-				| RX_ETH_DMA_OVERRUN \
-				| ETH_FORWARD_REM_FIFO_FULL \
-				| EXT_SYNC_LOSS \
-				| RLOS \
-				| RLOF \
-				| RAI \
-				| RSDI \
-				| LLOS \
-				| LLOF \
-				| RRE \
-				| FAE \
-				| RRA)
+/* Mask in control word 2, 194 and 130 in CPRI spec */
+#define CW2_MASK	0x3
+#define CW194_MASK	0x3F
+#define CW130_RST	0x1
+#define CW130_RAI	0x2
+#define CW130_SDI	0x4
+#define CW130_LOS	0x8
+#define CW130_LOF	0x10
 
 /* CPRInRER & CPRInTER */
 #define IEVENT_BFN_MASK				0x80
@@ -860,29 +763,13 @@ static inline void cpri_reg_vset_val(void __iomem *addr,
 /* CPRI base prototypes */
 long cpri_ioctl(struct file *fp, unsigned int cmd,
 			unsigned long arg);
-void eth_ptr_check_poller_hndlr(unsigned long ptr);
-void link_check_poller_hndlr(unsigned long ptr);
-void l1_timer_expiry_hndlr(unsigned long ptr);
 
 /* Autoneg prototypes */
 int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 			unsigned long arg);
-void cpri_linkrate_autoneg(struct work_struct *work);
-void cpri_proto_ver_autoneg(struct work_struct *work);
-void cpri_eth_autoneg(struct work_struct *work);
-void cpri_setup_vendor_autoneg(struct cpri_framer *framer);
-void cpri_autoneg_all(struct work_struct *work);
-
 /* Control word function prototypes */
-int set_txethrate(u8 eth_rate, struct cpri_framer *framer);
-int get_txethrate(struct cpri_framer *framer, u8 *eth_rate);
-int set_txprotver(enum cpri_prot_ver ver, struct cpri_framer *framer);
 void clear_control_tx_table(struct cpri_framer *framer);
 void clear_axc_map_tx_rx_table(struct cpri_framer *framer);
-int get_txprotver(struct cpri_framer *framer,
-			enum cpri_prot_ver *prot_ver);
-int get_rxethrate(struct cpri_framer *framer, u8 *eth_rate);
-int get_rxprotver(struct cpri_framer *framer, enum cpri_prot_ver *prot_ver);
 
 /* Ethernet exported functions */
 extern int cpri_eth_init(struct platform_device *ofdev,
@@ -890,17 +777,14 @@ extern int cpri_eth_init(struct platform_device *ofdev,
 			struct device_node *frnode);
 extern void cpri_eth_deinit(struct platform_device *ofdev,
 		struct cpri_framer *framer);
-extern void cpri_eth_enable(struct cpri_framer *framer);
 extern int cpri_eth_handle_rx(struct cpri_framer *framer);
 extern int cpri_eth_handle_tx(struct cpri_framer *framer);
 extern int cpri_eth_handle_error(struct cpri_framer *framer);
-void cpri_eth_parm_init(struct cpri_framer *framer);
 
 /* SFP exported functions */
 extern struct cpri_framer
 	*get_attached_cpri_dev(struct device_node **sfp_dev_node);
 extern struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node);
-void handle_sfp_irq(unsigned long arg);
 void fill_sfp_detail(struct sfp_dev *sfp_dev, u8 *buf);
 extern void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value);
 extern int sfp_raw_write(struct sfp_dev *sfp, u8 *buf, u8 offset,
@@ -912,41 +796,17 @@ extern void d4400_rev_clk_select(u8 cpri_id, u8 clk_dev);
 /* AxC mapping functions */
 int cpri_axc_ioctl(struct cpri_framer *framer, unsigned long arg,
 		unsigned int cmd);
-int init_framer_axc_param(struct cpri_framer *framer);
-int init_axc_mem_blk(struct cpri_framer *framer, struct device_node *child);
-void axc_buf_cleanup(struct cpri_framer *framer);
-int populate_segment_table_data(struct cpri_framer *framer);
-void cleanup_segment_table_data(struct cpri_framer *framer);
 void bd_dump(struct net_device *ndev);
-void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state);
-int cpri_state_validation(enum cpri_state present_state,
-		enum cpri_state new_state);
-int linkrate_autoneg_reset(struct cpri_framer *framer,
-		enum cpri_link_rate linerate);
-void update_bf_data(struct cpri_framer *framer);
-void framer_int_enable(struct cpri_framer *framer);
 void cpri_mask_irq_events(struct cpri_framer *framer);
-int cpri_axc_map_tbl_flush(struct cpri_framer *framer, unsigned long direction);
-void clear_axc_buff(struct cpri_framer *framer);
 void init_eth(struct cpri_framer *framer);
 struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev);
-void cpri_interrupt_enable(struct cpri_dev *cpdev);
 signed int set_sfp_input_amp_limit(struct cpri_framer *framer,
 		u32 max_volt, u8 flag);
-void rx_vss_data_read(struct cpri_framer *framer,
-		int cnt, u8 *buf);
-void tx_vss_data_write(struct cpri_framer *framer, int cnt, u8 *buf);
-void vss_rx_processing(struct work_struct *work);
-void vss_tx_processing(struct work_struct *work);
 void read_rx_cw(struct cpri_framer *framer, int bf_index, u8 *buf);
-int rx_vss_config(struct cpri_framer *framer, int buffer_size, int threshold,
-                        int axi_trans_size, int vss_int_en);
-int tx_vss_config(struct cpri_framer *framer, int buffer_size, int threshold,
-                        int axi_trans_size, int vss_int_en);
 void rdwr_tx_cw(struct cpri_framer *framer,
 			int bf_index, int operation, u8 *buf);
-void axc_mapping_raw(struct cpri_framer *framer, u32 *cmd0,
-			u32 *cmd1, int cnt, int dir);
-void vss_deconfig(struct cpri_framer *framer);
-
+void cpri_set_monitor(struct cpri_framer *framer,
+		u32 monitor_en_mask);
+void cpri_clear_monitor(struct cpri_framer *framer,
+			u32 disable_mask);
 #endif /* __CPRI_H */

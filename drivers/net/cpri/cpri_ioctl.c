@@ -31,6 +31,7 @@
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
 #include <linux/pid.h>
+#include <linux/gpio.h>
 
 #include <linux/cpri.h>
 #include <linux/cpri_axc.h>
@@ -63,203 +64,6 @@ static void cpri_reg_read_bulk(void *base,
 	}
 }
 
-static void cpri_reset_bfn(struct cpri_framer *framer)
-{
-	struct cpri_framer_regs __iomem *regs = framer->regs;
-
-	cpri_reg_set(&regs->cpri_tx_control,
-			TX_RESET_BFN_MASK);
-}
-
-static void cpri_fill_framer_stats(struct cpri_framer *framer)
-{
-	struct cpri_framer_regs  __iomem  *regs = framer->regs;
-	struct cpri_dev_stats *stats = (&framer->stats);
-
-	/* Timing events, error events, vss events are updated
-	 * by the irq handlers.Autoneg errors are updtaed in the
-	 * autoneg state machine. Rest of the stats are updated here
-	 */
-	stats->rx_line_coding_violation = cpri_reg_get_val(
-						&regs->cpri_lcv, CNT_LCV_MASK);
-}
-
-static void cpri_fill_framer_info(struct cpri_dev_info *info,
-			struct cpri_framer *framer)
-{
-	struct cpri_framer_regs __iomem *regs = framer->regs;
-
-	/* Current framer state */
-	info->state = framer->framer_state;
-
-	/* Current test mode of framer */
-	info->test_flags = framer->test_flags;
-
-	/* Current device operation modes */
-	if ((framer->test_flags | UL_TRANSPARENT) ||
-		(framer->test_flags | UL_TRANSPARENT))
-		info->dev_flags |= CPRI_TEST_MODE;
-
-	info->dev_flags |= framer->dev_flags;
-
-	/* Current framer hw status */
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_LOS_MASK))
-		info->hw_status |= RX_LOS_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_STATE_MASK))
-		info->hw_status |= RX_STATE_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_HFN_STATE_MASK))
-		info->hw_status |= RX_HFN_STATE_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_BFN_STATE_MASK))
-		info->hw_status |= RX_BFN_STATE_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_LOS_HOLD_MASK))
-		info->hw_status |= RX_LOS_HOLD_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_STATE_HOLD_MASK))
-		info->hw_status |= RX_STATE_HOLD_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_FREQ_ALARM_HOLD_MASK))
-		info->hw_status |= RX_FREQ_ALARM_HOLD_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_RFP_HOLD_MASK))
-		info->hw_status |= RX_RFP_HOLD_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_status,
-				RX_RFP_HOLD_MASK))
-		info->hw_status |= RX_RFP_HOLD_STATUS;
-
-
-	if (cpri_reg_get_val(
-				&regs->cpri_hwreset,
-				RESET_GEN_DONE_HOLD_MASK))
-		info->hw_status |= RESET_GEN_DONE_HOLD_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_hwreset,
-				RESET_GEN_DONE_MASK))
-		info->hw_status |= RESET_GEN_DONE_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_hwreset,
-				RESET_DETECT_HOLD_MASK))
-		info->hw_status |= RESET_DETECT_HOLD_STATUS;
-
-	if (cpri_reg_get_val(
-				&regs->cpri_hwreset,
-				RESET_DETECT_MASK))
-		info->hw_status |= RESET_DETECT_STATUS;
-
-	/* Current recovered BFN and HFN */
-	info->current_bfn = (u16) cpri_reg_get_val(
-					&regs->cpri_bfn,
-					RECOVERED_BFN_CNT_MASK);
-
-	info->current_hfn = (u8) cpri_reg_get_val(
-					&regs->cpri_hfn,
-					RECOVERED_HFN_CNT_MASK);
-
-	/* SFP info */
-	if (framer->sfp_dev != NULL)
-		fill_sfp_detail(framer->sfp_dev, info->sfp_detail);
-
-	/* Current framer param settings */
-	memcpy((struct cpri_dev_init_params *)&info->init_params,
-		(struct cpri_dev_init_params *)&framer->framer_param,
-		sizeof(struct cpri_dev_init_params));
-}
-
-static void cpri_init_param(struct cpri_framer *framer)
-{
-	struct cpri_dev_init_params *param = &framer->framer_param;
-	struct cpri_common_regs __iomem *cregs = framer->cpri_dev->regs;
-
-
-	/* Remote reset params */
-	if (param->ctrl_flags & CPRI_C1_REM_RES_OP)
-		cpri_reg_set(&cregs->cpri_remresetoutputctrl,
-				C1_REM_RES_OP_EN_MASK);
-	else
-		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
-				C1_REM_RES_OP_EN_MASK);
-
-	if (param->ctrl_flags & CPRI_C1_REM_RES_ACK_OP)
-		cpri_reg_set(&cregs->cpri_remresetoutputctrl,
-			C1_REM_RES_ACK_OP_EN_MASK);
-	else
-		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
-			C1_REM_RES_ACK_OP_EN_MASK);
-
-	if (param->ctrl_flags & CPRI_C2_REM_RES_OP)
-		cpri_reg_set(&cregs->cpri_remresetoutputctrl,
-			C2_REM_RES_OP_EN_MASK);
-	else
-		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
-				C2_REM_RES_OP_EN_MASK);
-
-	if (param->ctrl_flags & CPRI_C2_REM_RES_ACK_OP)
-		cpri_reg_set(&cregs->cpri_remresetoutputctrl,
-				C2_REM_RES_ACK_OP_EN_MASK);
-	else
-		cpri_reg_clear(&cregs->cpri_remresetoutputctrl,
-				C2_REM_RES_ACK_OP_EN_MASK);
-
-	/* General Rx sync param */
-	if (param->ctrl_flags & CPRI_GEN_RX_IQ_SYNC)
-		cpri_reg_set(&cregs->cpri_rgensync,
-				IQ_SYNC_EN_MASK);
-	else
-		cpri_reg_clear(&cregs->cpri_rgensync,
-				IQ_SYNC_EN_MASK);
-
-	/* General Tx sync param */
-	if (param->ctrl_flags & CPRI_GEN_TX_IQ_SYNC)
-		cpri_reg_set(&cregs->cpri_tgensync,
-				IQ_SYNC_EN_MASK);
-	else
-		cpri_reg_clear(&cregs->cpri_tgensync,
-				IQ_SYNC_EN_MASK);
-
-
-	return;
-}
-
-static void cpri_set_test_mode(unsigned int mode, struct cpri_framer *framer)
-{
-	struct cpri_framer_regs __iomem *regs = framer->regs;
-
-	if (mode & UL_TRANSPARENT)
-		cpri_reg_set(&regs->cpri_map_config, RX_TRANSPARENT_MODE_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_map_config,
-				RX_TRANSPARENT_MODE_MASK);
-
-	if (mode & DL_TRANSPARENT)
-		cpri_reg_set(&regs->cpri_map_config, TX_TRANSPARENT_MODE_MASK);
-	else
-		cpri_reg_clear(&regs->cpri_map_config,
-				TX_TRANSPARENT_MODE_MASK);
-}
-
 static int calc_nframe_delay(struct cpri_framer *framer)
 {
 	u32 nframer_diff_read = 0;
@@ -283,147 +87,19 @@ static int calc_nframe_delay(struct cpri_framer *framer)
 	return nframer_diff_read;
 }
 
-static int cpri_dev_ctrl(struct cpri_dev_ctrl *ctrl, struct cpri_framer *framer)
+static void cpri_config_axc_offset(struct cpri_framer *framer,
+		const struct cpri_axc_map_offset *offset)
 {
-	struct cpri_framer_regs __iomem *regs = framer->regs;
-	struct cpri_map_offsets map_sync_offset;
-	struct axc **axcs = NULL;
-	struct axc *axc = NULL;
-	unsigned int loop = 0;
-	u32 mask = 0;
-	u32 line_sync_acheived = 0;
+	u32 reg_val;
+	reg_val = (offset->map_rx_offset_z << 8) | offset->map_rx_offset_x;
+	cpri_write(reg_val, &framer->regs->cpri_map_offset_rx);
 
-	if ((ctrl->ctrl_mask & DEV_START_DL) ||
-		(ctrl->ctrl_mask & DEV_START_UL)) {
-		if (copy_from_user(&map_sync_offset,
-				(struct cpri_map_offsets *)ctrl->ctrl_data,
-				sizeof(struct cpri_map_offsets)) != 0)
-			return -EFAULT;
-	}
+	reg_val = (offset->map_tx_offset_z << 8) | offset->map_tx_offset_x;
+	cpri_write(reg_val, &framer->regs->cpri_map_offset_tx);
 
-	if (ctrl->ctrl_mask & DEV_START_UL) {
-
-		/* Set Tx map offset values */
-		cpri_reg_set_val(&regs->cpri_map_offset_tx,
-			MAP_OFFSET_X_MASK, map_sync_offset.tx_map_offset_bf);
-
-		cpri_reg_set_val(&regs->cpri_map_offset_tx,
-			MAP_OFFSET_Z_MASK, map_sync_offset.tx_map_offset_hf);
-
-		cpri_reg_set_val(&regs->cpri_tstartoffset,
-			MAP_OFFSET_X_MASK, map_sync_offset.tx_start_offset_bf);
-
-		cpri_reg_set_val(&regs->cpri_tstartoffset,
-			MAP_OFFSET_Z_MASK, map_sync_offset.tx_start_offset_hf);
-		cpri_reg_set_val(&regs->cpri_map_config, AXC_MODE_MASK, 0x1);
-		/* enable axc transmit control reg */
-		cpri_reg_set(&regs->cpri_tcr, AXC_ENABLE_MASK);
-		loop = 0;
-		axcs = framer->ul_axcs;
-		while (loop < framer->framer_param.max_axc_count) {
-			if ((axcs[loop] == NULL) ||
-					(axcs[loop]->flags & AXC_AUX_EN)) {
-				loop++;
-				continue;
-			}
-			axc = axcs[loop];
-			loop++;
-			cpri_reg_set(&regs->cpri_taccr,
-					(AXC_ENABLE_MASK << axc->id));
-			cpri_reg_set(&regs->cpri_taxciqvspthreshinten,
-					(AXC_ENABLE_MASK << axc->id));
-		}
-		/* Enable Tx */
-		cpri_reg_set(&regs->cpri_config,
-			CONF_TX_EN_MASK);
-
-		/* Check hfn sync status */
-		mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK);
-		while (1) {
-			line_sync_acheived = cpri_reg_get_val(
-					&regs->cpri_status, mask);
-			if (line_sync_acheived)
-				break;
-
-			schedule_timeout_interruptible(msecs_to_jiffies(20));
-		}
-
-
-
-		/* Set Tx control interrupt events */
-		cpri_reg_set(&regs->cpri_tcr, IQ_EN_MASK);
-
-
-		framer->dev_flags |= CPRI_DATA_MODE;
-
-	} else if (ctrl->ctrl_mask & DEV_START_DL) {
-		/* Set Rx map offset values */
-		cpri_reg_set_val(&regs->cpri_map_offset_rx,
-			MAP_OFFSET_X_MASK, map_sync_offset.rx_map_offset_bf);
-
-		cpri_reg_set_val(&regs->cpri_map_offset_rx,
-			MAP_OFFSET_Z_MASK, map_sync_offset.rx_map_offset_hf);
-
-		cpri_reg_set_val(&regs->cpri_map_config, AXC_MODE_MASK, 0x1);
-		/* enable axc transmit control reg */
-		cpri_reg_set(&regs->cpri_rcr, AXC_ENABLE_MASK);
-		loop = 0;
-		axcs = framer->dl_axcs;
-		while (loop < framer->framer_param.max_axc_count) {
-			if (axcs[loop] == NULL) {
-				loop++;
-				continue;
-			}
-			axc = axcs[loop];
-			loop++;
-			cpri_reg_set(&regs->cpri_raccr,
-					(AXC_ENABLE_MASK << axc->id));
-			cpri_reg_set(&regs->cpri_raxciqvspthreshinten,
-					(AXC_ENABLE_MASK << axc->id));
-		}
-
-		/* Enable Rx */
-		cpri_reg_set(&regs->cpri_config,
-			CONF_RX_EN_MASK);
-		/* Set Rx control interrupt events */
-		cpri_reg_set(&regs->cpri_rcr, IQ_EN_MASK);
-
-
-
-		framer->dev_flags |= CPRI_DATA_MODE;
-		cpri_state_machine(framer,
-					CPRI_STATE_OPERATIONAL);
-
-
-	} else if (ctrl->ctrl_mask & DEV_STANDBY) {
-
-		cpri_state_machine(framer,
-					CPRI_STATE_STANDBY);
-
-		/* Disable Tx and Rx */
-		cpri_reg_clear(&regs->cpri_config,
-			CONF_TX_EN_MASK|CONF_RX_EN_MASK);
-
-		/* Disable Tx and Rx AxCs */
-		cpri_reg_set_val(&regs->cpri_raccr,
-			MASK_ALL, 0);
-
-		cpri_reg_set_val(&regs->cpri_taccr,
-			MASK_ALL, 0);
-
-		/* Clear all control interrupt events */
-		cpri_reg_clear(&regs->cpri_rcr,
-			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
-
-		cpri_reg_clear(&regs->cpri_tcr,
-			ETH_EN_MASK | VSS_EN_MASK | IQ_EN_MASK);
-
-	} else
-		return -EINVAL;
-
-	return 0;
+	reg_val = (offset->start_tx_offset_z << 8) | offset->start_tx_offset_x;
+	cpri_write(reg_val, &framer->regs->cpri_tstartoffset);
 }
-
 
 long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 {
@@ -431,33 +107,28 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	struct device *dev = framer->cpri_dev->dev;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_common_regs __iomem *comm_regs = framer->cpri_dev->regs;
-	struct cpri_dev_ctrl devctrl;
-	struct cpri_dev_info info;
 
 	struct cpri_reg_write_buf wreg;
 	struct cpri_reg *wregset;
 	struct cpri_reg_read_buf rreg;
 	u32 *buf = NULL;
-	unsigned int framer_state;
 
 	struct sfp_reg_write_buf sfp_wreg;
 	struct sfp_reg *sfp_wregset;
 	struct sfp_reg_read_buf sfp_rreg;
-	struct sfp_amp_data sfp_amp;
+	struct serdes_amp_data sfp_amp;
 	u8 *sfp_buf = NULL;
-	
+
 	struct rx_cw_params rx_cw_param;
 	struct tx_cw_params tx_cw_param;
-	struct vss_buf rx_vss_buf;
-	struct vss_buf tx_vss_buf;
-	u8 *cw_data;
-		
-	struct mapping_raw_config mapping_raw;
-	u32 *cmd0, *cmd1;
+	char cw_data[16];
 
 	int err = 0, count, i;
 	void __user *ioargp = (void __user *)arg;
+	struct cpri_axc_map_offset axc_map_offset;
+	struct sfp_dev *sfp = framer->sfp_dev;
 	u32 val;
+	int err_cnt[CPRI_ERR_CNT];
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
 		dev_err(dev, "invalid case, CMD=%d\n", cmd);
@@ -465,46 +136,19 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	}
 
 	switch (cmd) {
-	case CPRI_INIT_DEV:
-		if (copy_from_user(&(framer->framer_param),
-				(struct cpri_dev_init_params *)ioargp,
-				sizeof(struct cpri_dev_init_params)) != 0) {
-			err = -EFAULT;
-			goto out;
-		}
-		cpri_init_param(framer);
-		break;
-
-	case CPRI_CTRL_DEV:
-		if (copy_from_user(&devctrl,
-				(struct cpri_dev_ctrl *)ioargp,
-				sizeof(struct cpri_dev_ctrl)) != 0) {
-			err = -EFAULT;
-			goto out;
-		}
-
-		cpri_dev_ctrl(&devctrl, framer);
-
-		break;
-
-	case CPRI_SET_TESTMODE:
-		if (get_user(framer->test_flags, (unsigned int *)ioargp) != 0) {
-			err = -EFAULT;
-			goto out;
-		}
-
-		cpri_set_test_mode(framer->test_flags, framer);
-
-		break;
 
 	case CPRI_GET_STATE:
-		if (copy_to_user((enum cpri_state *)ioargp,
-				&(framer->framer_state),
-				sizeof(enum cpri_state))) {
+		if (gpio_get_value_cansleep(sfp->prs))
+			clear_bit(CPRI_SFP_PRESENT_BITPOS,
+				&framer->cpri_state);
+		else
+			set_bit(CPRI_SFP_PRESENT_BITPOS,
+				&framer->cpri_state);
+		if (copy_to_user((u32 *)ioargp,
+				(u32 *)&framer->cpri_state, sizeof(u32))) {
 			err = -EFAULT;
 			goto out;
 		}
-
 		break;
 
 	case CPRI_GET_NFRAME_DIFF:
@@ -513,52 +157,10 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			goto out;
 		}
-
 		break;
-
 
 	case CPRI_BD_DUMP:
 		bd_dump(framer->eth_priv->ndev);
-
-		break;
-
-	case CPRI_SET_STATE:
-		if (copy_from_user(&framer_state,
-				(enum cpri_state *)ioargp,
-				sizeof(enum cpri_state)) != 0) {
-			err = -EFAULT;
-			goto out;
-		}
-		cpri_state_machine(framer,
-					framer_state);
-
-		break;
-
-	case CPRI_GET_INFO:
-		memset(&info, 0, sizeof(struct cpri_dev_info));
-
-		cpri_fill_framer_info(&info, framer);
-		if (copy_to_user((struct cpri_dev_info *)ioargp, &info,
-				sizeof(struct cpri_dev_info))) {
-			err = -EFAULT;
-			goto out;
-		}
-
-		break;
-
-	case CPRI_GET_STATS:
-		cpri_fill_framer_stats(framer);
-
-		if (copy_to_user((struct cpri_dev_stats *)ioargp,
-			&framer->stats, sizeof(struct cpri_dev_stats))) {
-			err = -EFAULT;
-			goto out;
-		}
-
-		break;
-
-	case CPRI_CLEAR_STATS:
-		memset(&framer->stats, 0, sizeof(struct cpri_dev_stats));
 		break;
 
 	case CPRI_READ_REG:
@@ -676,15 +278,15 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		kfree(wregset);
 		break;
 
-	case SFP_AMP_SET:
+	case SERDES_AMP_SET:
 		if (copy_from_user(&sfp_amp,
-				(struct sfp_amp_data *)ioargp,
-				sizeof(struct sfp_amp_data)) != 0) {
+				(struct serdes_amp_data *)ioargp,
+				sizeof(struct serdes_amp_data)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
-		err = set_sfp_input_amp_limit(framer, sfp_amp.max_volt,
-				sfp_amp.flag);
+		err = set_sfp_input_amp_limit(framer, sfp_amp.sfp_max_mvolt,
+				sfp_amp.rxequil_boost_en);
 		if (err) {
 			err = -EINVAL;
 			goto out;
@@ -778,38 +380,30 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		kfree(sfp_wregset);
 		break;
 
-	case CPRI_BFN_RESET:
-		cpri_reset_bfn(framer);
-
-		break;
-	case CPRI_SET_AXC_PARAM:
-	case CPRI_GET_AXC_PARAM:
-	case CPRI_GET_MAP_TABLE:
-	case CPRI_MAP_INIT_AXC:
-	case CPRI_CTRL_AXC:
-	case CPRI_MAP_CLEAR_AXC:
+	case CPRI_AXC_MAP:
+	case CPRI_AXC_CTRL:
 		err = cpri_axc_ioctl(framer, arg, cmd);
 		if (err < 0)
 			goto out;
 		break;
 
 	case CPRI_RX_CTRL_TABLE:
-		if (copy_from_user(&rx_cw_param, 
+		if (copy_from_user(&rx_cw_param,
 				(struct rx_cw_params *) ioargp,
 				sizeof(struct rx_cw_params)) != 0) {
 			err = -EFAULT;
 			goto out;
 		}
-		cw_data = kmalloc(16 * sizeof(u8), GFP_KERNEL);
+		spin_lock(&framer->rx_cw_lock);
 		read_rx_cw(framer, rx_cw_param.bf_index, cw_data);
+		spin_unlock(&framer->rx_cw_lock);
 
 		if (copy_to_user(rx_cw_param.data,
-			cw_data, 16 * sizeof(u8))) {
+			cw_data,
+			rx_cw_param.len < 16 ? rx_cw_param.len : 16)) {
 			err = -EFAULT;
-			kfree(cw_data);
 			goto out;
 		}
-		kfree(cw_data);
 		break;
 
 	case CPRI_TX_CTRL_TABLE:
@@ -819,108 +413,57 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			goto out;
 		}
-		cw_data = kmalloc(16 * sizeof(u8), GFP_KERNEL);
 
 		if (tx_cw_param.operation & TX_CW_WRITE) {
 			if (copy_from_user(cw_data, tx_cw_param.data,
-					16 * sizeof(u8)) != 0) {
+					tx_cw_param.len < 16 ?
+					tx_cw_param.len : 16) != 0) {
 				err = -EFAULT;
-				kfree(cw_data);
 				goto out;
 			}
 		}
+		spin_lock(&framer->tx_cw_lock);
 		rdwr_tx_cw(framer, tx_cw_param.bf_index,
 				tx_cw_param.operation, cw_data);
+		spin_unlock(&framer->tx_cw_lock);
 
 		if (tx_cw_param.operation & TX_CW_READ) {
 			if (copy_to_user(tx_cw_param.data, cw_data,
-				16 * sizeof(u8))) {
+				tx_cw_param.len < 16 ? tx_cw_param.len : 16)) {
 				err = -EFAULT;
-				kfree(cw_data);
 				goto out;
 			}
 		}
-		kfree(cw_data);
 		break;
 
-	case CPRI_RX_VSS_GET:
-		if (copy_from_user(&rx_vss_buf, (struct vss_buf *) ioargp,
-				sizeof(struct vss_buf)) != 0) {
-			err = -EFAULT;
-			goto out;
-		}
-		cw_data = kmalloc(rx_vss_buf.cnt, GFP_KERNEL);
-		rx_vss_data_read(framer, rx_vss_buf.cnt, cw_data);
-
-		if (copy_to_user(rx_vss_buf.data,
-			cw_data, rx_vss_buf.cnt)) {
-			err = -EFAULT;
-			kfree(cw_data);
-			goto out;
-		}
-		kfree(cw_data);
-		break;
-
-	case CPRI_TX_VSS_CONFIG:
-		if (copy_from_user(&tx_vss_buf, (struct vss_buf *) ioargp,
-				sizeof(struct vss_buf)) != 0) {
-			err = -EFAULT;
-			goto out;
-		}
-		cw_data = kmalloc(tx_vss_buf.cnt, GFP_KERNEL);
-		if (copy_from_user(cw_data, tx_vss_buf.data,
-				tx_vss_buf.cnt) != 0) {
-			err = -EFAULT;
-			kfree(cw_data);
-			goto out;
-		}
-		tx_vss_data_write(framer, tx_vss_buf.cnt, cw_data);
-		kfree(cw_data);
-		break;
-
-	case CPRI_MAPPING_RAW:
-		if (copy_from_user(&mapping_raw,
-				(struct mapping_raw_config *) ioargp,
-				sizeof(struct mapping_raw_config)) != 0) {
-			err = -EFAULT;
-			goto out;
-		}
-		cmd0 = kmalloc(sizeof(u32) * mapping_raw.count, GFP_KERNEL);
-		cmd1 = kmalloc(sizeof(u32) * mapping_raw.count, GFP_KERNEL);
-		
-		if (copy_from_user(cmd0, mapping_raw.cmd0,
-				mapping_raw.count * sizeof(u32)) != 0) {
-			err = -EFAULT;
-			kfree(cmd0);
-			kfree(cmd1);
-			goto out;
-		}
-		
-		if (copy_from_user(cmd1, mapping_raw.cmd1,
-				mapping_raw.count * sizeof(u32)) != 0) { 
-			err = -EFAULT;
-			kfree(cmd0);
-			kfree(cmd1);
-			goto out;
-		}
-
-		axc_mapping_raw(framer, cmd0, cmd1,
-				mapping_raw.count,
-				mapping_raw.flag);
-		kfree(cmd0);
-		kfree(cmd1);
-		break;
-
-	case CPRI_GET_ERRSTATS:
-		if (!(fp->f_flags & O_NONBLOCK))
-			wait_event_interruptible(framer->event_queue,
-					framer->stats.current_event);
+	case CPRI_READ_STATS:
+		for (i = 0; i < CPRI_ERR_CNT; i++)
+			err_cnt[i] = atomic_read(&framer->err_cnt[i]);
 		if (copy_to_user((struct cpri_dev_stats *) ioargp,
-			&framer->stats, sizeof(struct cpri_dev_stats))) {
+				err_cnt, sizeof(err_cnt))) {
 			err = -EFAULT;
 			goto out;
 		}
-		framer->stats.current_event = 0;
+	break;
+
+	case CPRI_SET_MONITOR:
+		cpri_set_monitor(framer, (u32) ioargp);
+	break;
+
+	case CPRI_CLEAR_MONITOR:
+		cpri_clear_monitor(framer, (u32) ioargp);
+	break;
+
+	case CPRI_AXC_OFFSET_REGS:
+	if (copy_from_user(&axc_map_offset,
+			(struct cpri_axc_map_offset *) ioargp,
+			sizeof(struct cpri_axc_map_offset)) != 0) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	cpri_config_axc_offset(framer, &axc_map_offset);
+
 	break;
 
 	default:

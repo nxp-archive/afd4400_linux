@@ -5,9 +5,9 @@
  *
  * Copyright 2013 Freescale Semiconductor, Inc.
  *
- * This program is free software; you can redistribute  it and/or modify it
+ * This program is free software; you can redistribute it and/or modify it
  * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
+ * Free Software Foundation;  either version 2 of the License, or (at your
  * option) any later version.
  */
 
@@ -46,17 +46,13 @@ static struct of_device_id cpri_match[] = {
 	{},
 };
 
-static struct class *cpri_class;
-
-static LIST_HEAD(cpri_dev_list);
-spinlock_t cpri_list_lock;
+struct cpri_priv *priv;
 
 struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev)
 {
 	struct cpri_dev *cpri_dev_pair = NULL;
 
-
-	list_for_each_entry(cpri_dev_pair, &cpri_dev_list, list) {
+	list_for_each_entry(cpri_dev_pair, &priv->cpri_dev_list, list) {
 		if ((cpri_dev_pair) && (cpri_dev_pair->dev_id !=
 					cpri_dev->dev_id))
 			return cpri_dev_pair;
@@ -72,8 +68,8 @@ struct cpri_framer *get_attached_cpri_dev(struct device_node **sfp_dev_node)
 	struct device_node *node = NULL;
 	int i;
 
-	spin_lock(&cpri_list_lock);
-	list_for_each_entry(cpri_dev, &cpri_dev_list, list) {
+	spin_lock(&priv->cpri_list_lock);
+	list_for_each_entry(cpri_dev, &priv->cpri_dev_list, list) {
 
 		for (i = 0; i < cpri_dev->framers; i++) {
 			framer = cpri_dev->framer[i];
@@ -87,12 +83,10 @@ struct cpri_framer *get_attached_cpri_dev(struct device_node **sfp_dev_node)
 			sfp_dev = container_of(sfp_dev_node, struct sfp_dev,
 						dev_node);
 			framer->sfp_dev = sfp_dev;
-			cpri_state_machine(framer,
-						CPRI_STATE_STANDBY);
 			break;
 		}
 	}
-	spin_unlock(&cpri_list_lock);
+	spin_unlock(&priv->cpri_list_lock);
 
 	return framer;
 }
@@ -114,6 +108,21 @@ static int cpri_open(struct inode *inode, struct file *fp)
 	return rc;
 }
 
+static void sfp_read_pins(struct work_struct *work)
+{
+	struct cpri_framer *framer =
+		container_of(work, struct cpri_framer, sfp_wq);
+	struct sfp_dev *sfp = framer->sfp_dev;
+
+	if (gpio_get_value_cansleep(sfp->prs))
+		atomic_inc(&framer->err_cnt[SFP_PRESENCE_BITPOS]);
+	if (gpio_get_value_cansleep(sfp->rxlos))
+		atomic_inc(&framer->err_cnt[SFP_RXLOS_BITPOS]);
+	if (gpio_get_value_cansleep(sfp->txfault))
+		atomic_inc(&framer->err_cnt[SFP_TXFAULT_BITPOS]);
+
+}
+
 static int cpri_release(struct inode *inode, struct file *fp)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)fp->private_data;
@@ -131,37 +140,36 @@ static const struct file_operations cpri_fops = {
 	.release = cpri_release,
 };
 
-void framer_int_enable(struct cpri_framer *framer)
+/* CPRI SFP interrupt handler.
+ * Read the interrupt gpio pins to clear
+ * the interrupt.
+ */
+static void handle_sfp_irq(struct work_struct *work)
 {
-	u32 val = 0;
+	struct cpri_priv *priv =
+			container_of(work, struct cpri_priv, sfp_irq_wq);
+	struct cpri_dev *cpri_dev = NULL;
+	struct cpri_framer *framer;
+	struct sfp_dev *sfp;
+	int i;
 
-	val = ETH_EVENT_EN_MASK  | CONTROL_INT_LEVEL_MASK;
-
-	cpri_reg_write(&framer->regs_lock,
-			&framer->regs->cpri_rctrltiminginten,
-			MASK_ALL, val);
-	cpri_reg_write(&framer->regs_lock,
-			&framer->regs->cpri_tctrltiminginten,
-			MASK_ALL, val);
-	val = CPRI_ERR_EVT_ALL;
-	cpri_reg_write(&framer->regs_lock,
-			&framer->regs->cpri_errinten, MASK_ALL, val);
+	list_for_each_entry(cpri_dev, &priv->cpri_dev_list, list) {
+		for (i = 0; i < cpri_dev->framers; i++) {
+			framer = cpri_dev->framer[i];
+			sfp = framer->sfp_dev;
+			/*TODO: pca9555 is not accessible from i2c5 node */
+			/* This is to unmask the interrupt line gpio 15 */
+				gpio_get_value_cansleep(sfp->prs);
+				gpio_get_value_cansleep(sfp->rxlos);
+				gpio_get_value_cansleep(sfp->txfault);
+			}
+		}
 }
 
-void cpri_interrupt_enable(struct cpri_dev *cpdev)
-{
-
-	int loop = 0;
-	u32 val;
-	for (loop = 1; loop < CPRI_INT_COUNT; loop++) {
-		val = (((loop - 1) << 28) | LEVEL_MASK |
-			IEVENT_IQ_THRESHOLD_EN_MASK | IEVENT_ETH_EN_MASK);
-		cpri_reg_write(&cpdev->lock,
-				&cpdev->regs->cpri_intctrl[loop],
-				MASK_ALL, val);
-	}
-}
-
+/* CPRI rx timing interrupt handler
+ * Right now we are not doing anything
+ * It can handle rx HFN and BFN interrupts, if needed
+ */
 static irqreturn_t cpri_rxtiming(int irq, void *cookie)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)cookie;
@@ -169,47 +177,47 @@ static irqreturn_t cpri_rxtiming(int irq, void *cookie)
 	u32 mask = 0;
 
 	mask = IEVENT_HFN_MASK | IEVENT_BFN_MASK;
-	events = cpri_reg_get_val(&framer->regs->cpri_revent, mask);
-
-	if (events & IEVENT_HFN_MASK)
-		framer->stats.rx_hfn_irqs++;
-	else if (events & IEVENT_BFN_MASK)
-		framer->stats.rx_bfn_irqs++;
+	events = cpri_read(&framer->regs->cpri_revent) & mask;
 
 	/* Clear event by writing 1 */
 	cpri_reg_write(&framer->regs_lock,
-			&framer->regs->cpri_revent,
-				events, events);
+		&framer->regs->cpri_revent, events, events);
 
 	return IRQ_HANDLED;
 }
 
+/* CPRI tx timing interrupt handler
+ * Right now we are not doing anything
+ * It can handle tx HFN and BFN interrupts, if needed
+ */
 static irqreturn_t cpri_txtiming(int irq, void *cookie)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)cookie;
 	u32 events;
 	u32 mask = 0;
 
-	mask = IEVENT_HFN_MASK | IEVENT_BFN_MASK | IEVENT_IQ_THRESHOLD_MASK;
+	mask = IEVENT_HFN_MASK | IEVENT_BFN_MASK;
 	events = cpri_read(&framer->regs->cpri_tevent) & mask;
-
-	if (events & IEVENT_HFN_MASK)
-		framer->stats.tx_hfn_irqs++;
-	if (events & IEVENT_BFN_MASK)
-		framer->stats.tx_bfn_irqs++;
 
 	/* Clear event by writing 1 */
 	cpri_reg_write(&framer->regs_lock,
-			&framer->regs->cpri_tevent,
-				events, events);
+		&framer->regs->cpri_tevent, events, events);
 	return IRQ_HANDLED;
 }
 
+/* CPRI tx control interrupt handler
+ * Right now we are handling only the RETHE interrupt from eth
+ * It can handle RETHE, RHDLCE, RVSSE, if needed
+ * The RETHE is enabled by "ifconfig".
+ */
 static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)cookie;
 	u32 events;
-	events = cpri_reg_get_val(&framer->regs->cpri_tevent, MASK_ALL);
+	u32 mask;
+
+	mask = IEVENT_ETH_MASK | IEVENT_HDLC_MASK | IEVENT_VSS_THRESHOLD_MASK;
+	events = cpri_read(&framer->regs->cpri_tevent) & mask;
 
 	/* Handle tx ethernet event - Called function will disable the
 	 * the interrupt and schedules for bottom half. Interrupt will
@@ -222,8 +230,6 @@ static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 		cpri_eth_handle_tx(framer);
 	}
 
-	if (events & IEVENT_VSS_THRESHOLD_MASK)
-		schedule_work(&framer->vss_tx_task);
 	/* Clear events */
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_tevent,
@@ -232,12 +238,19 @@ static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 	return IRQ_HANDLED;
 }
 
+/* CPRI rx control interrupt handler
+ * Right now we are handling only the TETHE interrupt from eth
+ * It can handle TETHE, THDLCE, TVSSE, if needed
+ * The TETHE is enabled by "ifconfig"
+ */
 static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)cookie;
 	u32 events;
+	u32 mask;
 
-	events = cpri_reg_get_val(&framer->regs->cpri_revent, MASK_ALL);
+	mask = IEVENT_ETH_MASK | IEVENT_HDLC_MASK | IEVENT_VSS_THRESHOLD_MASK;
+	events = cpri_read(&framer->regs->cpri_revent) & mask;
 
 	/* Handle rx ethernet event - Called function will disable the
 	 * the interrupt and schedules for bottom half. Interrupt will
@@ -250,9 +263,6 @@ static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 		cpri_eth_handle_rx(framer);
 	}
 
-	if (events & IEVENT_VSS_THRESHOLD_MASK)
-		schedule_work(&framer->vss_rx_task);
-
 	/* Clear events */
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_revent,
@@ -264,8 +274,6 @@ static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 static int cpri_register_framer_irqs(struct cpri_framer *framer)
 {
 	int err;
-
-/* mask all the interrupt */
 
 	err = request_irq(framer->irq_rx_c, cpri_rxcontrol, 0,
 			"cpri rxcontrol interrupt", framer);
@@ -301,36 +309,49 @@ out:
 	return err;
 }
 
+/* Disable and clear all possible interrupt sources.
+ * Will be enabled according to user need.
+ */
 void cpri_mask_irq_events(struct cpri_framer *framer)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_common_regs __iomem *comm_regs = framer->cpri_dev->regs;
+	u32 mask;
+
 	int i;
 
-	/* disable timing and control 
-	 * interrupt events here -
-	 * enabled on there respective init
-	 */
+	/* Disable CPRI timing interrupt */
 	cpri_reg_clear(&regs->cpri_rctrltiminginten,
 			MASK_ALL);
 
 	cpri_reg_clear(&regs->cpri_tctrltiminginten,
 			MASK_ALL);
 
-	/* The driver is not using cpri
-	 * interrupt number 99 - 102
-	 * and 112 - 115, other interrupt lines can
-	 * do the same job
-	 */
+	/* Disable CPRIICRy interrupt */
 	for (i = 0; i < 4; i++)
 		cpri_reg_clear(&comm_regs->cpri_intctrl[i],
 			MASK_ALL);
-	/* disable all error events by default */
+
+	/* Disable CPRI err interrupt */
 	cpri_reg_clear(&regs->cpri_errinten,
 			MASK_ALL);
+
+	mask = IEVENT_ETH_MASK | IEVENT_HDLC_MASK |
+		IEVENT_VSS_THRESHOLD_MASK |
+		IEVENT_HFN_MASK | IEVENT_BFN_MASK;
+
+	cpri_write(mask, &framer->regs->cpri_revent);
+	cpri_write(mask, &framer->regs->cpri_tevent);
+
+	cpri_write(CPRI_ERR_EVT_ALL,
+		&framer->regs->cpri_errevent);
+
+
 }
 
-int process_framer_irqs(struct device_node *child, struct cpri_framer *framer)
+/* Register timing and control interrutps */
+static int process_framer_irqs(struct device_node *child,
+		struct cpri_framer *framer)
 {
 	struct device *dev = framer->cpri_dev->dev;
 	/* Get the IRQ lines and register them per framer */
@@ -348,109 +369,37 @@ int process_framer_irqs(struct device_node *child, struct cpri_framer *framer)
 }
 
 
-/* Framer state update during error events. This update is used
- * by autoneg code to determine the proper entry in to the autoneg
- * state
- */
-void cpri_state_machine(struct cpri_framer *framer, enum cpri_state new_state)
-{
-	framer->framer_state = new_state;
-	if (new_state < CPRI_STATE_LINE_RATE_AUTONEG_INPROGRESS)
-		framer->cpri_dev->intr_cpri_frmr_state = new_state;
-	return;
-}
-
 
 /* Stats update during error events */
 static void do_err_stats_update(struct cpri_framer *framer,
-			unsigned long mask)
+			unsigned long err_evt)
 {
-	if (mask & RX_IQ_OVERRUN)
-		framer->stats.rx_iq_overrun_err_count++;
-	if (mask & TX_IQ_UNDERRUN)
-		framer->stats.tx_iq_underrun_err_count++;
-	if (mask & RX_ETH_MEM_OVERRUN)
-		framer->stats.rx_eth_mem_overrun_err_count++;
-	if (mask & TX_ETH_UNDERRUN)
-		framer->stats.tx_eth_underrun_err_count++;
-	if (mask & RX_ETH_BD_UNDERRUN)
-		framer->stats.rx_eth_bd_underrun_err_count++;
-	if (mask & RX_HDLC_OVERRUN)
-		framer->stats.rx_hdlc_overrun_err_count++;
-	if (mask & TX_HDLC_UNDERRUN)
-		framer->stats.tx_hdlc_underrun_err_count++;
-	if (mask & RX_HDLC_BD_UNDERRUN)
-		framer->stats.rx_hdlc_bd_underrun_err_count++;
-	if (mask & RX_VSS_OVERRUN)
-		framer->stats.rx_vss_overrun_err_count++;
-	if (mask & TX_VSS_UNDERRUN)
-		framer->stats.tx_vss_underrun_err_count++;
-	if (mask & ECC_CONFIG_MEM)
-		framer->stats.ecc_config_mem_err_count++;
-	if (mask & ECC_DATA_MEM)
-		framer->stats.ecc_data_mem_err_count++;
-	if (mask & RX_ETH_DMA_OVERRUN)
-		framer->stats.rx_eth_dma_overrun_err_count++;
-	if (mask & ETH_FORWARD_REM_FIFO_FULL)
-		framer->stats.eth_fwd_rem_fifo_full_err_count++;
-	if (mask & EXT_SYNC_LOSS)
-		framer->stats.ext_sync_loss_err_count++;
-	if (mask & RLOS)
-		framer->stats.rlos_err_count++;
-	if (mask & RLOF)
-		framer->stats.rlof_err_count++;
-	if (mask & RAI)
-		framer->stats.rai_err_count++;
-	if (mask & RSDI)
-		framer->stats.rsdi_err_count++;
-	if (mask & LLOS)
-		framer->stats.llos_err_count++;
-	if (mask & LLOF)
-		framer->stats.llof_err_count++;
-	if (mask & RRE)
-		framer->stats.rr_err_count++;
-	if (mask & FAE)
-		framer->stats.fa_err_count++;
-	if (mask & RRA)
-		framer->stats.rra_err_count++;
-	if (mask & JCPLL_LOCK_LOSS)
-		framer->stats.jcpll_lock_fail++;
+	unsigned long mask = framer->cpri_enabled_monitor & err_evt;
+	int i;
+
+	for (i = 0; i < CPRI_USER_MONITOR_START; i++) {
+		if (mask & (1 << i))
+			atomic_inc(&framer->err_cnt[i]);
+	}
 }
 
 static void cpri_err_tasklet(unsigned long arg)
 {
 	struct cpri_framer *framer = (struct cpri_framer *) arg;
-	struct device *dev = framer->cpri_dev->dev;
 	u32 err_evt;
 	u32 mask;
 
-	err_evt = cpri_reg_get_val(&framer->regs->cpri_errevent,
-				CPRI_ERR_EVT_ALL);
-	wake_up_interruptible(&framer->event_queue);
+	err_evt = cpri_read(&framer->regs->cpri_errevent);
+	mask = framer->cpri_enabled_monitor & CPRI_ERR_EVT_ALL;
 
-	mask = CPRI_ERR_EVT_ALL;
-
+	/* This read operation is required by RM */
 	if (err_evt & RX_ETH_MEM_OVERRUN)
-		cpri_reg_get_val(&framer->regs->cpri_rethexstatus,
-				MASK_ALL);
+		cpri_read(&framer->regs->cpri_rethexstatus);
 
 	cpri_reg_write(&framer->regs_lock,
 		&framer->regs->cpri_errevent,
 		err_evt, err_evt);
 
-
-	if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) &
-						APPLY_STATUS) &&
-			((framer->framer_param.ctrl_flags & CPRI_DEV_SLAVE) ||
-			(framer->autoneg_param.flags &
-			  CPRI_FRMR_SELF_SYNC_MODE))) {
-				dev_dbg(dev, " jcpll lock fail status: 0x%x",
-					qixis_read(QIXIS_CLK_JCPLL_STATUS));
-				err_evt |= JCPLL_LOCK_LOSS;
-	}
-
-	framer->stats.current_event |= err_evt;
-	/* Update stats */
 	do_err_stats_update(framer, err_evt);
 
 	/* Handle ethernet error if any */
@@ -463,7 +412,6 @@ static void cpri_err_tasklet(unsigned long arg)
 			&framer->regs->cpri_errinten,
 			err_evt, err_evt);
 }
-
 
 static irqreturn_t cpri_err_handler(int irq, void *cookie)
 {
@@ -484,7 +432,7 @@ static irqreturn_t cpri_err_handler(int irq, void *cookie)
 			&framer->regs->cpri_errinten,
 			err_evt, (err_evt ^ err_evt));
 
-		tasklet_schedule(dev->err_tasklet_frmr0);
+		tasklet_schedule(&dev->err_tasklet_frmr0);
 
 	} else if (err_status & C2_ERR_MASK) {
 		framer = dev->framer[1];
@@ -495,82 +443,59 @@ static irqreturn_t cpri_err_handler(int irq, void *cookie)
 			&framer->regs->cpri_errinten,
 			err_evt, (err_evt ^ err_evt));
 
-		tasklet_schedule(dev->err_tasklet_frmr1);
+		tasklet_schedule(&dev->err_tasklet_frmr1);
 
 	}
 	return IRQ_HANDLED;
-}
-
-static void cpri_sfp_tasklet(unsigned long arg)
-{
-	struct cpri_dev *cpdev = (struct cpri_dev *)arg;
-	struct cpri_dev *cpri_dev_pair = NULL;
-
-	cpri_dev_pair = get_pair_cpri_dev(cpdev);
-
-	handle_sfp_irq(arg);
-	if (cpri_dev_pair)
-		handle_sfp_irq((unsigned long)cpri_dev_pair);
-	return;
 }
 
 static irqreturn_t cpri_sfp_int_handler(int irq, void *cookie)
 {
-	struct cpri_dev *cpdev = (struct cpri_dev *)cookie;
-	tasklet_schedule(cpdev->sfp_irq_tasklet);
+	schedule_work(&priv->sfp_irq_wq);
 	return IRQ_HANDLED;
 }
 
-
-
-static int cpri_config_gpio_irq(unsigned int pin, const char *label,
-		irqreturn_t (*handler) (int, void*),
-		struct cpri_dev *cpdev)
+static int cpri_init_sfp_irq(struct platform_device *pdev)
 {
-	int ret, irq;
-	struct device *dev = cpdev->dev;
+	struct device *dev = &pdev->dev;
+	struct device_node *np = pdev->dev.of_node;
+	int ret;
 
-	ret = gpio_request(pin, label);
-	if (ret) {
-		dev_err(dev, "err_request_gpio_failed ");
-		goto err_request_gpio_failed;
-	}
-	gpio_direction_input(pin);
+	INIT_WORK(&priv->sfp_irq_wq, handle_sfp_irq);
 
-	dev_dbg(dev, "%s -> pin %d", __func__, pin);
-	ret = irq = gpio_to_irq(pin);
-	if (ret < 0) {
-		dev_err(dev, "err_get_irq_num_failed");
-		goto err_get_irq_num_failed;
-	}
-
-	ret = request_irq(irq, handler, IRQF_TRIGGER_FALLING, label, cpdev);
-	if (ret) {
-		dev_err(dev, "err_get_irq_num_failed");
-		goto err_request_irq_failed;
-	}
-	return 0;
-
-err_request_irq_failed:
-err_get_irq_num_failed:
-	gpio_free(pin);
-err_request_gpio_failed:
-	return ret;
-}
-
-static int cpri_init_sfp_irq(struct device_node *np, struct cpri_dev *cpdev)
-{
-	cpdev->sfp_irq_tasklet = kmalloc(
-			sizeof(struct tasklet_struct), GFP_KERNEL);
-	tasklet_init(cpdev->sfp_irq_tasklet, cpri_sfp_tasklet,
-				(unsigned long) cpdev);
-
-	cpdev->sfp_int = of_get_named_gpio(np,
+	priv->sfp_int = of_get_named_gpio(np,
 			"sfp-plug-int", 0);
-	cpri_config_gpio_irq(cpdev->sfp_int, "sfp-int",
-			cpri_sfp_int_handler, cpdev);
-	return 0;
+	if (priv->sfp_int < 0) {
+		dev_err(dev, "Fail to get SFP i2c expander int gpio#");
+		goto out1;
+	}
 
+	ret = gpio_request(priv->sfp_int, "sfp-int");
+	if (ret) {
+		dev_err(dev, "gpio_request fail");
+		goto out1;
+	}
+	gpio_direction_input(priv->sfp_int);
+
+	priv->sfp_irq = gpio_to_irq(priv->sfp_int);
+	if (priv->sfp_irq < 0) {
+		dev_err(dev, "gpio_to_irq fail");
+		goto out2;
+	}
+
+	ret = request_irq(priv->sfp_irq, cpri_sfp_int_handler,
+		IRQF_TRIGGER_FALLING, "sfp-int", priv);
+	if (ret) {
+		dev_err(dev, "request_irq fail");
+		goto out2;
+	}
+
+	return 0;
+out2:
+	gpio_free(priv->sfp_int);
+out1:
+	dev_err(dev, "%s failed", __func__);
+	return -EFAULT;
 }
 
 static int cpri_register_irq(struct cpri_dev *cpdev)
@@ -588,18 +513,11 @@ static int cpri_register_irq(struct cpri_dev *cpdev)
 	if (err < 0)
 		dev_err(cpdev->dev, "can't get IRQ");
 	else {
-		/* Initialise tasklet dynamically for bottom-half
-		 * so that it can be be scheduled when event occurs
-		 */
 		/* framer-0 tasklet */
-		cpdev->err_tasklet_frmr0 = kmalloc(
-				sizeof(struct tasklet_struct), GFP_KERNEL);
-		tasklet_init(cpdev->err_tasklet_frmr0, cpri_err_tasklet,
+		tasklet_init(&cpdev->err_tasklet_frmr0, cpri_err_tasklet,
 				(unsigned long) cpdev->framer[0]);
 		/* framer-1 tasklet */
-		cpdev->err_tasklet_frmr1 = kmalloc(
-				sizeof(struct tasklet_struct), GFP_KERNEL);
-		tasklet_init(cpdev->err_tasklet_frmr1, cpri_err_tasklet,
+		tasklet_init(&cpdev->err_tasklet_frmr1, cpri_err_tasklet,
 				(unsigned long) cpdev->framer[1]);
 	}
 
@@ -616,11 +534,10 @@ static int cpri_probe(struct platform_device *pdev)
 	dev_t devt;
 	int cpri_major, cpri_minor;
 	unsigned int framer_id, max_framers;
-	int ret = 0, i, rc = 0;
+	int i, rc = 0;
 	struct cpri_common_regs __iomem *common_regs;
 	const struct of_device_id *id;
 	unsigned char dev_name[20];
-	struct cpri_dev *cpri_dev_pair = NULL;
 
 	if (!np || !of_device_is_available(np)) {
 		rc = -ENODEV;
@@ -631,34 +548,29 @@ static int cpri_probe(struct platform_device *pdev)
 
 	/* Allocate cpri device structure */
 	cpri_dev = kzalloc(sizeof(struct cpri_dev), GFP_KERNEL);
-	if (!cpri_dev) {
-		dev_dbg(dev, "Failed to allocate cpri dev");
+	if (cpri_dev == NULL) {
+		dev_err(dev, "cpri_dev alloc fail");
 		rc = -ENOMEM;
 		goto err_out;
 	}
 
 	/* Populate cpri device structure */
-	of_property_read_u32(np, "id", &cpri_dev->dev_id);
-	if (cpri_dev->dev_id < 0) {
-		dev_dbg(dev, "Failed to get cpri id");
-		rc = -ENODEV;
+	rc = of_property_read_u32(np, "id", &cpri_dev->dev_id);
+	if (rc) {
+		dev_err(dev, "Failed to get cpri id");
 		goto err_mem;
 	}
 
-	if (id)
-		cpri_dev->dev_flags |= CPRI_D4400;
-
-	sprintf(dev_name, "%s%d", DEV_NAME, cpri_dev->dev_id);
+	sprintf(dev_name, "%s%d", DEV_NAME, cpri_dev->dev_id - 1);
 
 	cpri_dev->regs = of_iomap(np, 0);
 	if (!cpri_dev->regs) {
-		dev_dbg(dev, "Failed to map cpri reg addr");
+		dev_err(dev, "Failed to map cpri reg addr");
 		rc = -ENOMEM;
 		goto err_mem;
 	}
 
 	cpri_dev->dev = dev;
-
 
 	cpri_dev->irq_gen1 = irq_of_parse_and_map(np, 0);
 	cpri_dev->irq_gen2 = irq_of_parse_and_map(np, 1);
@@ -690,30 +602,27 @@ static int cpri_probe(struct platform_device *pdev)
 
 	for_each_child_of_node(np, child) {
 
-		of_property_read_u32(child, "framer-id", &framer_id);
-		if (framer_id < 0) {
+		rc = of_property_read_u32(child, "framer-id", &framer_id);
+		if (rc) {
 			dev_err(dev, "Failed to get framer id");
-			rc = -EINVAL;
 			goto err_chrdev;
 		}
 
 		cpri_dev->framers++;
 
-		cpri_dev->framer[framer_id-1] =
+		cpri_dev->framer[framer_id - 1] =
 			kzalloc(sizeof(struct cpri_framer), GFP_KERNEL);
-		if (!cpri_dev->framer[framer_id-1]) {
+		if (cpri_dev->framer[framer_id - 1] == NULL) {
 			dev_err(dev, "Failed to allocate framer");
 			rc = -ENOMEM;
 			goto err_chrdev;
 		}
 
 		/* Populate framer strcuture */
-		framer = cpri_dev->framer[framer_id-1];
+		framer = cpri_dev->framer[framer_id - 1];
 		framer->cpri_dev = cpri_dev;
 		framer->cpri_node = np;
 		framer->id = framer_id;
-		framer->framer_state = CPRI_STATE_SFP_DETACHED;
-		dev_dbg(dev, "framer id:%d", framer->id);
 
 		framer->regs = of_iomap(child, 0);
 		if (!framer->regs) {
@@ -722,112 +631,102 @@ static int cpri_probe(struct platform_device *pdev)
 			goto err_chrdev;
 		}
 		dev_dbg(dev, "framer->regs ---> %p", framer->regs);
-		/* here enable clock for framer register access */
+		/* Enable clock for framer register access */
 		if (framer->id == 2)
 			cpri_reg_set(
 				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
 		else
 			cpri_reg_set(
 				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
-		/* end here */
 
-		of_property_read_u32(child, "max-axcs",
+		rc = of_property_read_u32(child, "max-axcs",
 			(u32 *)&framer->max_axcs);
-		if (framer->max_axcs < 0) {
+		if (rc) {
 			dev_err(dev, "Failed to get max axc");
-			rc = -ENODEV;
 			goto err_chrdev;
 		}
-		dev_dbg(dev, "max axcs:%d", framer->max_axcs);
-		ret = init_axc_mem_blk(framer, child);
-		if (ret) {
-			dev_err(dev, "cpri axc memory init failed");
-			ret = -EFAULT;
+
+		rc = of_property_read_u32(child, "memblk-size",
+			(u32 *)&framer->axc_memblk_size);
+		if (rc) {
+			dev_err(dev, "Failed to get memblk-size");
 			goto err_chrdev;
 		}
 
 		/* Create cdev for each framer */
-		framer->dev_t = MKDEV(cpri_major, cpri_minor + (framer_id-1));
+		framer->dev_t = MKDEV(cpri_major, cpri_minor + (framer_id - 1));
 		cdev_init(&framer->cdev, &cpri_fops);
 		framer->cdev.owner = THIS_MODULE;
 		rc = cdev_add(&framer->cdev, framer->dev_t, 1);
 		if (rc < 0) {
-			dev_err(dev, "cdev_add() failed");
+			dev_err(dev, "cdev_add failed");
 			goto err_chrdev;
 		}
-		device_create(cpri_class, framer->cpri_dev->dev, framer->dev_t,
-			NULL, "%s_frmr%d", dev_name, framer->id-1);
+		device_create(priv->cpri_class,
+			framer->cpri_dev->dev, framer->dev_t,
+			NULL, "%s_frmr%d", dev_name, framer->id - 1);
 
 		spin_lock_init(&framer->regs_lock);
-		spin_lock_init(&framer->tx_cwt_lock);
-		spin_lock_init(&framer->rx_cwt_lock);
+		spin_lock_init(&framer->err_en_lock);
+		spin_lock_init(&framer->rx_cw_lock);
+		spin_lock_init(&framer->tx_cw_lock);
+		sema_init(&framer->axc_sem, 1);
+
+		INIT_WORK(&framer->sfp_wq, sfp_read_pins);
 
 		cpri_mask_irq_events(framer);
 		if (process_framer_irqs(child, framer) < 0) {
-			framer->dev_flags |= CPRI_NO_EVENT;
 			dev_err(dev, "framer events not supported");
+			goto err_cdev;
 		}
 
-		/* Get the SFP handle and determine the cpri state */
 		framer->sfp_dev_node = of_parse_phandle(child,
 					"sfp-handle", 0);
-
+		/* The sfp driver should be init first
+		 * otherwise it will return NULL
+		 */
 		framer->sfp_dev = get_attached_sfp_dev(framer->sfp_dev_node);
-		if (framer->sfp_dev != NULL) {
-			cpri_state_machine(framer,
-						CPRI_STATE_STANDBY);
-		} else {
-			cpri_state_machine(framer, CPRI_STATE_SFP_DETACHED);
-			dev_err(dev, "no sfp, framer state remains detached");
+		if (framer->sfp_dev == NULL) {
+			dev_err(dev, "get_attached_sfp_dev fail");
+			goto err_cdev;
 		}
-
-		INIT_WORK(&framer->lineautoneg_task, cpri_linkrate_autoneg);
-		INIT_WORK(&framer->protoautoneg_task, cpri_proto_ver_autoneg);
-		INIT_WORK(&framer->ethautoneg_task, cpri_eth_autoneg);
-		INIT_WORK(&framer->allautoneg_task, cpri_autoneg_all);
-		INIT_WORK(&framer->vss_rx_task, vss_rx_processing);
-		INIT_WORK(&framer->vss_tx_task, vss_tx_processing);
-		init_waitqueue_head(&framer->event_queue);
 		if (cpri_eth_init(pdev, framer, child) < 0)
 			dev_err(dev, "ethernet init failed");
 	}
-
-	/* Setup cpri device interrupts */
+	/* Setup cpri err interrupts */
 	if (cpri_register_irq(cpri_dev) < 0) {
 		dev_err(dev, "cpri dev irq init failure");
 		goto err_cdev;
 	}
-
 	/* Add to the list of cpri devices - this is required
 	 * as the probe is called for multiple cpri complexes
 	 */
-	spin_lock(&cpri_list_lock);
-
-	cpri_dev_pair = get_pair_cpri_dev(framer->cpri_dev);
-	list_add_tail(&cpri_dev->list, &cpri_dev_list);
-	spin_unlock(&cpri_list_lock);
+	spin_lock(&priv->cpri_list_lock);
+	list_add_tail(&cpri_dev->list, &priv->cpri_dev_list);
+	spin_unlock(&priv->cpri_list_lock);
 
 	dev_set_drvdata(dev, cpri_dev);
-	if (!cpri_dev_pair)
-		cpri_init_sfp_irq(np, cpri_dev);
 
+	/* Only the CPRI complex 1 has this SFP gpio interrupt entry */
+	if (cpri_dev->dev_id == 1)
+		cpri_init_sfp_irq(pdev);
 
-	dev_info(dev, "cpri probe done");
+	dev_info(dev, "%s done", __func__);
 
 	return 0;
 
 err_cdev:
 	cdev_del(&framer->cdev);
 	for (i = 0; i < cpri_dev->framers; i++)
-		device_destroy(cpri_class, cpri_dev->framer[i]->dev_t);
-	class_destroy(cpri_class);
+		device_destroy(priv->cpri_class, cpri_dev->framer[i]->dev_t);
+	class_destroy(priv->cpri_class);
 err_chrdev:
 	unregister_chrdev_region(devt, MAX_FRAMERS_PER_COMPLEX);
 	kfree(cpri_dev->framer);
 err_mem:
 	kfree(cpri_dev);
 err_out:
-	dev_err(dev, "cpri probe failure");
+	dev_err(dev, "%s failure", __func__);
 
 	return rc;
 }
@@ -857,15 +756,10 @@ static int cpri_remove(struct platform_device *pdev)
 		free_irq(framer->irq_tx_t, framer);
 		free_irq(framer->irq_rx_c, framer);
 		free_irq(framer->irq_tx_c, framer);
-		axc_buf_cleanup(framer);
 		cdev_del(&framer->cdev);
-		cancel_work_sync(&framer->lineautoneg_task);
-		cancel_work_sync(&framer->protoautoneg_task);
-		cancel_work_sync(&framer->ethautoneg_task);
-		cancel_work_sync(&framer->allautoneg_task);
-		cancel_work_sync(&framer->vss_rx_task);
-		cancel_work_sync(&framer->vss_tx_task);
-		device_destroy(cpri_class, framer->dev_t);
+		del_timer(&framer->link_monitor_timer);
+		cancel_work_sync(&framer->sfp_wq);
+		device_destroy(priv->cpri_class, framer->dev_t);
 		unregister_chrdev_region(framer->dev_t, 1);
 		kfree(framer);
 	}
@@ -874,13 +768,11 @@ static int cpri_remove(struct platform_device *pdev)
 	kfree(cpri_dev->framer);
 
 	/* Removing the tasklet */
-	tasklet_kill(cpri_dev->err_tasklet_frmr0);
-	tasklet_kill(cpri_dev->sfp_irq_tasklet);
-	tasklet_kill(cpri_dev->err_tasklet_frmr1);
-
+	tasklet_kill(&cpri_dev->err_tasklet_frmr0);
+	tasklet_kill(&cpri_dev->err_tasklet_frmr1);
 	/* Deleting the cpri device from list */
-	spin_lock(&cpri_list_lock);
-	list_for_each_safe(pos, nx, &cpri_dev_list) {
+	spin_lock(&priv->cpri_list_lock);
+	list_for_each_safe(pos, nx, &priv->cpri_dev_list) {
 		cpdev = list_entry(pos, struct cpri_dev, list);
 		if (cpdev == cpri_dev) {
 			list_del(&cpdev->list);
@@ -888,11 +780,7 @@ static int cpri_remove(struct platform_device *pdev)
 			break;
 		}
 	}
-	spin_unlock(&cpri_list_lock);
-
-	dev_set_drvdata(cpri_dev->dev, NULL);
-
-	kfree(cpri_dev);
+	spin_unlock(&priv->cpri_list_lock);
 
 	return 0;
 }
@@ -910,34 +798,34 @@ static struct platform_driver cpri_driver = {
 static int __init cpri_mod_init(void)
 {
 	int rc;
+	priv = kzalloc(sizeof(struct cpri_priv), GFP_KERNEL);
+	if (priv == NULL) {
+		pr_err("%s: out of memory\n", __func__);
+		return -ENOMEM;
+	}
 
-	cpri_class = class_create(THIS_MODULE, CLASS_NAME);
-	if (IS_ERR(cpri_class)) {
+	priv->cpri_class = class_create(THIS_MODULE, CLASS_NAME);
+	if (IS_ERR(priv->cpri_class)) {
 		pr_err("class_create() failed for cpri class dev");
-		rc = PTR_ERR(cpri_class);
+		rc = PTR_ERR(priv->cpri_class);
+		kfree(priv);
 		return rc;
 	}
-	spin_lock_init(&cpri_list_lock);
+	INIT_LIST_HEAD(&priv->cpri_dev_list);
+	spin_lock_init(&priv->cpri_list_lock);
 
 	return platform_driver_register(&cpri_driver);
 }
 
 static void __exit cpri_exit(void)
 {
-	struct list_head *pos, *nx;
-	struct cpri_dev *cpdev = NULL;
+	gpio_free(priv->sfp_int);
+	free_irq(priv->sfp_irq, priv);
 
 	platform_driver_unregister(&cpri_driver);
 
-	class_destroy(cpri_class);
-
-	spin_lock(&cpri_list_lock);
-	list_for_each_safe(pos, nx, &cpri_dev_list) {
-		cpdev = list_entry(pos, struct cpri_dev, list);
-		list_del(&cpdev->list);
-		kfree(cpdev);
-	}
-	spin_unlock(&cpri_list_lock);
+	class_destroy(priv->cpri_class);
+	kfree(priv);
 }
 
 module_init(cpri_mod_init);

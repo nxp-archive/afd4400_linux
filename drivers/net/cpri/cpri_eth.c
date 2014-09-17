@@ -201,7 +201,7 @@ static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
 	bd_nxtindex = CPRI_ETH_NEXT_INDX(bd_index, CPRI_ETH_DEF_RX_RING_SIZE);
 	data[0].val = bd_nxtindex;
 	data[0].mask = CPRI_ETH_RX_BD_R_PTR_MASK;
-	
+
 	if (data[0].val == 0) {
 		/* also set the wrap bit */
 		data[0].mask = CPRI_ETH_RX_BD_W_PTR_MASK;
@@ -487,10 +487,8 @@ static int cpri_eth_open(struct net_device *ndev)
 	unsigned long flags;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct device *dev = priv->framer->cpri_dev->dev;
-	if (priv->framer->frmr_ethflag & CPRI_ETH_AUTONEG_REQ) {
-		cpri_eth_autoneg(&priv->framer->ethautoneg_task);
-		priv->framer->frmr_ethflag &= ~CPRI_ETH_AUTONEG_REQ;
-	}
+	struct cpri_framer *framer = priv->framer;
+
 	spin_lock_irqsave(&priv->tx_bd->txlock, flags);
 	spin_lock(&priv->rx_bd->rxlock);
 
@@ -498,6 +496,7 @@ static int cpri_eth_open(struct net_device *ndev)
 
 	spin_unlock(&priv->rx_bd->rxlock);
 	spin_unlock_irqrestore(&priv->tx_bd->txlock, flags);
+
 	netif_carrier_on(ndev);
 	if (err) {
 		dev_err(dev, "cpri skb resouces allocation failed!!\n");
@@ -507,6 +506,12 @@ static int cpri_eth_open(struct net_device *ndev)
 	napi_enable(&priv->napi);
 
 	cpri_eth_tx_rx_resume(ndev);
+
+	/* Start the Eth interrupts */
+	cpri_reg_set(&framer->regs->cpri_rctrltiminginten,
+			(CONTROL_INT_LEVEL_MASK | ETH_EVENT_EN_MASK));
+	cpri_reg_set(&framer->regs->cpri_tctrltiminginten,
+			(CONTROL_INT_LEVEL_MASK | ETH_EVENT_EN_MASK));
 
 	netif_start_queue(ndev);
 
@@ -531,13 +536,14 @@ int cpri_eth_close(struct net_device *ndev)
 	netif_carrier_off(ndev);
 	cpri_eth_free_skb_resources(ndev);
 
-	/* Reset control word */
-	/* cpri_reg_set_val(&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK, 0); */
-
 	/* Reset write ptr */
 	cpri_reg_clear(&regs->cpri_rethwriteptr, MASK_ALL);
 	cpri_reg_clear(&regs->cpri_tethwriteptr, MASK_ALL);
-	priv->framer->frmr_ethflag |= CPRI_ETH_AUTONEG_REQ;
+
+	cpri_reg_clear(&regs->cpri_rctrltiminginten,
+			ETH_EVENT_EN_MASK);
+	cpri_reg_clear(&regs->cpri_tctrltiminginten,
+			ETH_EVENT_EN_MASK);
 
 	return 0;
 }
@@ -623,7 +629,8 @@ static int cpri_eth_xmit(struct sk_buff *newskb, struct net_device *ndev)
 	u32 val;
 
 	val = CPRI_ETH_RXBUF_ALIGNMENT -
-		(((unsigned long) newskb->data) & (CPRI_ETH_RXBUF_ALIGNMENT - 1));
+		(((unsigned long) newskb->data) &
+			(CPRI_ETH_RXBUF_ALIGNMENT - 1));
 	 if (pskb_expand_head(newskb, val, val, GFP_KERNEL)) {
 		dev_err(dev, "cpri reallocation failed!!\n");
 		return -EFAULT;
@@ -1392,9 +1399,8 @@ int cpri_eth_handle_rx(struct cpri_framer *framer)
 {
 	struct cpri_eth_priv *priv = framer->eth_priv;
 
-	if (napi_schedule_prep(&priv->napi)) {
+	if (napi_schedule_prep(&priv->napi))
 		__napi_schedule(&priv->napi);
-	}
 	return 0;
 }
 EXPORT_SYMBOL(cpri_eth_handle_rx);
@@ -1489,69 +1495,6 @@ static void cpri_eth_release_priv(struct net_device *ndev)
 }
 
 
-static int cpri_eth_fwd_if_enable(struct net_device *ndev)
-{
-	struct cpri_eth_priv *priv = netdev_priv(ndev);
-#if 0	/* need to update to support foward interface */
-	struct cpri_framer *framer = priv->framer;
-#endif
-
-	cpri_eth_config(ndev, priv->flags & CPRI_ETH_HW_CRC_STRIP);
-	cpri_eth_config(ndev, priv->flags & CPRI_ETH_MAC_FAIL_PASS);
-#if 0	/* need to update to support foward interface */
-	cpri_reg_set(&framer->regs->cpri_ethfwdctrl,
-			CPRI_ETH_FWD_ENABLE_MASK);
-#endif
-
-	return 0;
-}
-
-/* This function will be invoked by CPRI code after doing
- * the initialization
- */
-void cpri_eth_enable(struct cpri_framer *framer)
-{
-	struct net_device *ndev = framer->eth_priv->ndev;
-	struct cpri_eth_priv *priv = netdev_priv(ndev);
-
-	/* Fwd IF Cannot be disabled once enabled enabling
-	 * must be done before CPRInRCR(RETHE) and
-	 * CPRInTCR(TETHE)
-	 */
-	if (priv->fwdif_status == CPRI_ETH_DISABLED) {
-		cpri_eth_fwd_if_enable(ndev);
-		priv->fwdif_status = CPRI_ETH_ENABLED;
-	} else
-		return;
-
-	/* Enable interrupt events */
-	cpri_reg_write(&framer->regs_lock,
-			&framer->regs->cpri_rctrltiminginten, MASK_ALL,
-			(CONTROL_INT_LEVEL_MASK | ETH_EVENT_EN_MASK));
-	cpri_reg_write(&framer->regs_lock,
-			&framer->regs->cpri_tctrltiminginten, MASK_ALL,
-			(CONTROL_INT_LEVEL_MASK | ETH_EVENT_EN_MASK));
-	/* We cant do much when the remote fifo is full. Skip this event
-	 * cpri_reg_set(&framer->regs->cpri_errinten,
-	 *			CPRI_ETH_REM_FF_EN_MASK);
-	 */
-
-	cpri_reg_set(&framer->regs->cpri_errinten,
-			CPRI_ETH_RX_DMA_OVR_EN_MASK);
-	cpri_reg_set(&framer->regs->cpri_errinten,
-			CPRI_ETH_RX_BD_UDR_EN_MASK);
-	cpri_reg_set(&framer->regs->cpri_errinten,
-			CPRI_ETH_TX_UDR_EN_MASK);
-	cpri_reg_set(&framer->regs->cpri_errinten,
-			CPRI_ETH_RX_OVR_EN_MASK);
-
-	netif_carrier_on(ndev);
-
-	return;
-}
-EXPORT_SYMBOL(cpri_eth_enable);
-
-
 void init_eth_regs(struct cpri_framer *framer)
 {
 	cpri_reg_set_val(&framer->regs->cpri_ethcfg1,
@@ -1568,7 +1511,7 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	init_eth_regs(framer);
 	err = cpri_eth_of_init(ofdev, &ndev, frnode);
 	if (err < 0) {
-		framer->frmr_ethflag = CPRI_ETH_NOT_SUPPORTED; 
+		framer->frmr_ethflag = CPRI_ETH_NOT_SUPPORTED;
 		return err;
 	}
 
@@ -1582,8 +1525,9 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	ndev->watchdog_timeo = CPRI_ETH_TX_TIMEOUT;
 	ndev->mtu = CPRI_ETH_DEF_MTU;
 	ndev->netdev_ops = &cpri_eth_netdev_ops;
-	sprintf(ndev->name, "%s%d_eth%d", DEV_NAME, framer->cpri_dev->dev_id,
-			framer->id-1);
+	sprintf(ndev->name, "eth_%s%d_frmr%d", DEV_NAME,
+				framer->cpri_dev->dev_id - 1,
+				framer->id - 1);
 	/* TODO: dev->ethtool_ops = &cpri_eth_ethtool_ops; */
 
 	ndev->features |= NETIF_F_HIGHDMA;
@@ -1598,14 +1542,14 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	err = register_netdev(ndev);
 	if (err) {
 		netdev_err(ndev, "Cannot register net device, aborting\n");
-		framer->frmr_ethflag = CPRI_ETH_NOT_SUPPORTED; 
+		framer->frmr_ethflag = CPRI_ETH_NOT_SUPPORTED;
 		goto register_fail;
 	}
 
 	/* TODO: cpri_eth_init_sysfs(ndev); */
 
 	framer->eth_priv = priv;
-	framer->frmr_ethflag = CPRI_ETH_SUPPORTED; 
+	framer->frmr_ethflag = CPRI_ETH_SUPPORTED;
 
 	return 0;
 
@@ -1615,13 +1559,6 @@ register_fail:
 	return err;
 }
 EXPORT_SYMBOL(cpri_eth_init);
-
-void cpri_eth_parm_init(struct cpri_framer *framer)
-{
-	if(framer->frmr_ethflag == CPRI_ETH_NOT_SUPPORTED)
-		return;
-	cpri_eth_tx_rx_halt(framer->eth_priv->ndev);
-}
 
 void cpri_eth_deinit(struct platform_device *ofdev, struct cpri_framer *framer)
 {
@@ -1644,7 +1581,6 @@ void init_eth(struct cpri_framer *framer)
 {
 	struct net_device *ndev = framer->eth_priv->ndev;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
-	struct cpri_framer_regs __iomem  *regs = framer->regs;
 
 	if (ndev->flags & IFF_UP) {
 		ndev->flags &= ~IFF_UP;
@@ -1656,25 +1592,10 @@ void init_eth(struct cpri_framer *framer)
 
 		cpri_eth_free_skb_resources(ndev);
 
-		/* Reset control word */
-		/* cpri_reg_set_val(&regs->cpri_cmconfig, TX_FAST_CM_PTR_MASK, 0);
-		cpri_reg_clear(&regs->cpri_config, TX_CW_INSERT_EN_MASK); */
-
 		/* Reset write ptr */
 		cpri_reg_clear(&framer->regs->cpri_rethwriteptr, MASK_ALL);
 		cpri_reg_clear(&framer->regs->cpri_tethwriteptr, MASK_ALL);
 
-		/* Reset CPRIn_RACCR, CPRIn_TACCR */
-		cpri_reg_clear(&regs->cpri_raccr, MASK_ALL);
-		cpri_reg_clear(&regs->cpri_taccr, MASK_ALL);
-
-		/* Reset CPRIn_RCR & CPRIn_TCR, to clear control interrupts*/
-		cpri_reg_clear(&regs->cpri_rcr, MASK_ALL);
-		cpri_reg_clear(&regs->cpri_tcr, MASK_ALL);
-
-		/* Reset CPRIn_MAP_CONFIG and CPRIn_MAP_TBL_CONFIG */
-		cpri_reg_clear(&regs->cpri_map_config, MASK_ALL);
-		cpri_reg_clear(&regs->cpri_map_tbl_config, MASK_ALL);
 	}
 }
 

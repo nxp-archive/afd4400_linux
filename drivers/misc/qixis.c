@@ -49,6 +49,7 @@ u8 qixis_read(u8 offset)
 
 	return retval;
 }
+EXPORT_SYMBOL(qixis_read);
 
 int qixis_get_xcvr_present_status(int xcvr_id)
 {
@@ -147,6 +148,7 @@ int qixis_lock_jcpll(void)
 
 	return ret;
 }
+EXPORT_SYMBOL(qixis_lock_jcpll);
 
 int qixis_unlock_jcpll(void)
 {
@@ -166,6 +168,7 @@ int qixis_unlock_jcpll(void)
 
 	return ret;
 }
+EXPORT_SYMBOL(qixis_unlock_jcpll);
 
 static int __exit d4400_fpga_remove(struct platform_device *pdev)
 {
