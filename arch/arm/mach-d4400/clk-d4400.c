@@ -95,33 +95,35 @@ void d4400_rev_clk_select(u8 pll_id, u8 clk_dev)
 }
 EXPORT_SYMBOL(d4400_rev_clk_select);
 
+/* vspa_id starts at 0 for first VSPA core */
 int d4400_ccm_vspa_full_pow_gate(u8 vspa_id)
 {
 	u32 val;
 	unsigned long timeout = jiffies + msecs_to_jiffies(10);
 
 	val = readl(ccm_base + CCM_VPGCSR_OFFSET);
-	val |= BITS_MASK(1, (vspa_id - 1));
+	val |= BITS_MASK(1, vspa_id);
 	writel(val, ccm_base + CCM_VPGCSR_OFFSET);
 
 	while (!(readl(ccm_base + CCM_VPGCSR_OFFSET)
-		& BITS_MASK(1, (vspa_id + 0x10 - 1))))
+		& BITS_MASK(1, (vspa_id + 0x10))))
 		if (time_after(jiffies, timeout))
 			return -ETIMEDOUT;
 	return 0;
 }
 
+/* vspa_id starts at 0 for first VSPA core */
 int d4400_ccm_vspa_full_pow_up(u8 vspa_id)
 {
 	u32 val;
 	unsigned long timeout = jiffies + msecs_to_jiffies(10);
 
 	val = readl(ccm_base + CCM_VPGCSR_OFFSET);
-	val &= ~BITS_MASK(1, (vspa_id - 1));
+	val &= ~BITS_MASK(1, vspa_id);
 	writel(val, ccm_base + CCM_VPGCSR_OFFSET);
 
 	while (readl(ccm_base + CCM_VPGCSR_OFFSET)
-		& BITS_MASK(1, (vspa_id + 0x10 - 1)))
+		& BITS_MASK(1, (vspa_id + 0x10)))
 		if (time_after(jiffies, timeout))
 			return -ETIMEDOUT;
 	return 0;

@@ -21,19 +21,19 @@
 #define GPC_PGC_PGCR_PCR_MASK	BITS_MASK(1, GPC_PGC_PGCR_PCR_OFFSET)
 
 /* controller offset addresses */
-#define FULL_VSPA1_PGC_OFFSET	0x2E0
-#define FULL_VSPA11_PGC_OFFSET 0x420
+#define FULL_VSPA0_PGC_OFFSET	0x2E0
+#define FULL_VSPA10_PGC_OFFSET 0x420
 
 /* pgc_register addresses */
 #define GPC_PGC_PGCR_REG_OFFSET 0x00
 static void __iomem *gpc_base;
 
-/* vspa_id max = 11, start ID = 1 */
+/* vspa_id max = 10, start ID = 0 */
 int d4400_gpc_vspa_full_pow_gate(u8 vspa_id)
 {
 	u32 val;
-	u32 offset = FULL_VSPA1_PGC_OFFSET + (vspa_id - 1) * 0x20;
-	if (offset > FULL_VSPA11_PGC_OFFSET)
+	u32 offset = FULL_VSPA0_PGC_OFFSET + vspa_id * 0x20;
+	if (offset > FULL_VSPA10_PGC_OFFSET)
 		return -EINVAL;
 	val = readl(gpc_base + offset + GPC_PGC_PGCR_REG_OFFSET);
 	val |= GPC_PGC_PGCR_PCR_MASK;
@@ -41,11 +41,11 @@ int d4400_gpc_vspa_full_pow_gate(u8 vspa_id)
 	return d4400_ccm_vspa_full_pow_gate(vspa_id);
 }
 
-/* vspa_id max = 11 , start ID = 1 */
+/* vspa_id max = 10 , start ID = 0 */
 int d4400_gpc_vspa_full_pow_up(u8 vspa_id)
 {
-	u32 offset = FULL_VSPA1_PGC_OFFSET + (vspa_id - 1) * 0x20;
-	if (offset > FULL_VSPA11_PGC_OFFSET)
+	u32 offset = FULL_VSPA0_PGC_OFFSET + vspa_id * 0x20;
+	if (offset > FULL_VSPA10_PGC_OFFSET)
 		return -EINVAL;
 	return d4400_ccm_vspa_full_pow_up(vspa_id);
 }

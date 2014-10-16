@@ -18,7 +18,7 @@
  */
 #ifndef _MACH_GPC_H_
 #define  _MACH_GPC_H_
-/* vspa_id max = 11 , start ID = 1 */
+/* vspa_id max = 10 , start ID = 0 */
 extern int d4400_gpc_vspa_full_pow_up(u8 vspa_id);
 extern int d4400_gpc_vspa_full_pow_gate(u8 vspa_id);
 #endif

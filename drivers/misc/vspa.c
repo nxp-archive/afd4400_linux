@@ -370,9 +370,7 @@ static int vspa_probe(struct platform_device *pdev)
 	}
 
 	/* Register our major, and accept a dynamic number. */
-	if (vspa_major) {
-		dev = MKDEV(vspa_major, vspadev->id);
-	} else {
+	if (vspa_major == 0) {
 		result = alloc_chrdev_region(&dev, 0,
 				MAX_VSPA, VSPA_DEVICE_NAME);
 		if (result < 0) {
@@ -381,8 +379,8 @@ static int vspa_probe(struct platform_device *pdev)
 			goto reg_fail;
 		}
 		vspa_major = MAJOR(dev);
-		dev = MKDEV(vspa_major, vspadev->id);
 	}
+	dev = MKDEV(vspa_major, vspadev->id);
 
 	/* Create the device class if required */
 	if (vspa_class == NULL) {
