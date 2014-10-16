@@ -1494,7 +1494,7 @@ static int jesd_dev_stop(struct jesd_transport_dev *tdev)
 	if (rc) {
 		dev_err(tdev->dev, "%s: Cannot be stopped in %d state\n",
 			__func__, tdev->state);
-		goto out;
+		return rc;
 	}
 
 	if (tdev->type == JESD_DEV_TX)
@@ -1504,9 +1504,6 @@ static int jesd_dev_stop(struct jesd_transport_dev *tdev)
 
 	jesd_stop_serdes_lanes(tdev);
 
-	return rc;
-out:
-	jesd_restore_state(tdev);
 	return rc;
 }
 
@@ -1521,8 +1518,9 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 	enum jesd_state old_state = tdev->state;
 	int rc = -EINVAL;
 
-	if (new_state == old_state)
+	if (new_state == old_state) {
 		goto out;
+	}
 
 	if (new_state == JESD_STATE_STOPPED) {
 		rc = 0;
@@ -1565,8 +1563,8 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 			rc = 0;
 		if (new_state == JESD_STATE_LINK_ERROR)
 			rc = 0;
-	case JESD_STATE_LINK_ERROR:
 	case JESD_STATE_STOPPED:
+	case JESD_STATE_LINK_ERROR:
 		if (new_state == JESD_STATE_CONFIGURED)
 			rc = 0;
 		if (new_state == JESD_STATE_ENABLED)
@@ -1934,10 +1932,10 @@ static u32 jesd_get_dframer_state(struct jesd_transport_dev *tdev)
 
 static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 {
-	u32 *diag_sel_reg, *diag_data_reg, val1, val2;
+	u32 *diag_sel_reg, *diag_data_reg, val1, val2, val3, val4;
 	u32 *transport_ctrl_reg, val, mask;
 	int requeue = 1;
-
+	int synced = 0;
 	if (tdev->type == JESD_DEV_TX) {
 		diag_sel_reg = &tdev->tx_regs->tx_diag_sel;
 		diag_data_reg = &tdev->tx_regs->tx_diag_data;
@@ -1949,23 +1947,25 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 	}
 
 	iowrite32(DIAG_FRAMER_STATE_SEL, diag_sel_reg);
-
 	val1 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
 	val2 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
+	val3 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
+	val4 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
+	
 
 	/* Diagnostic registers in JESD Rx are not consistent in D4400, thus
 	 * check status flag to determine if link is ready
 	 */
 	if (tdev->type != JESD_DEV_TX)
-		val1 = val2 = jesd_get_dframer_state(tdev);
+		val1 = val2 = val3 = val4 = jesd_get_dframer_state(tdev);
 
 
 	/* RM recommends to use value only when two consecutive reads
 	 * return same value
 	 */
-	 if (val1 != val2) {
-		dev_info(tdev->dev, "%s:diag_data not consistent (%x, %x)\n",
-			tdev->name, val1, val2);
+	if (val1 != val2 || val2 != val3 || val3 != val4) {
+		dev_info(tdev->dev, "%s:diag_data not consistent (%x, %x, %x, %x)\n",
+			tdev->name, val1, val2, val3, val4);
 		goto out;
 	}
 
@@ -1986,7 +1986,8 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 
 		/* We don't need sysref now till link is restarted */
 		jesd_marks_syref_capture_ready(tdev, 0);
-		requeue = 0;
+		//requeue = 0;
+		synced = 1;
 		break;
 	default:
 		break;
@@ -1997,9 +1998,11 @@ out:
 		if (tdev->sync_expire > jiffies) {
 			schedule_work(&tdev->link_monitor);
 		} else {
-			dev_err(tdev->dev, "%s: Failed to synchronize\n",
-				tdev->name);
-			jesd_change_state(tdev, JESD_STATE_SYNC_FAILED);
+			if (!synced) {
+				dev_err(tdev->dev, "%s: Failed to synchronize\n",
+					tdev->name);
+				jesd_change_state(tdev, JESD_STATE_SYNC_FAILED);
+			}
 		}
 	}
 }
