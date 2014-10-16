@@ -44,11 +44,9 @@
 
 
 /* Number of VSPA devices probed on system */
-static int vspa_devs;
-static s32 vspa_major;
-
-module_param(vspa_major, int, 0);
-module_param(vspa_devs, int, 0);
+static s32 vspa_major = 0;
+static int vspa_devs = 0;
+static struct class *vspa_class = NULL;
 
 static void vspa_configure_irq_events(struct vspa_device *vspadev)
 {
@@ -315,21 +313,35 @@ vspa_getdts_properties(struct device_node *np, struct vspa_device *vsapdev)
 }
 
 static int
-vspa_construct_device(struct vspa_device *vspadev, int minor)
+vspa_construct_device(struct vspa_device *dev, int minor)
 {
-	int rc = 0;
+	int err = 0;
+	struct device *device = NULL;
 	dev_t devno = MKDEV(vspa_major, minor);
 
-	BUG_ON(vspadev == NULL);
+	BUG_ON(dev == NULL || vspa_class == NULL);
 
-	cdev_init(&vspadev->cdev, &vspa_fops);
-	vspadev->cdev.owner = THIS_MODULE;
-	rc = cdev_add(&vspadev->cdev, devno, 1);
-	if (rc < 0) {
-		dev_err(vspadev->dev, "[target] Error %d while trying to add %s%d",
-			rc, VSPA_DEVICE_NAME, minor);
+	cdev_init(&dev->cdev, &vspa_fops);
+	dev->cdev.owner = THIS_MODULE;
+
+	err = cdev_add(&dev->cdev, devno, 1);
+	if (err < 0) {
+		dev_err(dev->dev, "[target] Error %d while trying to add %s%d",
+			err, VSPA_DEVICE_NAME, minor);
+		return err;
 	}
-	return rc;
+
+	device = device_create(vspa_class, NULL, /* no parent device */
+                devno, NULL, /* no additional data */
+                VSPA_DEVICE_NAME "%d", minor);
+	if (IS_ERR(device)) {
+		err = PTR_ERR(device);
+		dev_err(dev->dev, "[target] Error %d while trying to create %s%d",
+			err, VSPA_DEVICE_NAME, minor);
+		cdev_del(&dev->cdev);
+		return err;
+	}
+	return 0;
 }
 
 static int vspa_probe(struct platform_device *pdev)
@@ -361,8 +373,6 @@ static int vspa_probe(struct platform_device *pdev)
 	if (vspa_major) {
 		dev = MKDEV(vspa_major, vspadev->id);
 	} else {
-
-		/* Register our major, and accept a dynamic number. */
 		result = alloc_chrdev_region(&dev, 0,
 				MAX_VSPA, VSPA_DEVICE_NAME);
 		if (result < 0) {
@@ -371,6 +381,18 @@ static int vspa_probe(struct platform_device *pdev)
 			goto reg_fail;
 		}
 		vspa_major = MAJOR(dev);
+		dev = MKDEV(vspa_major, vspadev->id);
+	}
+
+	/* Create the device class if required */
+	if (vspa_class == NULL) {
+		vspa_class = class_create(THIS_MODULE, VSPA_DEVICE_NAME);
+		if (IS_ERR(vspa_class)) {
+			result = PTR_ERR(vspa_class);
+			dev_err(vspadev->dev, "Device fsl-vspa class_create() failed %d\n",
+					result);
+			goto class_fail;
+		}
 	}
 
 	result = vspa_construct_device(vspadev, vspadev->id);
@@ -389,14 +411,24 @@ static int vspa_probe(struct platform_device *pdev)
 		init_waitqueue_head(&(vspadev->irq_wait_q));
 		vspadev->state = VSPA_PROBED;
 		vspa_devs++;
-		dev_dbg(vspadev->dev, "vspa probe successful, id:%d\n", vspadev->id);
+
+		printk(KERN_INFO "vspa%d: regs 0x%p, hwver 0x%08x\n",
+			vspadev->id, vspadev->mem_regs, vspadev->regs[0]);
 		return 0;
 	} else {
 		goto cons_fail;
 	}
 
 cons_fail:
-	unregister_chrdev_region(dev, 1);
+	if (vspa_devs == 0) {
+		class_destroy(vspa_class);
+		vspa_class = NULL;
+	}
+class_fail:
+	if (vspa_devs == 0) {
+		unregister_chrdev_region(vspa_major, MAX_VSPA);
+		vspa_major = 0;
+	}
 reg_fail:
 prop_fail:
 	kfree(vspadev);
@@ -407,7 +439,7 @@ static int vspa_remove(struct platform_device *ofpdev)
 {
 	struct  vspa_device *vspadev = dev_get_drvdata(&ofpdev->dev);
 
-	BUG_ON(vspadev == NULL);
+	BUG_ON(vspadev == NULL || vspa_class == NULL);
 
 	/* Disbale all irqs of VSPA */
 	vspa_configure_irq_events(vspadev);
@@ -421,9 +453,20 @@ static int vspa_remove(struct platform_device *ofpdev)
 
 	free_irq(vspadev->vspa_irq_no, vspadev);
 
-	unregister_chrdev(vspa_major, VSPA_DEVICE_NAME);
+	device_destroy(vspa_class, MKDEV(vspa_major, vspadev->id));
 	cdev_del(&vspadev->cdev);
 	kfree(vspadev);
+
+	if (vspa_devs > 0)
+		vspa_devs--;
+	else {
+		if (vspa_class != NULL)
+			class_destroy(vspa_class);
+		if (vspa_major > 0)
+			unregister_chrdev_region(vspa_major, MAX_VSPA);
+		vspa_class = NULL;
+		vspa_major = 0;
+	}
 
 	return 0;
 }

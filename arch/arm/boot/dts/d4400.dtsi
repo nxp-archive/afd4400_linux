@@ -1237,102 +1237,102 @@
 				};
 			};
 
-			vspa@0x000d4000 {
+			vspa11: vspa@0x000d4000 {
 				compatible = "fsl,vspa";
 				reg = <0x000d4000 0x800>;
 				dbgregstart = <0x20025000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <11>;
+				vspadev-id  = <10>;
 				interrupts = <0 213 0x4>;
 				status = "okay";
 			};
-			vspa@0x000d8000 {
+			vspa10: vspa@0x000d8000 {
 				compatible = "fsl,vspa";
 				reg = <0x000d8000 0x800>;
 				dbgregstart = <0x20024000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <10>;
+				vspadev-id  = <9>;
 				interrupts = <0 214 0x4>;
 				status = "okay";
 			};
-			vspa@0x000DC000 {
+			vspa9: vspa@0x000DC000 {
 				compatible = "fsl,vspa";
 				reg = <0x000DC000 0x800>;
 				dbgregstart = <0x20023000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <9>;
+				vspadev-id  = <8>;
 				interrupts = <0 215 0x4>;
 				status = "okay";
 			};
-			vspa@0x000e0000 {
+			vspa8: vspa@0x000e0000 {
 				compatible = "fsl,vspa";
 				reg = <0x000e0000 0x800>;
 				dbgregstart = <0x20022000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <8>;
+				vspadev-id  = <7>;
 				interrupts = <0 216 0x4>;
 				status = "okay";
 			};
-			vspa@0x000e4000 {
+			vspa7: vspa@0x000e4000 {
 				compatible = "fsl,vspa";
 				reg = <0x000e4000 0x800>;
 				dbgregstart = <0x20028000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <7>;
+				vspadev-id  = <6>;
 				interrupts = <0 217 0x4>;
 				status = "okay";
 			};
-			vspa@0x000e8000 {
+			vspa6: vspa@0x000e8000 {
 				compatible = "fsl,vspa";
 				reg = <0x000e8000 0x800>;
 				dbgregstart = <0x20027000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <6>;
+				vspadev-id  = <5>;
 				interrupts = <0 218 0x4>;
 				status = "okay";
 			};
-			vspa@0x000EC000 {
+			vspa5: vspa@0x000EC000 {
 				compatible = "fsl,vspa";
 				reg = <0x000EC000 0x800>;
 				dbgregstart = <0x20026000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <5>;
+				vspadev-id  = <4>;
 				interrupts = <0 219 0x4>;
 				status = "okay";
 			};
-			vspa@0x000f0000 {
+			vspa4: vspa@0x000f0000 {
 				compatible = "fsl,vspa";
 				reg = <0x000f0000 0x800>;
 				dbgregstart = <0x20021000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <4>;
+				vspadev-id  = <3>;
 				interrupts = <0 220 0x4>;
 				status = "okay";
 			};
-			vspa@0x000f4000 {
+			vspa3: vspa@0x000f4000 {
 				compatible = "fsl,vspa";
 				reg = <0x000f4000 0x800>;
 				dbgregstart = <0x20020000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <3>;
+				vspadev-id  = <2>;
 				interrupts = <0 221 0x4>;
 				status = "okay";
 			};
-			vspa@0x000f8000 {
+			vspa2: vspa@0x000f8000 {
 				compatible = "fsl,vspa";
 				reg = <0x000f8000 0x800>;
 				dbgregstart = <0x2001F000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <2>;
+				vspadev-id  = <1>;
 				interrupts = <0 222 0x4>;
 				status = "okay";
 			};
-			vspa@0x000FC000 {
+			vspa1: vspa@0x000FC000 {
 				compatible = "fsl,vspa";
 				reg = <0x000FC000 0x800>;
 				dbgregstart = <0x2001E000>;
 				dbgreglen = <0x1000>;
-				vspadev-id  = <1>;
+				vspadev-id  = <0>;
 				interrupts = <0 223 0x4>;
 				status = "okay";
 			};

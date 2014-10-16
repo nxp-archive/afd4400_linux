@@ -27,7 +27,11 @@
 #include <linux/slab.h>
 #include "landshark.h"
 
-static s32 major;
+/* driver interface */
+static struct class *dev_class = NULL;
+static struct device *dev_device = NULL;
+static dev_t devno;
+static struct cdev dev_cdev;
 
 /* Information regarding the buffer pool and size */
 struct phys_mem_info landshark_phys_mem = {
@@ -175,14 +179,14 @@ return_result:
 static s32 landshark_open(struct inode *inode, struct file *file)
 {
 	MOD_INC_USE_COUNT;
-	pr_debug("landshark_dev:: Device open\n");
+	pr_debug(MOD_NAME ": Device open\n");
 	return 0;
 }
 
 static s32 landshark_release(struct inode *inode, struct file *filp)
 {
 	MOD_DEC_USE_COUNT;
-	pr_debug("landshark_dev:: Device closed\n");
+	pr_debug(MOD_NAME ": Device closed\n");
 	return 0;
 }
 
@@ -210,27 +214,20 @@ static s32 landshark_probe(struct platform_device *ofdev)
 	int result = 0;
 	long page_size = PAGE_SIZE;
 
-	/* registering LANDSHARK driver*/
-	major = register_chrdev(LANDSHARK_MAJOR, MOD_NAME, &landshark_fops);
-	if (major < 0) {
-		pr_err("LANDSHARK driver registration failed: err %x\n", major);
-		result = major;
-		goto return_result;
-	}
 	/* Read DTS entry*/
 	if (of_property_read_u32(np, "length",
 				&landshark_phys_mem.dmaregion_addr_len) < 0) {
-		pr_err("LANDSHARK length not found in Device Tree.\n");
+		pr_err(MOD_NAME " length not found in Device Tree.\n");
 		result = -EINVAL;
 		goto return_result;
 	}
 	if (of_property_read_u32(np, "address",
 				&landshark_phys_mem.dmaregion_addr) < 0) {
-		pr_err("LANDSHARK address not found in Device Tree.\n");
+		pr_err(MOD_NAME " address not found in Device Tree.\n");
 		result = -EINVAL;
 		goto return_result;
 	}
-	/* Alingning length and address to PAGE_SIZE boundaries*/
+	/* Aligning length and address to PAGE_SIZE boundaries*/
 	landshark_phys_mem.dmaregion_addr =
 		(((int) landshark_phys_mem.dmaregion_addr + page_size - 1)
 		& ~(page_size - 1));
@@ -238,13 +235,62 @@ static s32 landshark_probe(struct platform_device *ofdev)
 		(((int) landshark_phys_mem.dmaregion_addr_len)
 		 & ~(page_size - 1));
 
+	/* registering LANDSHARK driver */
+	result = alloc_chrdev_region(&devno, 0, 1, MOD_NAME);
+	if (result) {
+		pr_err(MOD_NAME " alloc_chrdev_region() failed: err %d",
+			result);
+		goto return_result;
+	}
+	pr_debug(MOD_NAME ": major:%d minor:%d\n", MAJOR(devno), MINOR(devno));
+
+	/* create the device class */
+	dev_class = class_create(THIS_MODULE, MOD_NAME);
+	if (IS_ERR(dev_class)) {
+		result = PTR_ERR(dev_class);
+		pr_err(MOD_NAME" class_create() failed, err = %d\n", result);
+		goto class_fail;
+	}
+
+	/* create character device */
+	cdev_init(&dev_cdev, &landshark_fops);
+	dev_cdev.owner = THIS_MODULE;
+	result = cdev_add(&dev_cdev, devno, 1);
+	if (result) {
+		pr_err(MOD_NAME " cdev_add() failed, err = %d\n", result);
+		goto cdev_fail;
+	}
+
+	/* create the device node in /dev */
+	dev_device = device_create(dev_class, NULL, devno, NULL, MOD_NAME);
+	if (NULL == dev_device) {
+		result = PTR_ERR(dev_device);
+		pr_err(MOD_NAME " device_create() failed, err = %d\n", result);
+		goto dev_fail;
+	}
+
+	pr_info(MOD_NAME ": addr 0x%08x, size 0x%08x\n",
+		landshark_phys_mem.dmaregion_addr,
+		landshark_phys_mem.dmaregion_addr_len);
+
+	return 0;
+
+dev_fail:
+	cdev_del(&dev_cdev);
+cdev_fail:
+	class_destroy(dev_class);
+class_fail:
+	unregister_chrdev_region(devno, 1);
 return_result:
 	return result;
 }
 
 static s32 landshark_remove(struct platform_device *ofdev)
 {
-	unregister_chrdev(major, MOD_NAME);
+	device_destroy(dev_class, devno);
+	cdev_del(&dev_cdev);
+	class_destroy(dev_class);
+	unregister_chrdev_region(devno, 1);
 	return 0;
 }
 
