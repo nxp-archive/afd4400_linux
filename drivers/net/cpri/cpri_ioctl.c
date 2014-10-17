@@ -388,6 +388,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case CPRI_RX_CTRL_TABLE:
+		memset(cw_data, 0, sizeof(cw_data));
 		if (copy_from_user(&rx_cw_param,
 				(struct rx_cw_params *) ioargp,
 				sizeof(struct rx_cw_params)) != 0) {
@@ -407,6 +408,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case CPRI_TX_CTRL_TABLE:
+		memset(cw_data, 0, sizeof(cw_data));
 		if (copy_from_user(&tx_cw_param,
 				(struct tx_cw_params *) ioargp,
 				sizeof(struct tx_cw_params)) != 0) {

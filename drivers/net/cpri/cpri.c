@@ -561,7 +561,7 @@ static int cpri_probe(struct platform_device *pdev)
 		goto err_mem;
 	}
 
-	sprintf(dev_name, "%s%d", DEV_NAME, cpri_dev->dev_id - 1);
+	sprintf(dev_name, "%s%d", DEV_NAME, cpri_dev->dev_id);
 
 	cpri_dev->regs = of_iomap(np, 0);
 	if (!cpri_dev->regs) {
@@ -610,16 +610,16 @@ static int cpri_probe(struct platform_device *pdev)
 
 		cpri_dev->framers++;
 
-		cpri_dev->framer[framer_id - 1] =
+		cpri_dev->framer[framer_id] =
 			kzalloc(sizeof(struct cpri_framer), GFP_KERNEL);
-		if (cpri_dev->framer[framer_id - 1] == NULL) {
+		if (cpri_dev->framer[framer_id] == NULL) {
 			dev_err(dev, "Failed to allocate framer");
 			rc = -ENOMEM;
 			goto err_chrdev;
 		}
 
 		/* Populate framer strcuture */
-		framer = cpri_dev->framer[framer_id - 1];
+		framer = cpri_dev->framer[framer_id];
 		framer->cpri_dev = cpri_dev;
 		framer->cpri_node = np;
 		framer->id = framer_id;
@@ -632,7 +632,7 @@ static int cpri_probe(struct platform_device *pdev)
 		}
 		dev_dbg(dev, "framer->regs ---> %p", framer->regs);
 		/* Enable clock for framer register access */
-		if (framer->id == 2)
+		if (framer->id == 1)
 			cpri_reg_set(
 				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
 		else
@@ -654,7 +654,7 @@ static int cpri_probe(struct platform_device *pdev)
 		}
 
 		/* Create cdev for each framer */
-		framer->dev_t = MKDEV(cpri_major, cpri_minor + (framer_id - 1));
+		framer->dev_t = MKDEV(cpri_major, cpri_minor + framer_id);
 		cdev_init(&framer->cdev, &cpri_fops);
 		framer->cdev.owner = THIS_MODULE;
 		rc = cdev_add(&framer->cdev, framer->dev_t, 1);
@@ -664,7 +664,7 @@ static int cpri_probe(struct platform_device *pdev)
 		}
 		device_create(priv->cpri_class,
 			framer->cpri_dev->dev, framer->dev_t,
-			NULL, "%s_frmr%d", dev_name, framer->id - 1);
+			NULL, "%s_frmr%d", dev_name, framer->id);
 
 		spin_lock_init(&framer->regs_lock);
 		spin_lock_init(&framer->err_en_lock);
@@ -708,7 +708,7 @@ static int cpri_probe(struct platform_device *pdev)
 	dev_set_drvdata(dev, cpri_dev);
 
 	/* Only the CPRI complex 1 has this SFP gpio interrupt entry */
-	if (cpri_dev->dev_id == 1)
+	if (cpri_dev->dev_id == 0)
 		cpri_init_sfp_irq(pdev);
 
 	dev_info(dev, "%s done", __func__);

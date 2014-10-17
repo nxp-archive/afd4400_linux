@@ -146,14 +146,14 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 	/* This lane outputs the CDR clk in slave mode.
 	 * Jcpll will lock to this clk.
 	 */
-	if ((framer->cpri_dev->dev_id == 1)
-			&& (framer->id == 1)) {
+	if ((framer->cpri_dev->dev_id == 0)
+			&& (framer->id == 0)) {
 		lane_param.grp_prot = SERDES_PROT_CPRI_1;
 		lane_param.lane_id = LANE_C;
-	} else if ((framer->cpri_dev->dev_id == 1) && (framer->id == 2)) {
+	} else if ((framer->cpri_dev->dev_id == 0) && (framer->id == 1)) {
 		lane_param.grp_prot = SERDES_PROT_CPRI_1;
 		lane_param.lane_id = LANE_D;
-	} else if ((framer->cpri_dev->dev_id == 2) && (framer->id == 1)) {
+	} else if ((framer->cpri_dev->dev_id == 1) && (framer->id == 0)) {
 		lane_param.grp_prot = SERDES_PROT_CPRI_2;
 		lane_param.lane_id = LANE_E;
 	} else {

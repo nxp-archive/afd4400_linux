@@ -369,7 +369,7 @@
 				#address-cells = <1>;
 				#size-cells = <1>;
 				compatible = "fsl,d4400-cpri";
-				id = <1>;
+				id = <0>;
 				ranges = <0x0 0x100000 0x10000>;
 				reg = <0x00107E00 0x400>;
 				status = "okay";
@@ -382,7 +382,7 @@
 
 			cp1_framer1: framer1@0x0 {
 				reg = <0x0 0x8000>;
-				framer-id = <1>;
+				framer-id = <0>;
 				max-axcs = <24>;
 				memblk-size = <0x1800>;
 				local-mac-address = [ 00 00 AB CD 21 AB ];
@@ -396,7 +396,7 @@
 
 			cp1_framer2: framer2@0x8000 {
 				reg = <0x8000 0x8000>;
-				framer-id = <2>;
+				framer-id = <1>;
 				max-axcs = <24>;
 				memblk-size = <0x1800>;
 				local-mac-address = [ 00 00 AB CD 21 CD ];
@@ -873,7 +873,7 @@
                                 #address-cells = <1>;
                                 #size-cells = <1>;
                                 compatible = "fsl,d4400-cpri";
-                                id = <2>;
+                                id = <1>;
                                 ranges = <0x0 0x100000 0x10000>;
                                 reg = <0x00107E00 0x400>;
                                 status = "okay";
@@ -885,7 +885,7 @@
 
                         cp2_framer1: framer1@0x0 {
                                 reg = <0x0 0x8000>;
-                                framer-id = <1>;
+                                framer-id = <0>;
                                 max-axcs = <24>;
                                 memblk-size = <0x1800>;
                                 local-mac-address = [ 00 00 AB CD 21 EF ];
@@ -899,7 +899,7 @@
 
                         cp2_framer2: framer2@0x8000 {
                                 reg = <0x8000 0x8000>;
-                                framer-id = <2>;
+                                framer-id = <1>;
                                 max-axcs = <24>;
                                 memblk-size = <0x1800>;
                                 local-mac-address = [ 00 00 AB CD 22 AB ];

@@ -1526,8 +1526,8 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	ndev->mtu = CPRI_ETH_DEF_MTU;
 	ndev->netdev_ops = &cpri_eth_netdev_ops;
 	sprintf(ndev->name, "eth_%s%d_frmr%d", DEV_NAME,
-				framer->cpri_dev->dev_id - 1,
-				framer->id - 1);
+				framer->cpri_dev->dev_id,
+				framer->id);
 	/* TODO: dev->ethtool_ops = &cpri_eth_ethtool_ops; */
 
 	ndev->features |= NETIF_F_HIGHDMA;
