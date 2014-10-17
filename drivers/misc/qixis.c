@@ -60,7 +60,7 @@ int qixis_get_xcvr_present_status(int xcvr_id)
 		goto out;
 	}
 	present_stat = qixis_read(QIXIS_STAT_PRESENT);
-	mask = (mask >> (xcvr_id - 1));
+	mask = (mask >> xcvr_id);
 
 	pr_info("qixis present detect: present stat 0x%x, mask 0x%x",
 		present_stat, mask);
