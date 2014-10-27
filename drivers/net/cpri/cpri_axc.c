@@ -147,8 +147,16 @@ static void program_aux_interface(struct cpri_framer *framer,
 					bitmap |= (0x1 << bit_pos++);
 			}
 			bitmap = be32_to_cpu(bitmap);
-			cpri_reg_set(&framer->regs->cpri_auxmask[index],
+
+			if (axc->flags & AXC_EN)
+				cpri_reg_set(
+					&framer->regs->cpri_auxmask[index],
 					bitmap);
+			else
+				cpri_reg_clear(
+					&framer->regs->cpri_auxmask[index],
+					bitmap);
+
 			bit_pos = 0;
 			bitmap = 0;
 			index++;
@@ -376,15 +384,11 @@ static int check_axc_conflict(struct cpri_framer *framer,
 		return 0;
 	}
 
+
 	bits_per_bf = iq_bits_per_bf(framer);
 	axc_dir = (axc->flags & AXC_DIR_TX) ? "TX" : "RX";
 
 	/* Do some basic check */
-	if (axc->container_offset % 2) {
-		dev_err(dev, "%s AxC%d err: can't start on odd offset",
-			axc_dir, axc->id);
-		goto out;
-	}
 	if (axc->container_offset < 0) {
 		dev_err(dev, "%s AxC%d err: container offset negative",
 			axc_dir, axc->id);
@@ -395,14 +399,29 @@ static int check_axc_conflict(struct cpri_framer *framer,
 			axc_dir, axc->id);
 		goto out;
 	}
-	if (axc->container_size % 2) {
-		dev_err(dev, "%s AxC%d err: can't use odd container size",
-			axc_dir, axc->id);
-		goto out;
-	}
 	if ((axc->container_offset + axc->container_size) >
 		bits_per_bf) {
 		dev_err(dev, "%s AxC%d err: out of basic frame range",
+			axc_dir, axc->id);
+		goto out;
+	}
+	if ((axc->flags & AXC_DIR_RX) &&
+		(axc->flags & AXC_DAISY_CHAINED)) {
+		dev_err(dev, "%s AxC%d flag err: AXC_DIR_RX & AXC_DAISY_CHAIN",
+			axc_dir, axc->id);
+		goto out;
+	}
+	/* Daisy chain skip further test */
+	if (axc->flags & AXC_DAISY_CHAINED)
+		return 0;
+
+	if (axc->container_offset % 2) {
+		dev_err(dev, "%s AxC%d err: can't start on odd offset",
+			axc_dir, axc->id);
+		goto out;
+	}
+	if (axc->container_size % 2) {
+		dev_err(dev, "%s AxC%d err: can't use odd container size",
 			axc_dir, axc->id);
 		goto out;
 	}
@@ -441,15 +460,6 @@ static int check_axc_conflict(struct cpri_framer *framer,
 			axc_dir, axc->id, framer->max_axcs);
 		goto out;
 	}
-	if ((axc->flags & AXC_DIR_RX) &&
-		(axc->flags & AXC_DAISY_CHAINED)) {
-		dev_err(dev, "%s AxC%d flag err: AXC_DIR_RX & AXC_DAISY_CHAIN",
-			axc_dir, axc->id);
-		goto out;
-	}
-	/* Daisy chain skip this test */
-	if (axc->flags & AXC_DAISY_CHAINED)
-		return 0;
 
 	if (axc->flags & AXC_DIR_TX) {
 		axc_info_his = axc_info_tx;
@@ -521,7 +531,7 @@ static int cpri_axc_ctrl(struct cpri_framer *framer,
 
 	for (i = 0; i < axc_cnt; i++) {
 		if (axc_info[i].flags & AXC_DAISY_CHAINED)
-			continue;
+			program_aux_interface(framer, &axc_info[i]);
 
 		if (axc_info[i].flags & AXC_DIR_RX) {
 			if (axc_info[i].flags & AXC_EN) {
@@ -633,8 +643,6 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	for (i = 0; i < axc_cnt; i++) {
 		if (!(axc_info[i].flags & AXC_DAISY_CHAINED))
 			program_axc_conf_reg(framer, &axc_info[i]);
-		else
-			program_aux_interface(framer, &axc_info[i]);
 	}
 
 	/* Set k1, k2 value and map mode */

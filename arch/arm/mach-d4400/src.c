@@ -84,6 +84,19 @@ void *src_get_handle(struct device_node *src_dev_node)
 }
 EXPORT_SYMBOL(src_get_handle);
 
+void src_cpri_hwrst(int enable)
+{
+	u32 data;
+	data = ioread32(&src_priv->regs->srbr);
+	if (enable)
+		iowrite32(data & (~CPRI_RESET_BYPASS),
+			&src_priv->regs->srbr);
+	else
+		iowrite32(data | CPRI_RESET_BYPASS,
+			&src_priv->regs->srbr);
+}
+EXPORT_SYMBOL(src_cpri_hwrst);
+
 int of_get_named_src_reset(struct device_node *np,
 		struct of_phandle_args *phandle, const char *propname,
 		int index)

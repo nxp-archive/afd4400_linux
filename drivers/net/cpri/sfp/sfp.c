@@ -106,7 +106,7 @@ static int sfp_eeprom_write(struct sfp_dev *sfp, u8 *buf,
 		usleep_range(1000, 2000);
 	} while (time_before(write_time, timeout));
 
-	return -ETIMEDOUT;
+	return -ETIME;
 }
 
 int sfp_raw_write(struct sfp_dev *sfp,
@@ -120,10 +120,13 @@ int sfp_raw_write(struct sfp_dev *sfp,
 	sfp->type = type;
 
 	if (unlikely(sfp->type != SFP_MEM_DIAG))
-		return -ENOMEM;
+		return -ENODEV;
 
 	if (unlikely(!count))
 		return count;
+
+	if (sfp->addr_cnt < 2)
+		return -ENODEV;
 
 	mutex_lock(&sfp->lock);
 
@@ -175,8 +178,10 @@ static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 	/* Determine the memory (eeprom/diagnostics) to read */
 	if (type == SFP_MEM_EEPROM)
 		client->addr = sfp->addr[0];
-	else
+	else if ((type == SFP_MEM_DIAG) && (sfp->addr_cnt >= 2))
 		client->addr = sfp->addr[1];
+	else
+		return -ENODEV;
 
 	if ((offset > io_limit) || (!client))
 		return -1;
@@ -251,7 +256,7 @@ static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 		/* REVISIT: at HZ=100, this is slow */
 	} while (time_before(read_time, timeout));
 
-	return -ETIMEDOUT;
+	return -ETIME;
 }
 
 int sfp_raw_read(struct sfp_dev *sfp,

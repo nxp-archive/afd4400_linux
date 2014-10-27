@@ -25,6 +25,7 @@
 #include <linux/sfp.h>
 #include <linux/gcr.h>
 #include <linux/cpri_eth.h>
+#include <mach/src.h>
 
 /* Private data structure for driver */
 struct cpri_priv {
@@ -354,7 +355,7 @@ struct cpri_framer {
 	unsigned long timer_expiry_events;
 	/* Configuration and stats */
 	unsigned long cpri_state;
-	unsigned long cpri_enabled_monitor;
+	u64 cpri_enabled_monitor;
 	/* Each element corresponds to one error */
 	atomic_t err_cnt[CPRI_ERR_CNT];
 	/* Work struct the monitor the sfp */
@@ -806,7 +807,9 @@ void read_rx_cw(struct cpri_framer *framer, int bf_index, u8 *buf);
 void rdwr_tx_cw(struct cpri_framer *framer,
 			int bf_index, int operation, u8 *buf);
 void cpri_set_monitor(struct cpri_framer *framer,
-		u32 monitor_en_mask);
+		const struct monitor_config_en *monitor_cfg_en);
 void cpri_clear_monitor(struct cpri_framer *framer,
-			u32 disable_mask);
+		const struct monitor_config_disable *monitor_cfg_dis);
+void src_cpri_hwrst(int enable);
+void cpri_config_hwrst(struct cpri_framer *framer, int enable);
 #endif /* __CPRI_H */

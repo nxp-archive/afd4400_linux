@@ -70,7 +70,26 @@ struct sfp_reg_write_buf {
 	struct sfp_reg *regs;
 	int count;
 };
-/* The bit position for err mask */
+
+struct frame_diff_buf {
+	int framediff_hfn;
+	int framediff_x;
+};
+
+struct monitor_config_en {
+	uint64_t enable_mask;
+	int timer_enable;
+	int timer_interval;
+};
+
+struct monitor_config_disable {
+	uint64_t disable_mask;
+	int timer_disable;
+};
+
+/**
+ * The bit position for all possible err mask
+ */
 enum cpri_errors_bitpos {
 	RX_IQ_OVERRUN_BITPOS = 0,
 	TX_IQ_UNDERRUN_BITPOS,
@@ -85,8 +104,7 @@ enum cpri_errors_bitpos {
 	ECC_CONFIG_MEM_BITPOS,
 	ECC_DATA_MEM_BITPOS,
 	RX_ETH_DMA_OVERRUN_BITPOS,
-	ETH_FORWARD_REM_FIFO_FULL_BITPOS, /* Bit 0 to 13 */
-	/* There is one unused bit in RM about reg 0xD50 */
+	ETH_FORWARD_REM_FIFO_FULL_BITPOS,
 	EXT_SYNC_LOSS_BITPOS = 15,
 	RLOS_BITPOS,
 	RLOF_BITPOS,
@@ -96,26 +114,44 @@ enum cpri_errors_bitpos {
 	LLOF_BITPOS,
 	RRE_BITPOS,
 	FAE_BITPOS,
-	RRA_BITPOS, /* bit 15 to 24 */
-	/* User monitor bits */
+	RRA_BITPOS,
+/**
+ * Errors that's not in the CPRI interrupt registers
+ */
 	CPRI_USER_MONITOR_START,
 	JCPLL_LOCK_LOSS_BITPOS = CPRI_USER_MONITOR_START,
 	PROTO_VER_MISMATCH_BITPOS,
 	ETH_PTR_MISMATCH_BITPOS,
 	RX_LINE_RATE_CODING_VIOLATION_BITPOS,
-	CPRI_RATE_SYNC_BITPOS, /* Bit 25 - 29*/
-	/* The SFP gpio error are expanded to 3 fields */
-	SFP_MONITOR_BITPOS, /* Bit 30 */
-	/* SFP presence gpio indication */
+	CPRI_RATE_SYNC_BITPOS,
+/**
+ * The SFP gpio error are expanded to 3 fields below
+ */
+	SFP_MONITOR_BITPOS,
+/**
+ * SFP presence gpio indication
+ */
 	SFP_PRESENCE_BITPOS = SFP_MONITOR_BITPOS,
-	/* SFP rx loss of signal gpio indication */
+/**
+ * SFP rx loss of signal gpio indication
+ */
 	SFP_RXLOS_BITPOS,
-	/* SFP tx fault indication */
-	SFP_TXFAULT_BITPOS, /* Bit 30 - 32 */
-	CPRI_ERR_CNT, /* total 33 err to be recorded */
+/**
+ * SFP tx fault indication
+ */
+	SFP_TXFAULT_BITPOS,
+/**
+ * total number of possible CPRI errors
+ */
+	CPRI_ERR_CNT,
+ /**
+  * reset ack function enable, not considered as an error,
+  * but it's going to use the same kernel timer
+  * to poll the status.
+  */
+	CPRI_RESET_ACK_BITPOS = CPRI_ERR_CNT,
 };
 
-/* The errors that can be detected by CPRI interrupt */
 #define RX_IQ_OVERRUN				\
 	(1 << RX_IQ_OVERRUN_BITPOS)
 #define TX_IQ_UNDERRUN				\
@@ -176,17 +212,23 @@ enum cpri_errors_bitpos {
 	(1 << CPRI_RATE_SYNC_BITPOS)
 #define SFP_MONITOR				\
 	(1 << SFP_MONITOR_BITPOS)
-
-/* The events used by timer */
+#define CPRI_RESET_ACK				\
+	(1ULL << CPRI_RESET_ACK_BITPOS)
+/**
+ * The errors that are polled by the kernel timer
+ */
 #define CPRI_USER_EVT_ALL			\
 		(JCPLL_LOCK_LOSS		\
 		| PROTO_VER_MISMATCH		\
 		| ETH_PTR_MISMATCH		\
 		| RX_LINE_RATE_CODING_VIOLATION \
 		| CPRI_RATE_SYNC		\
+		| CPRI_RESET_ACK		\
 		| RRE | RAI | RSDI | RLOS | RLOF)
 
-/* The events used by interrupts */
+/**
+ * The errors defined by CPRI event register
+ */
 #define CPRI_ERR_EVT_ALL	(RX_IQ_OVERRUN \
 				| TX_IQ_UNDERRUN \
 				| RX_ETH_MEM_OVERRUN \
@@ -229,24 +271,95 @@ enum cpri_link_rate {
 
 struct cpri_autoneg_params {
 	__u32 mode;
+/**
+ * Framer in RE slave mode
+ */
 #define RE_MODE_SLAVE (1 << 0)
+/**
+ * Framer in RE master mode in daisy chain.
+ * Apply to "cp0_frmr1" or "cp1_frmr1" only
+ */
 #define	RE_MODE_MASTER (1 << 1)
+/**
+ * Framer in REC mode
+ */
 #define	REC_MODE (1 << 2)
+/**
+ * if (STICK_TO_RATE is set and rate_preferred has value in enum cpri_link_rate)
+ * stick to rate_preferred in autoneg until @rate_neg_timeout seconds.
+ *
+ * if (STIRKC_TO_RATE is not set and rate_prefered has value
+ * in enum_cpri_link_rate) rate autoneg starts from rate_preferred,
+ * if not successful after @rate_neg_timeout
+ * seconds, change to rate_high and goes down one level
+ * till (includes) rate_low. Each rate try @rate_neg_timeout seconds
+ * to see if it's synced.
+ *
+ * if (STICK_TO_RATE is not set and rate_preferred is 0)
+ * rate autoneg starts from rate_high and goes down one level
+ * till (includes) rate_low.
+ * Each rate try @rate_neg_timeout seconds to see if it's synced.
+ *
+ * Generally speaking, if you know the rate you are going to use, you can use
+ * that rate for rate_preferred. You should set
+ * STICK_TO_RATE for the daisy chain master node because you want the
+ * RE master node to always use the rate from RE slave
+ * and not change by its self.
+ *
+ * During autoneg, AxC and CPRI-ethernet needs to be cleared and thus needs
+ * re-enabling.
+ */
 #define STICK_TO_RATE (1 << 3)
+/**
+ * Stick to @tx_prot_ver till @proto_neg_timeout
+ * seconds if this flag is set, otherwise adapt
+ * to the protocal version it received from the framer
+ */
 #define STICK_TO_PROTO (1 << 4)
+/**
+ * Stick to @eth_ptr till @ethptr_neg_timeout
+ * seconds if this flag is set, otherwise adapt
+ * to the ethernet pointer value from the framer.
+ */
 #define STICK_TO_ETHPTR (1 << 5)
+/**
+ * Reset the pll and serdes if this flag is set.
+ * Also if the CPRI is running in RE mode, the framer
+ * that sets this flag will output the recovered clk
+ * to JCPLL. Use this flag with caution, because you
+ * don't want to reset the pll and serdes lanes when other
+ * CPRI framer is already running, unless you really need to,
+ * eg. restart rate autonegotiation.
+ */
 #define RESET_LINK	(1 << 6)
+/**
+ * Steps to be done in autoneg
+ * If not set this autoneg step will be skipped.
+ * If set, it will follow the sequence as
+ * rate->protocal->ethernet pointer auto negotiation.
+ * If the one of the steps is not successful and times out,
+ * the further steps are skipped.
+ */
 	__u32 autoneg_steps;
 #define RATE_AUTONEG (1 << 0)
 #define PROTO_AUTONEG (1 << 1)
 #define ETHPTR_AUTONEG (1 << 2)
+/**
+ * Timeout value for three autoneg steps
+ */
 	unsigned int rate_neg_timeout;
 	unsigned int proto_neg_timeout;
 	unsigned int ethptr_neg_timeout;
+/**
+ * Refer to flag STICK_TO_RATE for detail
+ */
 	enum cpri_link_rate rate_preferred;
 	enum cpri_link_rate rate_low;
 	enum cpri_link_rate rate_high;
 	enum cpri_prot_ver tx_prot_ver;
+/**
+ * Valid ethernet pointer ranges from 20 to 63
+ */
 	unsigned int eth_ptr;
 	__u32 tx_scr_seed;
 };
@@ -255,19 +368,7 @@ struct cpri_autoneg_output {
 	enum cpri_link_rate common_rate;
 	__u8 common_eth_ptr;
 	enum cpri_prot_ver common_prot_ver;
-	/* Scramble seed */
 	unsigned int rx_scramble_seed;
-};
-
-struct cpri_delays_raw {
-	/*external delays (SFP + SERDES)*/
-	__u16 rx_ext_buf_delay_valid;
-	__u16 rx_ext_buf_delay;
-	/* variable delays */
-	__u8 rx_byte_delay;
-	__u8 rx_buf_delay;
-	__u8 rx_align_delay;
-	__u32 rx_roundtrip_delay;
 };
 
 struct axc_config {
@@ -279,27 +380,63 @@ struct axc_info {
 	unsigned int id;
 #define AXC_DIR_TX	(1 << 0)
 #define AXC_DIR_RX	(1 << 1)
+/**
+ * AXC is enabled, for non daisy chain
+ * AxC data will start sending DMA request to/from VSPA.
+ * For daisy chain AxC the AUX table will
+ * be programmed.
+ */
 #define AXC_EN	(1 << 2)
+/**
+ * AxC is disabled, for non daisy chain
+ * AxC data will stop send DMA request to/from VSPA.
+ * For daisy chain the AUX table for this AxC region
+ * will be cleared.
+ */
 #define AXC_DISABLE	(1 << 3)
 #define AXC_DAISY_CHAINED	(1 << 4)
-/* The following flag can't change bit order
- * because it's the same as reg bit
+/**
+ * If set, set bit 14 of CPRInTACPRMSB
  */
 #define AXC_TX_ROUNDING_EN	(1 << 14)
+/**
+ * If set, enable interleaving for this AxC
+ */
 #define AXC_INTERLEAVING_EN	(1 << 30)
+/**
+ * If set, enable 9E2 format
+ */
 #define AXC_9E2_EN	(1 << 13)
+/**
+ * If set, enable CPRInT/RACPRMSB bit 31
+ */
 #define AXC_IQ_FORMAT_2	(1 << 31)
+/**
+ * If set, enable CPRInT/RACPRMSB bit 12
+ */
 #define AXC_OVERSAMPLING_2X	(1 << 12)
 	__u32 flags;
+/**
+ * AxC offset from word 1 in basic frame in bit
+ */
+	unsigned int container_offset;
+/**
+ * AxC size in bits
+ */
+	unsigned int container_size;
 	unsigned char sampling_width;
+
+/**
+ * Refer to RX/TX AxC Buffer Management
+ * in reference manual
+ * for proper setting of these fields
+ */
 	unsigned int buffer_threshold;
 	unsigned int buffer_size;
 	unsigned int buffer_offset_addr;
 #define MEMBLK0	(1 << 0)
 #define MEMBLK1	(1 << 1)
 	unsigned int memblk_sel;
-	unsigned int container_offset;
-	unsigned int container_size;
 
 };
 
@@ -314,11 +451,17 @@ struct tx_cw_params {
 	__u8 *data;
 	int len;
 	int operation;
-/* Read the tx control table */
+/**
+ * Read the tx control table
+ */
 #define TX_CW_READ	(1 << 0)
-/* Write the tx control table */
+/**
+ * Write the tx control table
+ */
 #define TX_CW_WRITE	(1 << 1)
-/* Bypass the tx control table */
+/**
+ * Bypass the tx control table
+ */
 #define TX_CW_BYPASS (1 << 2)
 };
 
@@ -332,7 +475,10 @@ enum cpri_state_bitpos {
 	CPRI_PROTVER_BITPOS,
 	CPRI_ETHPTR_BITPOS,
 	CPRI_SFP_PRESENT_BITPOS,
-	/* The following bit is used internally */
+/**
+ * This bit is used by driver internally
+ * and user can omit this bit.
+ */
 	CPRI_MONITOR_STARTED_BITPOS
 };
 
@@ -353,7 +499,6 @@ struct cpri_axc_map_offset {
 
 #define CPRI_MAGIC 'C'
 
-/* General configuration & status IOCTLS */
 #define CPRI_GET_STATE				_IOR(CPRI_MAGIC, 1, \
 							unsigned int)
 #define CPRI_READ_STATS				_IOR(CPRI_MAGIC, 2, \
@@ -382,12 +527,10 @@ struct cpri_axc_map_offset {
 #define CPRI_GET_NFRAME_DIFF			_IOR(CPRI_MAGIC, 14, \
 						 unsigned int)
 
-/* Link start-up IOCTLS */
 #define CPRI_START_AUTONEG			_IOW(CPRI_MAGIC, 15, \
 						struct cpri_autoneg_params)
 #define CPRI_GET_AUTONEG_OUTPUT			_IOR(CPRI_MAGIC, 16, \
 						struct cpri_autoneg_output)
-/* AxC mapping & configuration IOCTLS */
 #define CPRI_AXC_MAP				_IOW(CPRI_MAGIC, 17, \
 						struct axc_config)
 #define CPRI_AXC_CTRL				_IOW(CPRI_MAGIC, 18, \
@@ -397,7 +540,6 @@ struct cpri_axc_map_offset {
 #define SERDES_AMP_SET				_IOW(CPRI_MAGIC, 20, \
 						struct serdes_amp_data)
 
-/* Daisy chain configuration IOCTLS */
 #define CPRI_RX_CTRL_TABLE			_IOR(CPRI_MAGIC, 21, \
 						struct rx_cw_params)
 #define CPRI_TX_CTRL_TABLE			_IOWR(CPRI_MAGIC, 22, \

@@ -692,6 +692,7 @@ static int cpri_probe(struct platform_device *pdev)
 		}
 		if (cpri_eth_init(pdev, framer, child) < 0)
 			dev_err(dev, "ethernet init failed");
+
 	}
 	/* Setup cpri err interrupts */
 	if (cpri_register_irq(cpri_dev) < 0) {

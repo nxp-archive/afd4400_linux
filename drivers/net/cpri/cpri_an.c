@@ -156,15 +156,20 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 	} else if ((framer->cpri_dev->dev_id == 1) && (framer->id == 0)) {
 		lane_param.grp_prot = SERDES_PROT_CPRI_2;
 		lane_param.lane_id = LANE_E;
-	} else {
+	} else if ((framer->cpri_dev->dev_id == 1) && (framer->id == 1)) {
 		lane_param.grp_prot = SERDES_PROT_CPRI_2;
 		lane_param.lane_id = LANE_F;
+	} else {
+		dev_err(dev, "CPRI lane init - no matching lane id!");
+		return -EINVAL;
 	}
 
-	/* Enable JCPLL in slave mode, otherwise
-	 * charge pump output mid voltage.
+	/* Enable JCPLL in tracking mode if CPRI framer is RE slave,
+	 * otherwise charge pump output mid voltage.
 	 */
-	if (framer->autoneg_params.mode & RE_MODE_SLAVE) {
+	if (framer->autoneg_params.mode & REC_MODE)
+		qixis_lock_jcpll();
+	else {
 		serdes_jcpll_enable(framer->serdes_handle, &lane_param,
 			&pll_param);
 		gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
@@ -176,13 +181,12 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 			count++;
 			if (count == SERDES_PLL_LOCK_RETRY_CNT) {
 				dev_err(dev, "Failed to unlock jcpll");
-				return -EINVAL;
+				return -ETIME;
 			}
 			mdelay(1);
 			goto retry;
 		}
-	} else if (framer->autoneg_params.mode & RE_MODE_MASTER)
-		qixis_lock_jcpll();
+	}
 
 	/* Enable all framers clock */
 	cpri_reg_set(&framer->cpri_dev->regs->cpri_ctrlclk,
@@ -209,6 +213,9 @@ static void cpri_init_framer(struct cpri_framer *framer,
 	/* The CPRI complex is in daisy chain mode
 	 * Some of the slave regs nees to be set
 	 */
+	cpri_reg_clear(&regs->cpri_auxctrl,
+			AUX_MODE_MASK);
+
 	if (framer->autoneg_params.mode & RE_MODE_MASTER) {
 		cpri_reg_set_val(&regs->cpri_timer_cfg,
 			CPRI_SYNC_ESA_MASK, CPRI_PAIRED_SYNC);
@@ -218,12 +225,10 @@ static void cpri_init_framer(struct cpri_framer *framer,
 			AUX_MODE_MASK);
 		cpri_reg_set(&re_framer->regs->cpri_cwddelay,
 				CW_DELAY_EN);
-	} else if (framer->autoneg_params.mode & RE_MODE_SLAVE) {
+	} else if (framer->autoneg_params.mode & RE_MODE_SLAVE)
 		cpri_reg_set_val(&framer->regs->cpri_timer_cfg,
 				CPRI_SYNC_ESA_MASK, CPRI_SELF_SYNC);
-		cpri_reg_clear(&regs->cpri_auxctrl,
-			AUX_MODE_MASK);
-	}
+
 	/* Due to the silicon bug, we are using master mode
 	 * althrough is's in slave mode. The slave mode will
 	 * set the SYNC_PULSE_MODE bit to get around this
@@ -288,6 +293,47 @@ static void link_monitor_handler(unsigned long ptr)
 	u32 reset_status;
 	int lcv_cnt;
 
+
+	reset_status = cpri_read(&framer->regs->cpri_hwreset)
+			& (RESET_DETECT_HOLD_MASK | RESET_DETECT_MASK);
+
+	if (reset_status && (framer->cpri_enabled_monitor & RRE))
+			atomic_inc(&framer->err_cnt[RRE_BITPOS]);
+
+	/* Sends back reset ack */
+	if (framer->cpri_enabled_monitor & CPRI_RESET_ACK) {
+		spin_lock(&framer->tx_cw_lock);
+		rdwr_tx_cw(framer, 130, TX_CW_READ, cw_data);
+
+		if (reset_status)
+			cw_data[0] |= CW130_RST;
+		else
+			cw_data[0] &= (~CW130_RST);
+
+		rdwr_tx_cw(framer, 130, TX_CW_WRITE, cw_data);
+		spin_unlock(&framer->tx_cw_lock);
+	}
+
+	/* Check control word 130, just in case we missed the interrupts */
+	spin_lock(&framer->rx_cw_lock);
+	read_rx_cw(framer, 130, cw_data);
+	spin_unlock(&framer->rx_cw_lock);
+
+	if ((cw_data[0] & CW130_RST) && (framer->cpri_enabled_monitor & RRE))
+		atomic_inc(&framer->err_cnt[RRE_BITPOS]);
+
+	if ((cw_data[0] & CW130_RAI) && (framer->cpri_enabled_monitor & RAI))
+		atomic_inc(&framer->err_cnt[RAI_BITPOS]);
+
+	if ((cw_data[0] & CW130_SDI) && (framer->cpri_enabled_monitor & RSDI))
+		atomic_inc(&framer->err_cnt[RSDI_BITPOS]);
+
+	if ((cw_data[0] & CW130_LOS) && (framer->cpri_enabled_monitor & RLOS))
+		atomic_inc(&framer->err_cnt[RLOS_BITPOS]);
+
+	if ((cw_data[0] & CW130_LOF) && (framer->cpri_enabled_monitor & RLOF))
+		atomic_inc(&framer->err_cnt[RLOF_BITPOS]);
+
 	/* Check proto version */
 	if (framer->cpri_enabled_monitor & PROTO_VER_MISMATCH) {
 		spin_lock(&framer->rx_cw_lock);
@@ -307,33 +353,6 @@ static void link_monitor_handler(unsigned long ptr)
 			result->common_eth_ptr)
 			atomic_inc(&framer->err_cnt[ETH_PTR_MISMATCH_BITPOS]);
 	}
-
-	/* Check control word 130, just in case we missed the interrupts */
-	spin_lock(&framer->rx_cw_lock);
-	read_rx_cw(framer, 130, cw_data);
-	spin_unlock(&framer->rx_cw_lock);
-
-	reset_status = cpri_read(&framer->regs->cpri_hwreset)
-			& (RESET_DETECT_HOLD_MASK | RESET_DETECT_MASK);
-
-	/* Check this for the remote requst bit */
-	if (reset_status)
-		atomic_inc(&framer->err_cnt[RRE_BITPOS]);
-
-	if ((cw_data[0] & CW130_RST) && (framer->cpri_enabled_monitor & RRE))
-		atomic_inc(&framer->err_cnt[RRE_BITPOS]);
-
-	if ((cw_data[0] & CW130_RAI) && (framer->cpri_enabled_monitor & RAI))
-		atomic_inc(&framer->err_cnt[RAI_BITPOS]);
-
-	if ((cw_data[0] & CW130_SDI) && (framer->cpri_enabled_monitor & RSDI))
-		atomic_inc(&framer->err_cnt[RSDI_BITPOS]);
-
-	if ((cw_data[0] & CW130_LOS) && (framer->cpri_enabled_monitor & RLOS))
-		atomic_inc(&framer->err_cnt[RLOS_BITPOS]);
-
-	if ((cw_data[0] & CW130_LOF) && (framer->cpri_enabled_monitor & RLOF))
-		atomic_inc(&framer->err_cnt[RLOF_BITPOS]);
 
 	/* Check JCPLL status, if in RE mode */
 	if (framer->cpri_enabled_monitor & JCPLL_LOCK_LOSS) {
@@ -366,25 +385,28 @@ static void link_monitor_handler(unsigned long ptr)
 	mod_timer(&framer->link_monitor_timer, jiffies + HZ);
 }
 
-static void cpri_start_monitor(struct cpri_framer *framer)
+static void cpri_start_monitor(struct cpri_framer *framer,
+	int timer_interval)
 {
 	init_timer(&framer->link_monitor_timer);
 	framer->link_monitor_timer.function = link_monitor_handler;
 	framer->link_monitor_timer.data = (unsigned long) framer;
 
-	framer->link_monitor_timer.expires = jiffies + HZ;
+	framer->link_monitor_timer.expires = jiffies + timer_interval * HZ;
 	add_timer(&framer->link_monitor_timer);
 }
 
 /* This function will enable the err interrupt and link mointor
  * if corresponding bits are set
  */
-void cpri_set_monitor(struct cpri_framer *framer, u32 monitor_en_mask)
+void cpri_set_monitor(struct cpri_framer *framer,
+		const struct monitor_config_en *config)
 {
 	int i;
 
 	spin_lock(&framer->err_en_lock);
-		framer->cpri_enabled_monitor |= monitor_en_mask;
+
+	framer->cpri_enabled_monitor |= config->enable_mask;
 
 	/* Read it once to clear the sticky remote request bit */
 	if (framer->cpri_enabled_monitor & RRE)
@@ -399,6 +421,10 @@ void cpri_set_monitor(struct cpri_framer *framer, u32 monitor_en_mask)
 	cpri_write(CPRI_ERR_EVT_ALL & framer->cpri_enabled_monitor,
 		&framer->regs->cpri_errevent);
 
+	/* Enable Err interrupts */
+	cpri_write(framer->cpri_enabled_monitor & CPRI_ERR_EVT_ALL,
+		&framer->regs->cpri_errinten);
+
 	/* Clear the corresponding stats */
 	for (i = 0; i < SFP_MONITOR_BITPOS; i++) {
 		if (framer->cpri_enabled_monitor & (1 << i))
@@ -411,15 +437,11 @@ void cpri_set_monitor(struct cpri_framer *framer, u32 monitor_en_mask)
 		atomic_set(&framer->err_cnt[SFP_TXFAULT_BITPOS], 0);
 	}
 
-	/* Enable Err interrupts */
-	cpri_write(framer->cpri_enabled_monitor & CPRI_ERR_EVT_ALL,
-		&framer->regs->cpri_errinten);
-
 	/* Enable other err monitor */
-	if (framer->cpri_enabled_monitor & CPRI_USER_EVT_ALL) {
+	if (config->timer_enable) {
 		if (!test_and_set_bit(CPRI_MONITOR_STARTED_BITPOS,
 				&framer->cpri_state))
-			cpri_start_monitor(framer);
+			cpri_start_monitor(framer, config->timer_interval);
 	}
 	spin_unlock(&framer->err_en_lock);
 }
@@ -427,13 +449,13 @@ void cpri_set_monitor(struct cpri_framer *framer, u32 monitor_en_mask)
  * if corresponding bits are set.
  */
 void cpri_clear_monitor(struct cpri_framer *framer,
-			u32 disable_mask)
+			const struct monitor_config_disable *config)
 {
 	spin_lock(&framer->err_en_lock);
 
-	framer->cpri_enabled_monitor &= (~disable_mask);
-	/* Disable link monitor timer */
-	if (!(framer->cpri_enabled_monitor & CPRI_USER_EVT_ALL)) {
+	framer->cpri_enabled_monitor &= (~config->disable_mask);
+
+	if (config->timer_disable) {
 		if (test_and_clear_bit(CPRI_MONITOR_STARTED_BITPOS,
 					&framer->cpri_state))
 			del_timer(&framer->link_monitor_timer);
@@ -723,6 +745,10 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 		dev_err(dev, "CPRI rate autoneg failed\n");
 	} else {
 		del_timer(&linerate_timer);
+		/* By default, enable CPRI HW reset board function.
+		 * User can turn this off in ioctl.
+		 */
+		cpri_config_hwrst(framer, 1);
 		set_bit(CPRI_RATE_BITPOS,
 			&framer->cpri_state);
 	}

@@ -3,6 +3,7 @@
 
 #define SW_RST_MIN	1
 #define SW_RST_MAX	8
+#define CPRI_RESET_BYPASS	(1 << 7)
 
 enum rst_type {
 	SW_TPIU_RST,

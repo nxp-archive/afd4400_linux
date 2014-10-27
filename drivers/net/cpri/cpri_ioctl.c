@@ -64,9 +64,11 @@ static void cpri_reg_read_bulk(void *base,
 	}
 }
 
-static int calc_nframe_delay(struct cpri_framer *framer)
+static int calc_nframe_delay(struct cpri_framer *framer,
+		struct frame_diff_buf *buf)
 {
 	u32 nframer_diff_read = 0;
+	int err = 0;
 	u32 count = 0;
 
 	cpri_write(CPRI_FRAME_DIFF_STATUS_BIT,
@@ -74,17 +76,26 @@ static int calc_nframe_delay(struct cpri_framer *framer)
 	cpri_write(CPRI_FRAME_DIFF_STATUS_BIT,
 			&framer->regs->cpri_framediffctrl);
 	/* Waiting for nframediff cal to be over */
-	while (!(nframer_diff_read & CPRI_FRAME_DIFF_STATUS_BIT) ||
-			(count == NFRAME_DIFF_COUNT_LOOP)) {
+	while (1) {
 		nframer_diff_read = cpri_reg_get_val(
 				&framer->regs->cpri_framediffstatus,
 				MASK_ALL);
-		if (nframer_diff_read & CPRI_FRAME_DIFF_STATUS_BIT)
+		if (nframer_diff_read & CPRI_FRAME_DIFF_STATUS_BIT) {
+			buf->framediff_hfn = (nframer_diff_read >> 8) & 0XFF;
+			buf->framediff_x = (nframer_diff_read >> 16) & 0xFF;
 			break;
+		}
+
+		if (count == NFRAME_DIFF_COUNT_LOOP) {
+			err = -ETIME;
+			break;
+		}
+
 		schedule_timeout_interruptible(msecs_to_jiffies(200));
 		count++;
 	}
-	return nframer_diff_read;
+
+	return err;
 }
 
 static void cpri_config_axc_offset(struct cpri_framer *framer,
@@ -99,6 +110,25 @@ static void cpri_config_axc_offset(struct cpri_framer *framer,
 
 	reg_val = (offset->start_tx_offset_z << 8) | offset->start_tx_offset_x;
 	cpri_write(reg_val, &framer->regs->cpri_tstartoffset);
+}
+
+/* Enable CPRI HW reset the board.
+ * Right now single hop reset function is tested.
+ */
+void cpri_config_hwrst(struct cpri_framer *framer, int enable)
+{
+
+	src_cpri_hwrst(enable);
+
+	if (enable) {
+		cpri_write(0x303,
+			&framer->cpri_dev->regs->cpri_remresetoutputctrl);
+		cpri_reg_set(&framer->regs->cpri_hwreset, 0x4);
+	} else {
+		cpri_write(0,
+			&framer->cpri_dev->regs->cpri_remresetoutputctrl);
+		cpri_reg_clear(&framer->regs->cpri_hwreset, 0x4);
+	}
 }
 
 long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
@@ -123,11 +153,14 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	struct tx_cw_params tx_cw_param;
 	char cw_data[16];
 
+	struct frame_diff_buf frame_diff;
+	struct monitor_config_en monitor_cfg_en;
+	struct monitor_config_disable monitor_cfg_disable;
+
 	int err = 0, count, i;
 	void __user *ioargp = (void __user *)arg;
 	struct cpri_axc_map_offset axc_map_offset;
 	struct sfp_dev *sfp = framer->sfp_dev;
-	u32 val;
 	int err_cnt[CPRI_ERR_CNT];
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
@@ -152,8 +185,11 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case CPRI_GET_NFRAME_DIFF:
-		val = calc_nframe_delay(framer);
-		if (copy_to_user((u32 *)ioargp,	&val, sizeof(u32))) {
+		err = calc_nframe_delay(framer, &frame_diff);
+		if (err)
+			return err;
+		else if (copy_to_user((u32 *)ioargp, &frame_diff,
+				sizeof(struct frame_diff_buf))) {
 			err = -EFAULT;
 			goto out;
 		}
@@ -449,11 +485,23 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	break;
 
 	case CPRI_SET_MONITOR:
-		cpri_set_monitor(framer, (u32) ioargp);
+		if (copy_from_user(&monitor_cfg_en,
+			(struct monitor_config_en *)ioargp,
+			sizeof(struct monitor_config_en)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		cpri_set_monitor(framer, &monitor_cfg_en);
 	break;
 
 	case CPRI_CLEAR_MONITOR:
-		cpri_clear_monitor(framer, (u32) ioargp);
+		if (copy_from_user(&monitor_cfg_disable,
+			(struct monitor_config_disable *)ioargp,
+			sizeof(struct monitor_config_disable)) != 0) {
+			err = -EFAULT;
+			goto out;
+		}
+		cpri_clear_monitor(framer, &monitor_cfg_disable);
 	break;
 
 	case CPRI_AXC_OFFSET_REGS:
@@ -466,6 +514,10 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 	cpri_config_axc_offset(framer, &axc_map_offset);
 
+	break;
+
+	case CPRI_HW_RESET:
+		cpri_config_hwrst(framer, (int)ioargp);
 	break;
 
 	default:
