@@ -30,8 +30,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __VSPA_UAPI_H_
-#define __VSPA_UAPI_H_
+#ifndef _UAPI_VSPA_H
+#define _UAPI_VSPA_H
 
 #define VSP_MAGIC_NUM 'V'
 
@@ -56,4 +56,4 @@
 /* mmap offset argument for vspa device context memory */
 #define VSPA_DS_OFFSET	8192
 
-#endif
+#endif /* _UAPI_VSPA_H */

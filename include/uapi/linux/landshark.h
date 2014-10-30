@@ -31,9 +31,8 @@
  */
 
 
-#ifndef __LANDSHARK_UAPI_H
-#define __LANDSHARK_UAPI_H
-
+#ifndef _UAPI_LANDSHARK_H
+#define _UAPI_LANDSHARK_H
 
 #define LANDSHARK_MAGIC_NUM 'M'
 #define LANDSHARK_MEM_INFO_GET _IOW(LANDSHARK_MAGIC_NUM, 1, int)
@@ -61,4 +60,4 @@ struct pinit_info {
 	unsigned int pinit_size;
 };
 
-#endif /* __LANDSHARK_UAPI_H */
+#endif /* _UAPI_LANDSHARK_H */

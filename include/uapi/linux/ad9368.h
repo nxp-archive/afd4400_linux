@@ -33,8 +33,8 @@
  *
  */
 
-#ifndef __UAPI_AD9368_H__
-#define __UAPI_AD9368_H__
+#ifndef _UAPI_AD9368_H
+#define _UAPI_AD9368_H
 
 #include <linux/types.h>
 
@@ -175,4 +175,4 @@ struct spi_ioc_transfer {
 #define RF_SET_SPI_STREAM_ID	_IOW(RF_MAGIC, 23, int *)
 #define RF_RESET		_IOW(RF_MAGIC, 24, int *)
 
-#endif
+#endif /* _UAPI_AD9638_H */

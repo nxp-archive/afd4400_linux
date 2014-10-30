@@ -18,8 +18,6 @@
 #ifndef __LANDSHARK_H
 #define __LANDSHARK_H
 
-#include <linux/landshark_uapi.h>
-
 #define MOD_INC_USE_COUNT
 #define MOD_DEC_USE_COUNT
 

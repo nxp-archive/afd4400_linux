@@ -37,7 +37,7 @@
 #include <linux/io.h>
 #include <linux/platform_device.h>
 #include <linux/wait.h>
-#include <linux/vspa_uapi.h>
+#include <uapi/linux/vspa.h>
 
 
 /* IP register offset for the registers used by the driver */

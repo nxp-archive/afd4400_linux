@@ -25,6 +25,7 @@
 #include <linux/mman.h>
 #include <linux/of.h>
 #include <linux/slab.h>
+#include <uapi/linux/landshark.h>
 #include "landshark.h"
 
 /* driver interface */

@@ -30,8 +30,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __UAPI_GCR_H
-#define __UAPI_GCR_H
+#ifndef _UAPI_GCR_H
+#define _UAPI_GCR_H
 
 
 #define GCR_IOC_MAGIC           'G'
@@ -224,4 +224,4 @@ struct  gcr_ctl_parm {
 	unsigned int param;
 };
 
-#endif
+#endif /* _UAPI_GCR_H */

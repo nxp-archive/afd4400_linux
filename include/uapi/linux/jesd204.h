@@ -35,8 +35,8 @@
  *
  */
 
-#ifndef JESD204_UAPI_H_	/* prevent circular inclusion */
-#define JESD204_UAPI_H_	/* by using protection macros */
+#ifndef _UAPI_JESD204_H
+#define _UAPI_JESD204_H
 
 #define IQ_RATE_153M		153600
 #define IQ_RATE_122M		122880
@@ -337,4 +337,4 @@ struct auto_sync_params {
 						struct jesd_reg_read_buf *)
 #define JESD_DEVICE_START	_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 19))
 /*IOCTL end*/
-#endif
+#endif /* _UAPI_JESD204_H */

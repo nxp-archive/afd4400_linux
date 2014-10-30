@@ -30,8 +30,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __UAPI_CPRI_H
-#define __UAPI_CPRI_H
+#ifndef _UAPI_CPRI_H
+#define _UAPI_CPRI_H
 
 struct cpri_reg_read_buf {
 	__u32 start_offset;
@@ -406,4 +406,4 @@ struct cpri_axc_map_offset {
 #define CPRI_AXC_MAP_CONFIG			_IOW(CPRI_MAGIC, 23, \
 						struct axc_map_config)
 
-#endif /* __CPRI_IOCTL_H */
+#endif /* _UAPI_CPRI_H */

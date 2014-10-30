@@ -35,8 +35,8 @@
  *
  */
 
-#ifndef TBGEN_UAPI_H_	/* prevent circular inclusion */
-#define TBGEN_UAPI_H_	/* by using protection macros */
+#ifndef _UAPI_TBGEN_H
+#define _UAPI_TBGEN_H
 
 /** \enum TBGEN device states enum.
  *
@@ -187,4 +187,4 @@ struct tbgen_device_info {
 #define TBGEN_GET_STATE			_IOR(TDGEN_NUM, (IOCTL_IDX + 15), \
 						int)
 #define TBGEN_RFG_DISABLE		_IO(TDGEN_NUM, (IOCTL_IDX + 16))
-#endif
+#endif /* _UAPI_TBGEN_H */
