@@ -580,7 +580,7 @@ static int ad9368_probe(struct spi_device *spi)
 	}
 
 	xcvr_dev = get_attached_xcvr_dev(&np, phy_dev);
-	dev_err(dev, "node %x, phy %x\n", np, phy_dev);
+	dev_err(dev, "node %p, phy %p\n", np, phy_dev);
 	if (!xcvr_dev) {
 		dev_err(dev, "Failed to attach XCVR\n");
 		ret = -EPROBE_DEFER;
