@@ -797,7 +797,6 @@ extern void d4400_rev_clk_select(u8 cpri_id, u8 clk_dev);
 /* AxC mapping functions */
 int cpri_axc_ioctl(struct cpri_framer *framer, unsigned long arg,
 		unsigned int cmd);
-void bd_dump(struct net_device *ndev);
 void cpri_mask_irq_events(struct cpri_framer *framer);
 void init_eth(struct cpri_framer *framer);
 struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev);

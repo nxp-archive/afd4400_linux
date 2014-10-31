@@ -297,11 +297,18 @@ static void link_monitor_handler(unsigned long ptr)
 	reset_status = cpri_read(&framer->regs->cpri_hwreset)
 			& (RESET_DETECT_HOLD_MASK | RESET_DETECT_MASK);
 
-	if (reset_status && (framer->cpri_enabled_monitor & RRE))
-			atomic_inc(&framer->err_cnt[RRE_BITPOS]);
+	if (reset_status) {
+		if ((framer->cpri_enabled_monitor & RRE) &&
+			(framer->autoneg_params.mode & RE_MODE_SLAVE))
+				atomic_inc(&framer->err_cnt[RRE_BITPOS]);
 
-	/* Sends back reset ack */
-	if (framer->cpri_enabled_monitor & CPRI_RESET_ACK) {
+		if ((framer->cpri_enabled_monitor & RRA) &&
+			!(framer->autoneg_params.mode & RE_MODE_SLAVE))
+				atomic_inc(&framer->err_cnt[RRA_BITPOS]);
+	}
+	/* Sends back reset ack in slave mode */
+	if (framer->cpri_enabled_monitor & CPRI_RESET_ACK &&
+		(framer->autoneg_params.mode & RE_MODE_SLAVE)) {
 		spin_lock(&framer->tx_cw_lock);
 		rdwr_tx_cw(framer, 130, TX_CW_READ, cw_data);
 
@@ -319,8 +326,15 @@ static void link_monitor_handler(unsigned long ptr)
 	read_rx_cw(framer, 130, cw_data);
 	spin_unlock(&framer->rx_cw_lock);
 
-	if ((cw_data[0] & CW130_RST) && (framer->cpri_enabled_monitor & RRE))
-		atomic_inc(&framer->err_cnt[RRE_BITPOS]);
+	if (cw_data[0] & CW130_RST) {
+		if ((framer->cpri_enabled_monitor & RRE) &&
+			(framer->autoneg_params.mode & RE_MODE_SLAVE))
+				atomic_inc(&framer->err_cnt[RRE_BITPOS]);
+
+		if ((framer->cpri_enabled_monitor & RRA) &&
+			!(framer->autoneg_params.mode & RE_MODE_SLAVE))
+				atomic_inc(&framer->err_cnt[RRA_BITPOS]);
+	}
 
 	if ((cw_data[0] & CW130_RAI) && (framer->cpri_enabled_monitor & RAI))
 		atomic_inc(&framer->err_cnt[RAI_BITPOS]);
@@ -403,13 +417,14 @@ void cpri_set_monitor(struct cpri_framer *framer,
 		const struct monitor_config_en *config)
 {
 	int i;
+	u32 mask;
 
 	spin_lock(&framer->err_en_lock);
 
 	framer->cpri_enabled_monitor |= config->enable_mask;
 
 	/* Read it once to clear the sticky remote request bit */
-	if (framer->cpri_enabled_monitor & RRE)
+	if (framer->cpri_enabled_monitor & (RRE | RRA))
 		cpri_read(&framer->regs->cpri_hwreset);
 
 	/* Read clear the lcv reg */
@@ -417,12 +432,18 @@ void cpri_set_monitor(struct cpri_framer *framer,
 			RX_LINE_RATE_CODING_VIOLATION)
 		cpri_read(&framer->regs->cpri_lcv);
 
-	/* Clear error reg */
-	cpri_write(CPRI_ERR_EVT_ALL & framer->cpri_enabled_monitor,
-		&framer->regs->cpri_errevent);
 
 	/* Enable Err interrupts */
-	cpri_write(framer->cpri_enabled_monitor & CPRI_ERR_EVT_ALL,
+	mask = CPRI_ERR_EVT_ALL;
+	if (!(framer->eth_priv->ndev->flags & IFF_UP))
+		mask &= ((~RX_ETH_DMA_OVERRUN) &
+			(~ETH_FORWARD_REM_FIFO_FULL));
+
+	/* Clear error reg */
+	cpri_write(mask & framer->cpri_enabled_monitor,
+		&framer->regs->cpri_errevent);
+
+	cpri_write(mask & framer->cpri_enabled_monitor,
 		&framer->regs->cpri_errinten);
 
 	/* Clear the corresponding stats */
@@ -748,7 +769,12 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 		/* By default, enable CPRI HW reset board function.
 		 * User can turn this off in ioctl.
 		 */
-		cpri_config_hwrst(framer, 1);
+		if (framer->autoneg_params.mode & RE_MODE_SLAVE)
+			cpri_config_hwrst(framer, 1);
+		else
+			cpri_config_hwrst(framer, 0);
+
+
 		set_bit(CPRI_RATE_BITPOS,
 			&framer->cpri_state);
 	}

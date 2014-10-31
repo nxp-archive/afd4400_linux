@@ -12,45 +12,6 @@
  */
 
 #include <linux/cpri.h>
-void bd_dump(struct net_device *ndev)
-{
-	void *vaddr;
-	int i;
-	struct cpri_eth_bd_entity *bd_ptr;
-	struct cpri_eth_priv *priv = netdev_priv(ndev);
-	struct cpri_eth_tx_bd *tx_bd = priv->tx_bd;
-	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
-	struct device *dev = priv->framer->cpri_dev->dev;
-
-	vaddr = tx_bd->tx_bd_base;
-	if (vaddr == 0) {
-		dev_err(dev, "tx_bd resourses null--");
-		return;
-	}
-	bd_ptr = tx_bd->tx_bd_base;
-	for (i = 0; i < tx_bd->tx_bd_ring_size; ) {
-		if (bd_ptr != NULL)
-			dev_info(dev, "tx[%d] bdp: %p, lsts: 0x%x, bfptr: 0x%x",
-				i, bd_ptr, bd_ptr->lstatus,
-				bd_ptr->buf_ptr);
-		bd_ptr++;
-		i++;
-	}
-
-	bd_ptr = rx_bd->rx_bd_base;
-	for (i = 0; i < rx_bd->rx_bd_ring_size; i++) {
-		if (bd_ptr != NULL)
-			dev_info(dev, "rx[%d] bdp: %p, lsts: 0x%x, bfptr: 0x%x",
-				i, bd_ptr, bd_ptr->lstatus,
-				bd_ptr->buf_ptr);
-		else
-			dev_info(dev, "rx[%d] bdp: %p --- is null bug",
-				i, bd_ptr);
-		bd_ptr++;
-	}
-
-
-}
 
 static int cpri_eth_init_bd_regs(struct net_device *ndev)
 {
@@ -133,57 +94,7 @@ static void cpri_eth_clear_bd_regs(struct net_device *ndev)
 	return;
 }
 
-static void cpri_eth_align_skb(struct sk_buff *skb)
-{
-	unsigned int reserve;
-
-	/* We need the data buffer to be aligned properly.  We will reserve
-	 * as many bytes as needed to align the data properly
-	 */
-	reserve = CPRI_ETH_RXBUF_ALIGNMENT -
-		(((unsigned long) skb->data) & (CPRI_ETH_RXBUF_ALIGNMENT - 1));
-
-	skb_reserve(skb, reserve);
-}
-
-
-static struct sk_buff *cpri_eth_new_skb(struct net_device *ndev)
-{
-	struct sk_buff *skb = NULL;
-	struct cpri_eth_priv *priv = netdev_priv(ndev);
-
-	skb = netdev_alloc_skb(ndev, priv->rx_buffer_size +
-						CPRI_ETH_RXBUF_ALIGNMENT);
-	if (!skb)
-		return NULL;
-
-	cpri_eth_align_skb(skb);
-
-	return skb;
-}
-
-static void cpri_eth_free_rx_skbs(struct net_device *ndev, int limit)
-{
-	int i;
-	struct cpri_eth_priv *priv = netdev_priv(ndev);
-	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
-	struct cpri_eth_bd_entity *rx_iter;
-
-	for (i = 0, rx_iter = rx_bd->rx_bd_base;
-			i < limit;
-			i++, rx_iter++) {
-
-		dma_unmap_single(&priv->ofdev->dev, rx_iter->buf_ptr,
-				priv->rx_buffer_size, DMA_FROM_DEVICE);
-
-		dev_kfree_skb_any(rx_bd->rx_skbuff[i]);
-		rx_bd->rx_skbuff[i] = NULL;
-	}
-
-	return;
-}
 static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
-		struct cpri_eth_bd_entity *bdp,
 			    dma_addr_t buf, unsigned int bd_index)
 {
 	struct net_device *ndev = rx_bd->ndev;
@@ -192,6 +103,7 @@ static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
 	struct cpri_eth_bd_entity rxbde_le;
 	struct cpri_reg_data data[1];
 	unsigned int bd_nxtindex;
+	struct cpri_eth_bd_entity *bdp = rx_bd->rx_bd_base + bd_index;
 	u32 val;
 
 	rxbde_le.buf_ptr = buf;
@@ -212,59 +124,19 @@ static void cpri_init_rxbdp(struct cpri_eth_rx_bd *rx_bd,
 			data[0].val |= CPRI_ETH_TX_BD_W_PTR_WRAP_MASK;
 	}
 
-
 	cpri_reg_vset_val(&framer->regs->cpri_rethwriteptr, data);
-
 }
 
-
-static void cpri_new_rxbdp(struct cpri_eth_rx_bd *rx_bd,
-		struct cpri_eth_bd_entity *bdp,
-		struct sk_buff *skb, int i)
-{
-	struct net_device *ndev = rx_bd->ndev;
-	struct cpri_eth_priv *priv = netdev_priv(ndev);
-	dma_addr_t buf;
-
-	buf = dma_map_single(&priv->ofdev->dev, skb->data,
-			priv->rx_buffer_size, DMA_FROM_DEVICE);
-	cpri_init_rxbdp(rx_bd, bdp, buf, i);
-}
-
-static int cpri_eth_init_rx_skbs(struct cpri_eth_rx_bd *rx_bd)
-{
-	int i;
-	struct net_device *ndev = rx_bd->ndev;
-	struct cpri_eth_bd_entity *rx_iter;
-	struct sk_buff *skb;
-
-	rx_iter = rx_bd->rx_bd_base;
-	for (i = 0; i < rx_bd->rx_bd_ring_size; i++) {
-		skb = cpri_eth_new_skb(ndev);
-		if (!skb)
-			goto skb_cleanup;
-
-		rx_bd->rx_skbuff[i]  = skb;
-		cpri_new_rxbdp(rx_bd, rx_iter, skb, i);
-		rx_iter++;
-	}
-	return 0;
-
-skb_cleanup:
-	cpri_eth_free_rx_skbs(ndev, i);
-	return -ENOMEM;
-}
 
 static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
 {
-	int i;
+	int i, j;
 	void *vaddr;
 	dma_addr_t addr;
 	unsigned int dma_alloc_size;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_eth_tx_bd *tx_bd = priv->tx_bd;
 	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
-
 
 	dma_alloc_size = ((sizeof(struct cpri_eth_bd_entity) *
 				rx_bd->rx_bd_ring_size) +
@@ -274,19 +146,13 @@ static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
 
 	/* Allocate memory for the buffer descriptors */
 	vaddr = dma_alloc_coherent(&priv->ofdev->dev,
-			dma_alloc_size + (CPRI_ETH_BD_RING_ALIGN - 1),
-			&addr, GFP_KERNEL);
+			dma_alloc_size,
+			&addr, GFP_ATOMIC);
 	if (!vaddr) {
 		netdev_err(ndev, "Could not allocate bd's!\n");
 		return -ENOMEM;
 	}
 	memset(vaddr, 0, dma_alloc_size);
-	/* Check alignment */
-	vaddr = (void *)(((unsigned int)vaddr +
-		 (CPRI_ETH_BD_RING_ALIGN - 1)) & ~(CPRI_ETH_BD_RING_ALIGN - 1));
-
-	addr = (((unsigned int)addr + (CPRI_ETH_BD_RING_ALIGN - 1)) &
-				~(CPRI_ETH_BD_RING_ALIGN - 1));
 
 	/* Store the aligned pointers */
 	priv->addr = addr;
@@ -299,7 +165,7 @@ static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
 	tx_bd->tx_bd_dirty = tx_bd->tx_bd_current;
 
 	tx_bd->tx_skbuff = kmalloc(sizeof(*tx_bd->tx_skbuff) *
-				tx_bd->tx_bd_ring_size, GFP_KERNEL);
+				tx_bd->tx_bd_ring_size, GFP_ATOMIC);
 	if (!tx_bd->tx_skbuff) {
 		netdev_err(ndev, "Could not allocate tx_skbuff\n");
 		goto tx_alloc_fail;
@@ -314,30 +180,48 @@ static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
 	/* Initialize Rx BD */
 	addr  += sizeof(struct cpri_eth_bd_entity) * tx_bd->tx_bd_ring_size;
 	vaddr += sizeof(struct cpri_eth_bd_entity) * tx_bd->tx_bd_ring_size;
-	vaddr = (void *)(((unsigned int)vaddr +
-		 (CPRI_ETH_BD_RING_ALIGN - 1)) & ~(CPRI_ETH_BD_RING_ALIGN - 1));
-
-	addr = (((unsigned int)addr + (CPRI_ETH_BD_RING_ALIGN - 1)) &
-				~(CPRI_ETH_BD_RING_ALIGN - 1));
 
 	rx_bd->rx_bd_base = vaddr;
 	rx_bd->rx_bd_dma_base =	addr;
 	rx_bd->rx_bd_current = rx_bd->rx_bd_base;
-
-	rx_bd->rx_skbuff = kmalloc(sizeof(*rx_bd->rx_skbuff) *
-					rx_bd->rx_bd_ring_size, GFP_KERNEL);
-	if (!rx_bd->rx_skbuff) {
-		netdev_err(ndev, "Could not allocate rx_skbuff\n");
-		goto rx_alloc_fail;
-	}
-
 	rx_bd->skb_currx = 0;
 	rx_bd->ndev = ndev;
 
-	if (cpri_eth_init_rx_skbs(rx_bd)) {
-		netdev_err(ndev, "Rx BD init failed\n");
-		goto skb_init_fail;
+	rx_bd->rxbuf = kmalloc(sizeof(char *) *
+					rx_bd->rx_bd_ring_size, GFP_ATOMIC);
+	if (!rx_bd->rxbuf) {
+		netdev_err(ndev, "Could not allocate rxbuf ptr\n");
+		goto rxptr_alloc_fail;
 	}
+
+	rx_bd->rxbuf_paddr = kmalloc(sizeof(dma_addr_t) *
+			rx_bd->rx_bd_ring_size, GFP_ATOMIC);
+	if (rx_bd->rxbuf_paddr == NULL) {
+		netdev_err(ndev, "System memory shortage\n");
+		goto rxbuf_paddr_init_fail;
+	}
+
+	for (i = 0; i < rx_bd->rx_bd_ring_size; i++) {
+		rx_bd->rxbuf[i] = kmalloc(priv->rx_buffer_size, GFP_ATOMIC);
+		if (rx_bd->rxbuf[i] == NULL) {
+			netdev_err(ndev, "Could not allocate rx buf\n");
+
+			for (j = 0; j < i; j++) {
+				dma_unmap_single(&priv->ofdev->dev,
+					rx_bd->rxbuf_paddr[j],
+					priv->rx_buffer_size, DMA_FROM_DEVICE);
+				kfree(rx_bd->rxbuf[j]);
+			}
+			goto rxbuf_init_fail;
+		}
+		rx_bd->rxbuf_paddr[i] =
+			dma_map_single(&priv->ofdev->dev, rx_bd->rxbuf[i],
+			priv->rx_buffer_size, DMA_FROM_DEVICE);
+
+		cpri_init_rxbdp(rx_bd, rx_bd->rxbuf_paddr[i], i);
+	}
+
+
 	if (cpri_eth_init_bd_regs(ndev))
 		goto bd_init_fail;
 
@@ -345,11 +229,12 @@ static int cpri_eth_alloc_skb_resources(struct net_device *ndev)
 
 bd_init_fail:
 	cpri_eth_clear_bd_regs(ndev);
-	cpri_eth_free_rx_skbs(ndev, priv->rx_buffer_size);
-skb_init_fail:
-	kfree(rx_bd->rx_skbuff);
-rx_alloc_fail:
-	rx_bd->rx_skbuff = 0;
+rxbuf_init_fail:
+	kfree(rx_bd->rxbuf_paddr);
+rxbuf_paddr_init_fail:
+	kfree(rx_bd->rxbuf);
+rxptr_alloc_fail:
+	rx_bd->rxbuf = NULL;
 	rx_bd->rx_bd_current = 0;
 	rx_bd->rx_bd_dma_base = 0;
 	rx_bd->rx_bd_base = 0;
@@ -379,18 +264,25 @@ static void cpri_eth_free_skb_resources(struct net_device *ndev)
 	for (i = 0; i < tx_bd->tx_bd_ring_size; i++) {
 		if (tx_bd->tx_skbuff[i])
 			dev_kfree_skb_any(tx_bd->tx_skbuff[i]);
+		tx_bd->tx_skbuff[i] = NULL;
 	}
 
 	for (i = 0; i < rx_bd->rx_bd_ring_size; i++) {
-		if (rx_bd->rx_skbuff[i])
-			dev_kfree_skb_any(rx_bd->rx_skbuff[i]);
+		if (rx_bd->rxbuf[i]) {
+			dma_unmap_single(&priv->ofdev->dev,
+					rx_bd->rxbuf_paddr[i],
+					priv->rx_buffer_size, DMA_FROM_DEVICE);
+			kfree(rx_bd->rxbuf[i]);
+
+		}
+		rx_bd->rxbuf[i] = NULL;
 	}
 
 	kfree(tx_bd->tx_skbuff);
-	tx_bd->tx_skbuff = 0;
+	tx_bd->tx_skbuff = NULL;
 
-	kfree(rx_bd->rx_skbuff);
-	rx_bd->rx_skbuff = 0;
+	kfree(rx_bd->rxbuf);
+	rx_bd->rxbuf = NULL;
 	if (priv->vaddr) {
 		dma_alloc_size = (sizeof(struct cpri_eth_bd_entity) *
 				rx_bd->rx_bd_ring_size) +
@@ -488,6 +380,7 @@ static int cpri_eth_open(struct net_device *ndev)
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct device *dev = priv->framer->cpri_dev->dev;
 	struct cpri_framer *framer = priv->framer;
+	u32 mask;
 
 	spin_lock_irqsave(&priv->tx_bd->txlock, flags);
 	spin_lock(&priv->rx_bd->rxlock);
@@ -506,6 +399,15 @@ static int cpri_eth_open(struct net_device *ndev)
 	napi_enable(&priv->napi);
 
 	cpri_eth_tx_rx_resume(ndev);
+
+	 /* Set monitor */
+	mask = framer->cpri_enabled_monitor & (RX_ETH_DMA_OVERRUN
+			| ETH_FORWARD_REM_FIFO_FULL);
+
+	cpri_write(mask & framer->cpri_enabled_monitor,
+		&framer->regs->cpri_errevent);
+
+	cpri_reg_set(&framer->regs->cpri_errinten, mask);
 
 	/* Start the Eth interrupts */
 	cpri_reg_set(&framer->regs->cpri_rctrltiminginten,
@@ -625,16 +527,16 @@ static int cpri_eth_xmit(struct sk_buff *newskb, struct net_device *ndev)
 	struct cpri_eth_bd_entity *base = tx_bd->tx_bd_base;
 	struct device *dev = priv->framer->cpri_dev->dev;
 	struct cpri_reg_data reg_data[1];
-	int loop;
 	u32 val;
 
 	val = CPRI_ETH_RXBUF_ALIGNMENT -
 		(((unsigned long) newskb->data) &
 			(CPRI_ETH_RXBUF_ALIGNMENT - 1));
-	 if (pskb_expand_head(newskb, val, val, GFP_KERNEL)) {
+
+	if (pskb_expand_head(newskb, val, val, GFP_ATOMIC)) {
 		dev_err(dev, "cpri reallocation failed!!\n");
 		return -EFAULT;
-	 }
+	}
 
 	/* check if there is space to queue this packet */
 	if (!tx_bd->num_txbdfree) {
@@ -646,13 +548,10 @@ static int cpri_eth_xmit(struct sk_buff *newskb, struct net_device *ndev)
 		return NETDEV_TX_BUSY;
 	}
 
-
-	/* update the descriptor */
-
 	txbde_le.lstatus = 0;
-	txbde_le.lstatus |= BD_LFLAG_LSHIFT(skb_headlen(newskb));
+	txbde_le.lstatus |= BD_LFLAG_LSHIFT(newskb->len);
 	txbde_le.buf_ptr = dma_map_single(&priv->ofdev->dev, newskb->data,
-			skb_headlen(newskb), DMA_TO_DEVICE);
+		newskb->len, DMA_TO_DEVICE);
 	txbde_le.lstatus |= BD_LFLAG_FSHIFT(CPRI_ETH_BD_TX_READY);
 
 	tx_bd->tx_skbuff[tx_bd->skb_curtx] = newskb;
@@ -662,14 +561,6 @@ static int cpri_eth_xmit(struct sk_buff *newskb, struct net_device *ndev)
 	txbde = tx_bd->tx_bd_current;
 	dev_dbg(dev, "transmitted bd: lstatus: 0x%x, buf_ptr: 0x%x\n",
 			txbde_le.lstatus, txbde_le.buf_ptr);
-	for (loop = 0; loop < skb_headlen(newskb);) {
-		dev_dbg(dev, "0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x",
-		*((newskb->data + loop)), *((newskb->data + loop + 1)),
-		*((newskb->data + loop + 2)), *((newskb->data + loop + 3)),
-		*((newskb->data + loop + 4)), *((newskb->data + loop + 5)),
-		*((newskb->data + loop + 6)), *((newskb->data + loop + 7)));
-		loop += 8;
-	}
 
 	spin_lock_irqsave(&tx_bd->txlock, flags);
 	cpri_eth_bd_to_be(txbde, &txbde_le); /* b-endian */
@@ -702,7 +593,6 @@ static int cpri_eth_xmit(struct sk_buff *newskb, struct net_device *ndev)
 		priv->stats.tx_fifo_errors++;
 		dev_err(dev, "cpri no space to queue!!\n");
 	}
-
 
 	cpri_reg_vset_val(&framer->regs->cpri_tethwriteptr, reg_data);
 	spin_unlock_irqrestore(&tx_bd->txlock, flags);
@@ -1083,7 +973,7 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 		skb = tx_bd->tx_skbuff[skb_dirtytx];
 
 		dma_unmap_single(&priv->ofdev->dev, txbde_le.buf_ptr,
-			skb_headlen(skb), DMA_TO_DEVICE);
+			skb->len, DMA_TO_DEVICE);
 
 		bytes_sent += skb->len;
 
@@ -1111,7 +1001,6 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 	/* Update dirty indicators */
 	tx_bd->skb_dirtytx = skb_dirtytx;
 	tx_bd->tx_bd_dirty = txbde;
-
 
 	netdev_completed_queue(ndev, howmany, bytes_sent);
 	cpri_reg_write(&framer->regs_lock,
@@ -1185,120 +1074,66 @@ static int cpri_eth_rx_pkt_error(struct net_device *ndev,
 	return 0;
 }
 
-static int cpri_eth_rx_pkt(struct net_device *ndev, unsigned int skb_currx)
-{
-	int pkt_len, ret;
-	struct sk_buff *newskb, *skb;
-	struct cpri_eth_priv *priv = netdev_priv(ndev);
-	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
-	struct cpri_eth_bd_entity *rxbde, rxbde_le;
-	int loop;
-	struct device *dev = priv->framer->cpri_dev->dev;
-
-	memset(&rxbde_le, 0, sizeof(struct cpri_eth_bd_entity));
-
-	rxbde = rx_bd->rx_bd_base + skb_currx;
-	rmb();
-	skb = rx_bd->rx_skbuff[skb_currx];
-	/* Add another skb for the future */
-	newskb = cpri_eth_new_skb(ndev);
-	rmb();
-
-	CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
-	pkt_len = BD_LSTATUS_LSHIFT(rxbde_le.lstatus);
-	if (!rxbde_le.buf_ptr) {
-		dev_err(dev, "rxbde_le.buf_ptr got corrupted\n");
-		goto SKIP;
-	}
-	dma_unmap_single(&priv->ofdev->dev, rxbde_le.buf_ptr,
-			priv->rx_buffer_size, DMA_FROM_DEVICE);
-
-
-	if (skb->pkt_type == PACKET_MULTICAST)
-		priv->stats.multicast++;
-
-	if (unlikely(!newskb)) {
-		/* we drop the current packet and reuse the skb */
-		priv->stats.rx_dropped++;
-		newskb = skb;
-	} else {
-		/* Increment the number of packets */
-		priv->stats.rx_packets++;
-		if (!(priv->flags & CPRI_ETH_HW_CRC_STRIP)) {
-			/* We need to strip it */
-			pkt_len -= ETH_FCS_LEN;
-		}
-		cpri_eth_stats_incr_val(&priv->stats.rx_bytes, pkt_len);
-
-		dev_dbg(dev, "rx_bd- buf_ptr: 0x%x, lsts: 0x%x, len: %d\n",
-				rxbde_le.buf_ptr, rxbde_le.lstatus, pkt_len);
-		for (loop = 0; loop < pkt_len;) {
-			dev_dbg(dev, "0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x",
-			*((skb->data + loop)), *((skb->data + loop + 1)),
-			*((skb->data + loop + 2)), *((skb->data + loop + 3)),
-			*((skb->data + loop + 4)), *((skb->data + loop + 5)),
-			*((skb->data + loop + 6)), *((skb->data + loop + 7)));
-			loop += 8;
-		}
-
-		skb_put(skb, pkt_len);
-		cpri_eth_stats_incr_val(&priv->stats.rx_bytes, pkt_len);
-		/* No checksum offloading */
-		skb_checksum_none_assert(skb);
-
-		/* Tell the skb what kind of packet this is */
-		skb->protocol = eth_type_trans(skb, ndev);
-
-		ret = netif_receive_skb(skb);
-
-		if (NET_RX_DROP == ret) {
-			priv->stats.rx_dropped++;
-			priv->extra_stats.kernel_dropped++;
-		}
-	}
-
-SKIP:
-	rx_bd->rx_skbuff[skb_currx] = newskb;
-
-	cpri_new_rxbdp(rx_bd, rxbde, newskb, skb_currx);
-	return 0;
-}
-
 static int cpri_eth_clean_rx_ring(struct net_device *ndev, int budget)
 {
 	int howmany = 0, pkterr = 0;
 	unsigned int skb_currx = 0;
-	struct cpri_eth_bd_entity *rxbde, *base;
+	struct cpri_eth_bd_entity *rxbde;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
 	struct cpri_eth_bd_entity rxbde_le;
+	struct sk_buff *skb;
+	int pkt_len;
 
 	spin_lock(&priv->rx_bd->rxlock);
-	base = (struct cpri_eth_bd_entity *)rx_bd->rx_bd_base;
-	rxbde = rx_bd->rx_bd_current;
-	CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
 	skb_currx = rx_bd->skb_currx;
+	rxbde = rx_bd->rx_bd_base + skb_currx;
 
-	/* No LE conversion here. Ctrl is only a byte value */
 
-	while (!(BD_LSTATUS_SSHIFT(rxbde_le.lstatus) & CPRI_ETH_BD_RX_EMPTY)
-					&& (howmany < budget)) {
+	for (howmany = 0; howmany < budget; howmany++) {
+
+		rxbde = rx_bd->rx_bd_base + skb_currx;
+		rmb();
+		CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
+		cpri_init_rxbdp(rx_bd,
+			rx_bd->rxbuf_paddr[skb_currx], skb_currx);
+
+		if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) & CPRI_ETH_BD_RX_EMPTY)
+			break;
 
 		if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) &
 				CPRI_ETH_BD_RX_ABORT) {
 			cpri_eth_rx_pkt_error(ndev, skb_currx);
 			pkterr++;
-		} else
-			cpri_eth_rx_pkt(ndev, skb_currx);
+		} else {
+			pkt_len = BD_LSTATUS_LSHIFT(rxbde_le.lstatus);
+			skb = dev_alloc_skb(pkt_len + 2);
+			skb_reserve(skb, 2);
 
-		howmany++;
+			if (!skb)
+				priv->stats.rx_dropped++;
+			else {
+				priv->stats.rx_packets++;
+				if (!(priv->flags & CPRI_ETH_HW_CRC_STRIP)) {
+					/* We need to strip it */
+					pkt_len -= ETH_FCS_LEN;
+				}
+				cpri_eth_stats_incr_val(
+					&priv->stats.rx_bytes, pkt_len);
+				memcpy(skb_put(skb, pkt_len),
+					rx_bd->rxbuf[skb_currx], pkt_len);
 
-		rxbde =
-			cpri_eth_next_bde(rxbde, base, rx_bd->rx_bd_ring_size);
-		skb_currx =
-			CPRI_ETH_NEXT_INDX(skb_currx, rx_bd->rx_bd_ring_size);
-		CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
+				/* Tell the skb what kind of packet this is */
+				skb->protocol = eth_type_trans(skb, ndev);
 
+				netif_receive_skb(skb);
+			}
+		}
+		rxbde = cpri_eth_next_bde(rxbde,
+			rx_bd->rx_bd_base, rx_bd->rx_bd_ring_size);
+
+		skb_currx = CPRI_ETH_NEXT_INDX(skb_currx,
+				rx_bd->rx_bd_ring_size);
 	}
 
 	if (pkterr)

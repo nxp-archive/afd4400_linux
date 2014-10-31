@@ -30,6 +30,13 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/**
+ * @file cpri.h CPRI library header
+ *
+ * @brief This file contains CPRI data structure to be used by user application.
+ *
+ */
+
 #ifndef _UAPI_CPRI_H
 #define _UAPI_CPRI_H
 
@@ -112,17 +119,42 @@ enum cpri_errors_bitpos {
 	RSDI_BITPOS,
 	LLOS_BITPOS,
 	LLOF_BITPOS,
+/**
+ * Reset request
+ */
 	RRE_BITPOS,
 	FAE_BITPOS,
+/**
+ * Reset ack
+ */
 	RRA_BITPOS,
 /**
  * Errors that's not in the CPRI interrupt registers
  */
 	CPRI_USER_MONITOR_START,
+/**
+ * JCPLL lock detect, this is omitted if the framer is in REC mode.
+ * Note that if you are doing single board framer to framer test,
+ * this check should also be skipped at the RE framer
+ * because the JCPLL should be disabled in single board test.
+ */
 	JCPLL_LOCK_LOSS_BITPOS = CPRI_USER_MONITOR_START,
+/**
+ * Find protocal version mismatch
+ */
 	PROTO_VER_MISMATCH_BITPOS,
+/**
+ * Find Ethernet pointer mismatch
+ */
 	ETH_PTR_MISMATCH_BITPOS,
+/**
+ * Find 8b/10b error at the rx side
+ */
 	RX_LINE_RATE_CODING_VIOLATION_BITPOS,
+/**
+ * Reg cpri_state[3:0] != 0xE, indicating that
+ * CPRI loses sync.
+ */
 	CPRI_RATE_SYNC_BITPOS,
 /**
  * The SFP gpio error are expanded to 3 fields below
@@ -535,17 +567,17 @@ struct cpri_axc_map_offset {
 						struct axc_config)
 #define CPRI_AXC_CTRL				_IOW(CPRI_MAGIC, 18, \
 						struct axc_config)
-#define CPRI_BD_DUMP				_IOW(CPRI_MAGIC, 19, \
-							unsigned int)
-#define SERDES_AMP_SET				_IOW(CPRI_MAGIC, 20, \
+#define SERDES_AMP_SET				_IOW(CPRI_MAGIC, 19, \
 						struct serdes_amp_data)
 
-#define CPRI_RX_CTRL_TABLE			_IOR(CPRI_MAGIC, 21, \
+#define CPRI_RX_CTRL_TABLE			_IOR(CPRI_MAGIC, 20, \
 						struct rx_cw_params)
-#define CPRI_TX_CTRL_TABLE			_IOWR(CPRI_MAGIC, 22, \
+#define CPRI_TX_CTRL_TABLE			_IOWR(CPRI_MAGIC, 21, \
 						struct tx_cw_params)
 
-#define CPRI_AXC_MAP_CONFIG			_IOW(CPRI_MAGIC, 23, \
+#define CPRI_AXC_MAP_CONFIG			_IOW(CPRI_MAGIC, 22, \
 						struct axc_map_config)
 
+#define CPRI_HW_RESET                           _IOR(CPRI_MAGIC, 23, \
+						int)
 #endif /* _UAPI_CPRI_H */

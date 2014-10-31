@@ -378,6 +378,18 @@ static void do_err_stats_update(struct cpri_framer *framer,
 	int i;
 
 	for (i = 0; i < CPRI_USER_MONITOR_START; i++) {
+		/* The RRE and RRA should be treated differently now
+		 * due to the chip bug.
+		 */
+		if (mask & (RRE | RRA)) {
+			if (framer->autoneg_params.mode & RE_MODE_SLAVE)
+				atomic_inc(&framer->err_cnt[RRE_BITPOS]);
+			else
+				atomic_inc(&framer->err_cnt[RRA_BITPOS]);
+		}
+
+		/* Update others */
+		mask &= (~(RRE | RRA));
 		if (mask & (1 << i))
 			atomic_inc(&framer->err_cnt[i]);
 	}

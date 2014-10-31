@@ -195,10 +195,6 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 
-	case CPRI_BD_DUMP:
-		bd_dump(framer->eth_priv->ndev);
-		break;
-
 	case CPRI_READ_REG:
 		if (copy_from_user(&rreg, (struct cpri_reg_read_buf *)ioargp,
 				sizeof(struct cpri_reg_read_buf)) != 0) {

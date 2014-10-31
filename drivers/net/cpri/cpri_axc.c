@@ -710,7 +710,7 @@ int cpri_axc_ioctl(struct cpri_framer *framer, unsigned long arg,
 		goto out;
 	}
 
-	return 0;
+	return err;
 out:
 	kfree(axc_info);
 	if (err)

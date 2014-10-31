@@ -80,7 +80,8 @@ struct cpri_eth_rx_bd {
 	spinlock_t rxlock;
 	struct cpri_eth_bd_entity *rx_bd_base;
 	dma_addr_t rx_bd_dma_base;
-	struct	sk_buff **rx_skbuff;
+	char **rxbuf;
+	dma_addr_t *rxbuf_paddr;
 	struct cpri_eth_bd_entity *rx_bd_current;
 	unsigned int skb_currx;
 	unsigned char rx_bd_ring_size;
@@ -161,7 +162,7 @@ do {\
 #define CPRI_ETH_DEF_TX_RING_SIZE	254
 #define CPRI_ETH_DEF_RX_RING_SIZE	254
 #define CPRI_ETH_DEF_TX_START_THRESH	4
-#define CPRI_ETH_DEF_RX_BUF_SIZE	4096
+#define CPRI_ETH_DEF_RX_BUF_SIZE	2048
 #define CPRI_ETH_DEF_MTU		1500
 #define CPRI_ETH_DEF_RX_COAL_THRESH	0
 #define CPRI_ETH_DEF_TX_COAL_THRESH	0
@@ -194,7 +195,7 @@ do {\
 #define CPRI_ETH_STORE_FWD		0x00040000
 
 #define CPRI_ETH_DEF_FLAGS (CPRI_ETH_TRIG | CPRI_ETH_BCAST | \
-		CPRI_ETH_MCAST_FLT | CPRI_ETH_LEN_CHECK | \
+		CPRI_ETH_MCAST_FLT | \
 		CPRI_ETH_HW_CRC_EN | CPRI_ETH_HW_CRC_CHECK | \
 		CPRI_ETH_MAC_CHECK | CPRI_ETH_HW_CRC_STRIP)
 
