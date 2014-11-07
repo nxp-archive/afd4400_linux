@@ -771,9 +771,6 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 		 */
 		if (framer->autoneg_params.mode & RE_MODE_SLAVE)
 			cpri_config_hwrst(framer, 1);
-		else
-			cpri_config_hwrst(framer, 0);
-
 
 		set_bit(CPRI_RATE_BITPOS,
 			&framer->cpri_state);

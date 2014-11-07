@@ -1076,8 +1076,7 @@ static int cpri_eth_rx_pkt_error(struct net_device *ndev,
 
 static int cpri_eth_clean_rx_ring(struct net_device *ndev, int budget)
 {
-	int howmany = 0, pkterr = 0;
-	unsigned int skb_currx = 0;
+	int howmany;
 	struct cpri_eth_bd_entity *rxbde;
 	struct cpri_eth_priv *priv = netdev_priv(ndev);
 	struct cpri_eth_rx_bd *rx_bd = priv->rx_bd;
@@ -1086,33 +1085,26 @@ static int cpri_eth_clean_rx_ring(struct net_device *ndev, int budget)
 	int pkt_len;
 
 	spin_lock(&priv->rx_bd->rxlock);
-	skb_currx = rx_bd->skb_currx;
-	rxbde = rx_bd->rx_bd_base + skb_currx;
-
 
 	for (howmany = 0; howmany < budget; howmany++) {
 
-		rxbde = rx_bd->rx_bd_base + skb_currx;
+		rxbde = rx_bd->rx_bd_base + rx_bd->skb_currx;
 		rmb();
 		CPRI_ETH_BD_TO_LE(&rxbde_le, rxbde); /* b-endian */
-		cpri_init_rxbdp(rx_bd,
-			rx_bd->rxbuf_paddr[skb_currx], skb_currx);
 
 		if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) & CPRI_ETH_BD_RX_EMPTY)
 			break;
 
 		if (BD_LSTATUS_SSHIFT(rxbde_le.lstatus) &
 				CPRI_ETH_BD_RX_ABORT) {
-			cpri_eth_rx_pkt_error(ndev, skb_currx);
-			pkterr++;
+			cpri_eth_rx_pkt_error(ndev, rx_bd->skb_currx);
+			cpri_eth_check_rx_ex_status_reg(ndev);
 		} else {
 			pkt_len = BD_LSTATUS_LSHIFT(rxbde_le.lstatus);
-			skb = dev_alloc_skb(pkt_len + 2);
-			skb_reserve(skb, 2);
+			skb = netdev_alloc_skb(ndev, pkt_len + 2);
 
-			if (!skb)
-				priv->stats.rx_dropped++;
-			else {
+			if (skb != NULL) {
+				skb_reserve(skb, 2);
 				priv->stats.rx_packets++;
 				if (!(priv->flags & CPRI_ETH_HW_CRC_STRIP)) {
 					/* We need to strip it */
@@ -1121,26 +1113,26 @@ static int cpri_eth_clean_rx_ring(struct net_device *ndev, int budget)
 				cpri_eth_stats_incr_val(
 					&priv->stats.rx_bytes, pkt_len);
 				memcpy(skb_put(skb, pkt_len),
-					rx_bd->rxbuf[skb_currx], pkt_len);
+					rx_bd->rxbuf[rx_bd->skb_currx],
+					pkt_len);
 
 				/* Tell the skb what kind of packet this is */
 				skb->protocol = eth_type_trans(skb, ndev);
 
 				netif_receive_skb(skb);
-			}
+			} else
+				priv->stats.rx_dropped++;
 		}
-		rxbde = cpri_eth_next_bde(rxbde,
-			rx_bd->rx_bd_base, rx_bd->rx_bd_ring_size);
 
-		skb_currx = CPRI_ETH_NEXT_INDX(skb_currx,
-				rx_bd->rx_bd_ring_size);
+		cpri_init_rxbdp(rx_bd,
+			rx_bd->rxbuf_paddr[rx_bd->skb_currx],
+			rx_bd->skb_currx);
+
+		rx_bd->skb_currx = CPRI_ETH_NEXT_INDX(rx_bd->skb_currx,
+			rx_bd->rx_bd_ring_size);
+
 	}
 
-	if (pkterr)
-		cpri_eth_check_rx_ex_status_reg(ndev);
-
-	rx_bd->rx_bd_current = rxbde;
-	rx_bd->skb_currx = skb_currx;
 	spin_unlock(&priv->rx_bd->rxlock);
 
 	return howmany;
