@@ -112,23 +112,28 @@ static void cpri_config_axc_offset(struct cpri_framer *framer,
 	cpri_write(reg_val, &framer->regs->cpri_tstartoffset);
 }
 
-/* Enable CPRI HW reset the board.
- * Right now single hop reset function is tested.
- */
-void cpri_config_hwrst(struct cpri_framer *framer, int enable)
+/* Config the CPRI hardware reset */
+
+void cpri_cw130_config(struct cpri_framer *framer, u32 enable_mask)
 {
 
-	src_cpri_hwrst(enable);
+	u32 cw130_auxmask = (CW130_RST | CW130_RAI | CW130_SDI |
+				CW130_LOS | CW130_LOF);
 
-	if (enable) {
-		cpri_write(0x303,
-			&framer->cpri_dev->regs->cpri_remresetoutputctrl);
-		cpri_reg_set(&framer->regs->cpri_hwreset, 0x4);
-	} else {
-		cpri_write(0,
-			&framer->cpri_dev->regs->cpri_remresetoutputctrl);
-		cpri_reg_clear(&framer->regs->cpri_hwreset, 0x4);
+	if (framer->autoneg_params.mode & RE_MODE_SLAVE) {
+		src_cpri_hwrst(enable_mask & CPRI_HW_RESET_EN);
+		if (enable_mask & CPRI_HW_RESET_EN) {
+			cpri_write(0x303,
+				&framer->cpri_dev->regs->cpri_remresetoutputctrl);
+			cpri_reg_set(&framer->regs->cpri_hwreset, 0x4);
+		}
 	}
+
+	cpri_reg_set(&framer->regs->cpri_auxcwdmask[130 / 32],
+		1 << (130 % 32));
+	cpri_reg_set(&framer->regs->cpri_auxcwdmasken, CW130_EN_MASK);
+	cpri_reg_set(&framer->regs->cpri_auxcwd130mask,
+			enable_mask & cw130_auxmask);
 }
 
 long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
@@ -512,8 +517,8 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 	break;
 
-	case CPRI_HW_RESET:
-		cpri_config_hwrst(framer, (int)ioargp);
+	case CPRI_CW130_CONFIG:
+		cpri_cw130_config(framer, (u32)ioargp);
 	break;
 
 	default:

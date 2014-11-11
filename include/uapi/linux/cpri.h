@@ -176,12 +176,6 @@ enum cpri_errors_bitpos {
  * total number of possible CPRI errors
  */
 	CPRI_ERR_CNT,
- /**
-  * reset ack function enable, not considered as an error,
-  * but it's going to use the same kernel timer
-  * to poll the status.
-  */
-	CPRI_RESET_ACK_BITPOS = CPRI_ERR_CNT,
 };
 
 #define RX_IQ_OVERRUN				\
@@ -244,8 +238,6 @@ enum cpri_errors_bitpos {
 	(1 << CPRI_RATE_SYNC_BITPOS)
 #define SFP_MONITOR				\
 	(1 << SFP_MONITOR_BITPOS)
-#define CPRI_RESET_ACK				\
-	(1ULL << CPRI_RESET_ACK_BITPOS)
 /**
  * The errors that are polled by the kernel timer
  */
@@ -255,7 +247,6 @@ enum cpri_errors_bitpos {
 		| ETH_PTR_MISMATCH		\
 		| RX_LINE_RATE_CODING_VIOLATION \
 		| CPRI_RATE_SYNC		\
-		| CPRI_RESET_ACK		\
 		| RRE | RAI | RSDI | RLOS | RLOF)
 
 /**
@@ -285,6 +276,13 @@ enum cpri_errors_bitpos {
 				| RRE \
 				| FAE \
 				| RRA)
+
+#define CW130_RST	0x1
+#define CW130_RAI	0x2
+#define CW130_SDI	0x4
+#define CW130_LOS	0x8
+#define CW130_LOF	0x10
+#define CPRI_HW_RESET_EN	0x20
 
 enum cpri_prot_ver {
 	VER_1 = 1,
@@ -364,6 +362,15 @@ struct cpri_autoneg_params {
  * eg. restart rate autonegotiation.
  */
 #define RESET_LINK	(1 << 6)
+
+/**
+ * Enable CPRI serdes loopback
+ * This is only a test functionality, should be use
+ * together with REC_MODE and RESET_LINK, all 4 framers
+ * will be configured at internal serdes loopback mode.
+ */
+#define CPRI_SERDES_LOOPBACK (1 << 7)
+
 /**
  * Steps to be done in autoneg
  * If not set this autoneg step will be skipped.
@@ -578,6 +585,6 @@ struct cpri_axc_map_offset {
 #define CPRI_AXC_MAP_CONFIG			_IOW(CPRI_MAGIC, 22, \
 						struct axc_map_config)
 
-#define CPRI_HW_RESET                           _IOR(CPRI_MAGIC, 23, \
+#define CPRI_CW130_CONFIG                       _IOR(CPRI_MAGIC, 23, \
 						int)
 #endif /* _UAPI_CPRI_H */

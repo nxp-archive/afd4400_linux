@@ -134,6 +134,8 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 	lane_param.gen_conf.bit_rate_kbps = line_rate[linerate];
 	lane_param.gen_conf.cflag = (SERDES_20BIT_EN |  SERDES_TPLL_LES |
 			SERDES_RPLL_LES | SERDES_FIRST_LANE);
+	if (framer->autoneg_params.mode & CPRI_SERDES_LOOPBACK)
+		lane_param.gen_conf.cflag |= SERDES_LOOPBACK_EN;
 
 	for (i = 0; i < 4; i++) {
 		lane_param.grp_prot = grp_prot_sel[i];
@@ -288,6 +290,7 @@ static void cpri_init_framer(struct cpri_framer *framer,
 static void link_monitor_handler(unsigned long ptr)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)ptr;
+	struct cpri_framer *pair_framer;
 	struct cpri_autoneg_output *result = &(framer->autoneg_output);
 	u8 cw_data[16];
 	u32 reset_status;
@@ -306,19 +309,23 @@ static void link_monitor_handler(unsigned long ptr)
 			!(framer->autoneg_params.mode & RE_MODE_SLAVE))
 				atomic_inc(&framer->err_cnt[RRA_BITPOS]);
 	}
-	/* Sends back reset ack in slave mode */
-	if (framer->cpri_enabled_monitor & CPRI_RESET_ACK &&
-		(framer->autoneg_params.mode & RE_MODE_SLAVE)) {
-		spin_lock(&framer->tx_cw_lock);
-		rdwr_tx_cw(framer, 130, TX_CW_READ, cw_data);
 
-		if (reset_status)
-			cw_data[0] |= CW130_RST;
-		else
-			cw_data[0] &= (~CW130_RST);
-
-		rdwr_tx_cw(framer, 130, TX_CW_WRITE, cw_data);
-		spin_unlock(&framer->tx_cw_lock);
+	/* Sends back reset ack in slave mode only
+	 * If in daisy chain mode, the ack should be
+	 * coming from node connected downlink
+	 */
+	if (reset_status) {
+		if (framer->autoneg_params.mode & RE_MODE_SLAVE) {
+			pair_framer = framer->cpri_dev->framer[1];
+			if (!(pair_framer->autoneg_params.mode &
+					RE_MODE_MASTER)) {
+				spin_lock(&framer->tx_cw_lock);
+				rdwr_tx_cw(framer, 130, TX_CW_READ, cw_data);
+				cw_data[0] |= CW130_RST;
+				rdwr_tx_cw(framer, 130, TX_CW_WRITE, cw_data);
+				spin_unlock(&framer->tx_cw_lock);
+			}
+		}
 	}
 
 	/* Check control word 130, just in case we missed the interrupts */
@@ -501,7 +508,7 @@ static int cpri_cm_autoneg(struct cpri_framer *framer)
 	struct cpri_autoneg_params *param = &(framer->autoneg_params);
 	struct timer_list eth_setup_timer;
 	struct cpri_framer_regs *regs = framer->regs;
-	struct device *dev = framer->cpri_dev->dev;
+	/* struct device *dev = framer->cpri_dev->dev; */
 	u8 tx_eth_rate;
 	u32 cmconfig;
 	struct cpri_autoneg_output *result = &(framer->autoneg_output);
@@ -543,14 +550,17 @@ static int cpri_cm_autoneg(struct cpri_framer *framer)
 	del_timer(&eth_setup_timer);
 	if (test_bit(ETHPTR_TIMEREXP_BITPOS,
 		&framer->timer_expiry_events)) {
-		dev_info(dev, "C&M autoneg fail\n");
+		pr_warn("cp%d_frmr%d C&M autoneg fail\n",
+				framer->cpri_dev->dev_id,
+				framer->id);
 		return -ETIME;
 	} else {
 		result->common_eth_ptr = tx_eth_rate;
 		set_bit(CPRI_ETHPTR_BITPOS,
 			&framer->cpri_state);
-		dev_info(dev, "C&M autoneg success, eth ptr:%d\n",
-			result->common_eth_ptr);
+		pr_info("cp%d_frmr%d C&M autoneg success, eth ptr:%d\n",
+				framer->cpri_dev->dev_id,
+				framer->id, result->common_eth_ptr);
 		return 0;
 	}
 }
@@ -570,7 +580,7 @@ static int cpri_proto_autoneg(struct cpri_framer *framer)
 	struct cpri_autoneg_output *result = &(framer->autoneg_output);
 	struct cpri_framer_regs  __iomem *regs = framer->regs;
 	struct timer_list proto_setup_timer;
-	struct device *dev = framer->cpri_dev->dev;
+	/* struct device *dev = framer->cpri_dev->dev; */
 	enum cpri_prot_ver tproto_ver, rproto_ver;
 	unsigned long timer_dur;
 	u8 rx_scr_en;
@@ -618,7 +628,9 @@ static int cpri_proto_autoneg(struct cpri_framer *framer)
 	del_timer(&proto_setup_timer);
 	if (test_bit(PROTVER_TIMEREXP_BITPOS,
 		&framer->timer_expiry_events)) {
-		dev_err(dev, "protocal autoneg failure!");
+		pr_warn("cp%d_frmr%d protocal autoneg failure!",
+				framer->cpri_dev->dev_id,
+				framer->id);
 		return -ETIME;
 	} else {
 		result->common_prot_ver = tproto_ver;
@@ -626,7 +638,9 @@ static int cpri_proto_autoneg(struct cpri_framer *framer)
 			cpri_read(&regs->cpri_rscrseed) & SCR_SEED_MASK;
 		set_bit(CPRI_PROTVER_BITPOS,
 			&framer->cpri_state);
-		dev_info(dev, "protocol autoneg success at version%d\n",
+		pr_info("cp%d_frmr%d protocol autoneg success, ver:%d\n",
+				framer->cpri_dev->dev_id,
+				framer->id,
 				result->common_prot_ver);
 		return 0;
 	}
@@ -636,7 +650,7 @@ static int check_linesync(struct cpri_framer *framer,
 			enum cpri_link_rate rate)
 {
 	struct cpri_framer_regs __iomem *regs = framer->regs;
-	struct device *dev = framer->cpri_dev->dev;
+	/* struct device *dev = framer->cpri_dev->dev; */
 	struct cpri_autoneg_output *result = &(framer->autoneg_output);
 	int err = 0;
 	u32 mask;
@@ -670,8 +684,9 @@ static int check_linesync(struct cpri_framer *framer,
 		err = -ETIME;
 	if (!err) {
 		result->common_rate = rate;
-		dev_info(dev, "line rate autoneg success at %s Mbps",
-				rate_name[rate - 1]);
+		pr_info("cp%d_frmr%d rate autoneg success, %s Mbps",
+				framer->cpri_dev->dev_id,
+				framer->id, rate_name[rate - 1]);
 	}
 
 	return err;
@@ -763,15 +778,11 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 	}
 
 	if (err != 0) {
-		dev_err(dev, "CPRI rate autoneg failed\n");
+		pr_warn("cp%d_frmr%d rate autoneg failed\n",
+			framer->cpri_dev->dev_id,
+			framer->id);
 	} else {
 		del_timer(&linerate_timer);
-		/* By default, enable CPRI HW reset board function.
-		 * User can turn this off in ioctl.
-		 */
-		if (framer->autoneg_params.mode & RE_MODE_SLAVE)
-			cpri_config_hwrst(framer, 1);
-
 		set_bit(CPRI_RATE_BITPOS,
 			&framer->cpri_state);
 	}
@@ -849,9 +860,8 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 		break;
 
 	default:
-		err = -EINVAL;
-		dev_info(dev, "got invalid autoneg cmd: %d\n", cmd);
-		goto out;
+		dev_info(dev, "got invalid cmd: %x\n", cmd);
+		return -EINVAL;
 	}
 	return 0;
 

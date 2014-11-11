@@ -545,11 +545,6 @@ struct axc_cmd_regs {
 /* Mask in control word 2, 194 and 130 in CPRI spec */
 #define CW2_MASK	0x3
 #define CW194_MASK	0x3F
-#define CW130_RST	0x1
-#define CW130_RAI	0x2
-#define CW130_SDI	0x4
-#define CW130_LOS	0x8
-#define CW130_LOF	0x10
 
 /* CPRInRER & CPRInTER */
 #define IEVENT_BFN_MASK				0x80
@@ -810,5 +805,6 @@ void cpri_set_monitor(struct cpri_framer *framer,
 void cpri_clear_monitor(struct cpri_framer *framer,
 		const struct monitor_config_disable *monitor_cfg_dis);
 void src_cpri_hwrst(int enable);
-void cpri_config_hwrst(struct cpri_framer *framer, int enable);
+
+void cpri_cw130_config(struct cpri_framer *framer, u32 enable_mask);
 #endif /* __CPRI_H */
