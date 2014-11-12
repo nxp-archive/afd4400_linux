@@ -1238,7 +1238,10 @@
 				dbgregstart = <0x20025000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <10>;
-				interrupts = <0 213 0x4>;
+				interrupts = <0 24 0x4>,
+					     <0 25 0x4>,
+					     <0 26 0x4>,
+					     <0 27 0x4>;
 				status = "okay";
 			};
 			vspa10: vspa@0x000d8000 {
@@ -1247,7 +1250,10 @@
 				dbgregstart = <0x20024000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <9>;
-				interrupts = <0 214 0x4>;
+				interrupts = <0 95 0x4>,
+					     <0 96 0x4>,
+					     <0 97 0x4>,
+					     <0 98 0x4>;
 				status = "okay";
 			};
 			vspa9: vspa@0x000DC000 {
@@ -1256,7 +1262,10 @@
 				dbgregstart = <0x20023000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <8>;
-				interrupts = <0 215 0x4>;
+				interrupts = <0 129 0x4>,
+					     <0 130 0x4>,
+					     <0 131 0x4>,
+					     <0 132 0x4>;
 				status = "okay";
 			};
 			vspa8: vspa@0x000e0000 {
@@ -1265,7 +1274,10 @@
 				dbgregstart = <0x20022000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <7>;
-				interrupts = <0 216 0x4>;
+				interrupts = <0 164 0x4>,
+					     <0 165 0x4>,
+					     <0 166 0x4>,
+					     <0 167 0x4>;
 				status = "okay";
 			};
 			vspa7: vspa@0x000e4000 {
@@ -1274,7 +1286,10 @@
 				dbgregstart = <0x20028000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <6>;
-				interrupts = <0 217 0x4>;
+				interrupts = <0 168 0x4>,
+					     <0 169 0x4>,
+					     <0 170 0x4>,
+					     <0 171 0x4>;
 				status = "okay";
 			};
 			vspa6: vspa@0x000e8000 {
@@ -1283,7 +1298,10 @@
 				dbgregstart = <0x20027000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <5>;
-				interrupts = <0 218 0x4>;
+				interrupts = <0 200 0x4>,
+					     <0 201 0x4>,
+					     <0 202 0x4>,
+					     <0 203 0x4>;
 				status = "okay";
 			};
 			vspa5: vspa@0x000EC000 {
@@ -1292,7 +1310,10 @@
 				dbgregstart = <0x20026000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <4>;
-				interrupts = <0 219 0x4>;
+				interrupts = <0 204 0x4>,
+					     <0 205 0x4>,
+					     <0 206 0x4>,
+					     <0 207 0x4>;
 				status = "okay";
 			};
 			vspa4: vspa@0x000f0000 {
@@ -1301,7 +1322,10 @@
 				dbgregstart = <0x20021000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <3>;
-				interrupts = <0 220 0x4>;
+				interrupts = <0 208 0x4>,
+					     <0 209 0x4>,
+					     <0 210 0x4>,
+					     <0 211 0x4>;
 				status = "okay";
 			};
 			vspa3: vspa@0x000f4000 {
@@ -1310,7 +1334,10 @@
 				dbgregstart = <0x20020000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <2>;
-				interrupts = <0 221 0x4>;
+				interrupts = <0 212 0x4>,
+					     <0 213 0x4>,
+					     <0 214 0x4>,
+					     <0 215 0x4>;
 				status = "okay";
 			};
 			vspa2: vspa@0x000f8000 {
@@ -1319,7 +1346,10 @@
 				dbgregstart = <0x2001F000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <1>;
-				interrupts = <0 222 0x4>;
+				interrupts = <0 216 0x4>,
+					     <0 217 0x4>,
+					     <0 218 0x4>,
+					     <0 219 0x4>;
 				status = "okay";
 			};
 			vspa1: vspa@0x000FC000 {
@@ -1328,7 +1358,10 @@
 				dbgregstart = <0x2001E000>;
 				dbgreglen = <0x1000>;
 				vspadev-id  = <0>;
-				interrupts = <0 223 0x4>;
+				interrupts = <0 220 0x4>,
+					     <0 221 0x4>,
+					     <0 222 0x4>,
+					     <0 223 0x4>;
 				status = "okay";
 			};
 

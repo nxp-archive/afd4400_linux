@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Freescale Semiconductor, Inc.
+ * Copyright (C) 2013-2015 Freescale Semiconductor, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -33,19 +33,7 @@
 #ifndef _UAPI_VSPA_H
 #define _UAPI_VSPA_H
 
-#define VSP_MAGIC_NUM 'V'
-
-/* IRQ request IOCTL */
-#define IOCTL_REQ_IRQ   _IOR(VSP_MAGIC_NUM, 1, int)
-
-/* Power Down request for vspa */
-#define IOCTL_REQ_PDN   _IOR(VSP_MAGIC_NUM, 2, int)
-
-/* Power UP request for vspa */
-#define IOCTL_REQ_PUP   _IOR(VSP_MAGIC_NUM, 3, int)
-
-/* Free the persistent memory & irq */
-#define IOCTL_REQ_FREE   _IOR(VSP_MAGIC_NUM, 4, int)
+#define VSPA_MAGIC_NUM 'V'
 
 /* mmap offset argument for vspa regsiters */
 #define VSPA_REG_OFFSET	0
@@ -53,7 +41,191 @@
 /* mmap offset argument for dbg regsiter */
 #define VSPA_DBG_OFFSET	4096
 
-/* mmap offset argument for vspa device context memory */
-#define VSPA_DS_OFFSET	8192
+enum vspa_state {
+	VSPA_STATE_UNKNOWN = 0,
+	VSPA_STATE_PWR_DOWN,
+	VSPA_STATE_UNPROGRAMMED_IDLE,
+	VSPA_STATE_UNPROGRAMMED_BUSY,
+	VSPA_STATE_LOADING,
+	VSPA_STATE_STARTUP_ERR,
+	VSPA_STATE_RUNNING_IDLE,
+	VSPA_STATE_RUNNING_BUSY
+};
+
+enum vspa_event_type {
+	VSPA_EVENT_DMA = 1,
+	VSPA_EVENT_CMD,
+	VSPA_EVENT_REPLY,
+	VSPA_EVENT_SPM,
+	VSPA_EVENT_MB64_IN,
+	VSPA_EVENT_MB32_IN,
+	VSPA_EVENT_MB64_OUT,
+	VSPA_EVENT_MB32_OUT,
+	VSPA_EVENT_ERROR
+};
+
+#define VSPA_FLAG_EXPECT_CMD_REPLY	(1<<0)
+#define VSPA_FLAG_REPORT_CMD_REPLY	(1<<1)
+#define VSPA_FLAG_REPORT_CMD_CONSUMED	(1<<2)
+#define VSPA_FLAG_REPORT_DMA_COMPLETE	(1<<3)
+#define VSPA_FLAG_REPORT_MB_COMPLETE	(1<<4)
+
+#define VSPA_MSG_PEEK			(0x10<<0)
+#define VSPA_MSG_DMA			(0x10<<VSPA_EVENT_DMA)
+#define VSPA_MSG_CMD			(0x10<<VSPA_EVENT_CMD)
+#define VSPA_MSG_REPLY			(0x10<<VSPA_EVENT_REPLY)
+#define VSPA_MSG_SPM			(0x10<<VSPA_EVENT_SPM)
+#define VSPA_MSG_MB64_IN		(0x10<<VSPA_EVENT_MB64_IN)
+#define VSPA_MSG_MB32_IN		(0x10<<VSPA_EVENT_MB32_IN)
+#define VSPA_MSG_MB64_OUT		(0x10<<VSPA_EVENT_MB64_OUT)
+#define VSPA_MSG_MB32_OUT		(0x10<<VSPA_EVENT_MB32_OUT)
+#define VSPA_MSG_ERROR			(0x10<<VSPA_EVENT_ERROR)
+#define VSPA_MSG_ALL			(0xFFF0)
+#define VSPA_MSG_ALL_EVENTS		(0xFFE0)
+
+struct vspa_event {
+	union {
+	  uint32_t	control;
+	  struct {
+	    uint8_t	flags;
+	    uint8_t	rsvd;
+	    uint8_t	id;
+	    uint8_t	type;
+	  };
+	};
+	uint32_t	data0;
+	uint32_t	data1;
+	uint32_t	lost;
+};
+
+struct vspa_dma_req {
+	union {
+	  uint32_t	control;
+	  struct {
+	    uint8_t	flags;
+	    uint8_t	rsvd;
+	    uint8_t	id;
+	    uint8_t	type;
+	  };
+	};
+	uint32_t	dmem_addr;
+	uint32_t	axi_addr;
+	uint32_t	byte_cnt;
+	uint32_t	xfr_ctrl;
+};
+
+#define VSPA_MAX_ELD_FILENAME (256)
+struct vspa_startup {
+	uint32_t	cmd_buf_size;
+	uint32_t	cmd_buf_addr;
+	uint32_t	spm_buf_size;
+	uint32_t	spm_buf_paddr;
+	uint32_t	watchdog_interval_nsecs;
+	uint8_t		cmd_dma_chan;
+	char		filename[VSPA_MAX_ELD_FILENAME];
+};
+
+struct vspa_versions {
+	uint32_t	vspa_hw_version;
+	uint32_t	ippu_hw_version;
+	uint32_t	vspa_sw_version;
+	uint32_t	ippu_sw_version;
+};
+
+struct vspa_hardware {
+	uint32_t	param0;
+	uint32_t	param1;
+	uint32_t	param2;
+	uint32_t	axi_data_width; // bits
+	uint32_t	dma_channels;
+	uint32_t	gp_out_regs;
+	uint32_t	gp_in_regs;
+	uint32_t	dmem_bytes;
+	uint32_t	ippu_bytes;
+	uint32_t	arithmetic_units;
+};
+
+struct vspa_reg {
+	uint32_t	reg;
+	uint32_t	val;
+};
+
+struct vspa_mb32 {
+	union {
+	  uint32_t      control;
+	  struct {
+	    uint8_t     flags;
+	    uint8_t     rsvd1;
+	    uint8_t     rsvd0;
+	    uint8_t     id;
+	  };
+	};
+	uint32_t        data;
+};
+
+struct vspa_mb64 {
+	union {
+	  uint32_t      control;
+	  struct {
+	    uint8_t     flags;
+	    uint8_t     rsvd1;
+	    uint8_t     rsvd0;
+	    uint8_t     id;
+	  };
+	};
+	uint32_t        data_msb;
+	uint32_t        data_lsb;
+};
+
+struct vspa_event_read {
+	uint32_t	event_mask; // bit field of events to match
+	int		timeout; // delay in mSecs (0 = noblock, -1 = forever)	
+	size_t		buf_len; // max reply length in bytes
+	struct vspa_event *buf_ptr;
+};
+
+/* get VSPA Hardware configuration */
+#define VSPA_IOC_GET_HW_CFG	_IOR(VSPA_MAGIC_NUM, 0, struct vspa_hardware)
+
+/* VSPA operational state */
+#define VSPA_IOC_GET_STATE	_IOR(VSPA_MAGIC_NUM, 1, int)
+
+/* Read register */
+#define VSPA_IOC_REG_READ	_IOR(VSPA_MAGIC_NUM, 2, struct vspa_reg)
+
+/* Write register */
+#define VSPA_IOC_REG_WRITE	_IOW(VSPA_MAGIC_NUM, 3, struct vspa_reg)
+
+/* VSPA HW and SW versions */
+#define VSPA_IOC_GET_VERSIONS	_IOR(VSPA_MAGIC_NUM, 4, struct vspa_versions)
+
+/* Power Management request for vspa */
+#define VSPA_IOC_REQ_POWER	_IO(VSPA_MAGIC_NUM, 5)
+#define VSPA_POWER_DOWN  (0)
+#define VSPA_POWER_UP    (1)
+#define VSPA_POWER_CYCLE (2)
+
+/* DMA transaction */
+#define VSPA_IOC_DMA		_IOW(VSPA_MAGIC_NUM, 6, struct vspa_dma_req)
+
+/* Startup VSPA core */
+#define VSPA_IOC_STARTUP	_IOW(VSPA_MAGIC_NUM, 7, struct vspa_startup)
+
+/* Write Mailbox transactions */
+#define VSPA_IOC_MB32_WRITE	_IOW(VSPA_MAGIC_NUM, 8, struct vspa_mb32)
+#define VSPA_IOC_MB64_WRITE	_IOW(VSPA_MAGIC_NUM, 9, struct vspa_mb64)
+
+/* Set Watchdog interval */
+#define VSPA_IOC_WATCHDOG_INT	_IO(VSPA_MAGIC_NUM, 10)
+#define VSPA_WATCHDOG_INTERVAL_DEFAULT	(1000)
+#define VSPA_WATCHDOG_INTERVAL_MAX	(60000)
+
+/* Set the event mask used for poll checks */
+#define VSPA_IOC_SET_POLL_MASK	_IO(VSPA_MAGIC_NUM, 11)
+
+/* Retrieve the next matching event */
+#define VSPA_IOC_EVENT_READ	_IOW(VSPA_MAGIC_NUM, 12, struct vspa_event_read)
+
+#define VSPA_IOC_MAX (12)
 
 #endif /* _UAPI_VSPA_H */
