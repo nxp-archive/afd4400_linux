@@ -57,7 +57,7 @@ MODULE_LICENSE("GPL v2");
 
 static const struct rf_device_id ad9368_spi_id[] = {
 	{ "ad9368-1", DEVICE_ID_AD93681 },
-	{ "ad9525", DEVICE_ID_AD9525 },
+	{ "ad9525xx", DEVICE_ID_AD9525 },
 	{ "ad9368-2", DEVICE_ID_AD93682}
 };
 
@@ -639,7 +639,7 @@ out:
 static struct of_device_id ad9368_match[] = {
 	{.compatible = "adi,ad9368-1",},
 	{.compatible = "adi,ad9368-2",},
-	{.compatible = "adi,ad9525",},
+	{.compatible = "adi,ad9525xx",},
 	{},
 };
 

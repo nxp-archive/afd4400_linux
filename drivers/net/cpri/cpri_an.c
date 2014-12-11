@@ -170,19 +170,18 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 	 * otherwise charge pump output mid voltage.
 	 */
 	if (framer->autoneg_params.mode & REC_MODE)
-		qixis_lock_jcpll();
+		qixis_jcpll_freq_fixed();
 	else {
 		serdes_jcpll_enable(framer->serdes_handle, &lane_param,
 			&pll_param);
 		gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
 		d4400_rev_clk_select(SERDES_PLL_1, REV_CLK_DIV_1);
-		qixis_unlock_jcpll();
+		qixis_jcpll_freq_track();
 
-		if (!(qixis_read(QIXIS_CLK_JCPLL_STATUS) &
-					APPLY_STATUS)) {
+		if (!qixis_jcpll_locked()) {
 			count++;
 			if (count == SERDES_PLL_LOCK_RETRY_CNT) {
-				dev_err(dev, "Failed to unlock jcpll");
+				dev_err(dev, "Jcpll failed to lock");
 				return -ETIME;
 			}
 			mdelay(1);
@@ -378,7 +377,7 @@ static void link_monitor_handler(unsigned long ptr)
 	/* Check JCPLL status, if in RE mode */
 	if (framer->cpri_enabled_monitor & JCPLL_LOCK_LOSS) {
 		if (!(framer->autoneg_params.mode & REC_MODE) &&
-			!(qixis_read(QIXIS_CLK_JCPLL_STATUS) & APPLY_STATUS))
+			!(qixis_jcpll_locked()))
 			atomic_inc(&framer->err_cnt[JCPLL_LOCK_LOSS_BITPOS]);
 	}
 

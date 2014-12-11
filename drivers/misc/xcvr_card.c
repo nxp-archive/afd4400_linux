@@ -997,7 +997,7 @@ static int xcvr_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	xcvr_present = qixis_get_xcvr_present_status(xcvr_id);
+	xcvr_present = qixis_xcvr_present(xcvr_id);
 	dev_dbg(dev, "xcvr%d present %d\n", xcvr_id, xcvr_present);
 
 	if (xcvr_present == -EPROBE_DEFER) {

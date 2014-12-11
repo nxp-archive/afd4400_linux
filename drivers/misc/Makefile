@@ -54,4 +54,5 @@ obj-$(CONFIG_LANDSHARK)		+= landshark.o
 obj-$(CONFIG_VSPA)		+= vspa.o
 obj-$(CONFIG_XCVR)		+= xcvr_card.o
 obj-$(CONFIG_AD9368)		+= ad9368.o
+obj-$(CONFIG_AD9525)		+= ad9525.o
 obj-y               += qixis.o
