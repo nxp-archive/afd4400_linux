@@ -234,6 +234,15 @@ static int ina2xx_probe(struct i2c_client *client,
 		pdata =
 		  (struct ina2xx_platform_data *)client->dev.platform_data;
 		shunt = pdata->shunt_uohms;
+#ifdef CONFIG_OF
+	} else if (client->dev.of_node) {
+		const __be32 *property;
+		int len;
+		property = of_get_property(client->dev.of_node,
+						"shunt-uohms", &len);
+		if (property && len == sizeof(int))
+			shunt = be32_to_cpup(property);
+#endif
 	}
 
 	if (shunt <= 0)
