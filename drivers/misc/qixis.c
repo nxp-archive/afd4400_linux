@@ -70,12 +70,16 @@
 #define COMMS_LSB_FIRST 0x81
 #define JCPLL_READBACK_CTL_REG  0x004
 #define READ_ACTV_REGS  0x01
+#define JCPLL_N_DIVIDER_REG     0x014
+#define BYPASS_DIVIDERS 0x38
 #define JCPLL_REFC_REG          0x016
 #define DISABLE_REFC    0x00
 #define ENABLE_REFC     0x80
 #define JCPLL_STATUS_PIN_REG    0x017
-#define VDD_CP_NORMAL   0x2d
-#define VDD_CP_BY_HALF  0xad
+#define VDD_CP_NORMAL   0x2D
+#define VDD_CP_BY_HALF  0xAD
+#define JCPLL_REF_MON_PIN_REG   0x018
+#define REF_MON_DLD     0x0D
 #define JCPLL_PLL_READBACK_REG  0x01F
 #define DIG_LOCK_DETECT 0x01
 #define JCPLL_PWR_DWN_REG       0x230
@@ -223,9 +227,26 @@ static int qixis_jcpll_init(void)
 	err = qixis_jcpll_write_spi(UPDATE_IO,       JCPLL_IO_UPDATE_REG);
 	if (err)
 		return err;
+	/* Set read mode to return the active registers */
 	err = qixis_jcpll_write_spi(READ_ACTV_REGS,  JCPLL_READBACK_CTL_REG);
 	if (err)
 		return err;
+	/* Set the dividers to bypass mode */
+	err = qixis_jcpll_write_spi(BYPASS_DIVIDERS, JCPLL_N_DIVIDER_REG);
+	if (err)
+		return err;
+	/* REF MON pin reports the DLD status */
+	err = qixis_jcpll_write_spi(REF_MON_DLD,     JCPLL_REF_MON_PIN_REG);
+	if (err)
+		return err;
+	/* Power down PLL and set charge pump pin to VDD/2 */
+	err = qixis_jcpll_write_spi(VDD_CP_BY_HALF,  JCPLL_STATUS_PIN_REG);
+	if (err)
+		return err;
+	err = qixis_jcpll_write_spi(PWR_DWN_PLL,     JCPLL_PWR_DWN_REG);
+	if (err)
+		return err;
+	/* Update the registers */
 	err = qixis_jcpll_write_spi(UPDATE_IO,       JCPLL_IO_UPDATE_REG);
 	if (err)
 		return err;
