@@ -14,6 +14,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
@@ -28,6 +29,14 @@
 #include <linux/interrupt.h>
 
 #include <linux/cpri.h>
+
+#define MAX_SFPS	4
+#define SFP_DEVICE_NAME "sfp"
+
+/* Device major/minor numbers */
+static s32 sfp_major;
+static s32 sfp_minor;
+static struct class *sfp_class;
 
 static LIST_HEAD(sfp_dev_list);
 raw_spinlock_t sfp_list_lock;
@@ -50,6 +59,39 @@ MODULE_PARM_DESC(io_limit, "Maximum bytes per I/O (default 128)");
 static unsigned write_timeout = 100;
 module_param(write_timeout, uint, 0);
 MODULE_PARM_DESC(write_timeout, "Time (in ms) to try writes (default 25)");
+
+/* Debug level controls runtime messages from the SFP.
+ */
+static unsigned debug = 0;
+module_param(debug, uint, 0);
+MODULE_PARM_DESC(debug, "Debug message setting");
+
+struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node)
+{
+	struct sfp_dev *sfp_dev = NULL;
+
+	if (list_empty(&sfp_dev_list))
+		return NULL;
+
+	raw_spin_lock(&sfp_list_lock);
+
+	list_for_each_entry(sfp_dev, &sfp_dev_list, list) {
+		if (sfp_dev_node == sfp_dev->dev_node)
+			break;
+	}
+
+	raw_spin_unlock(&sfp_list_lock);
+
+	return sfp_dev;
+}
+EXPORT_SYMBOL(get_attached_sfp_dev);
+
+void sfp_set_attached_framer(struct sfp_dev *sfp, struct cpri_framer *framer)
+{
+	if (sfp)
+		sfp->attached_framer = framer;
+}
+EXPORT_SYMBOL(sfp_set_attached_framer);
 
 static int sfp_eeprom_write(struct sfp_dev *sfp, u8 *buf,
 		u8 offset, unsigned int count)
@@ -152,18 +194,6 @@ int sfp_raw_write(struct sfp_dev *sfp,
 }
 EXPORT_SYMBOL(sfp_raw_write);
 
-void fill_sfp_detail(struct sfp_dev *sfp, u8 *sfp_detail)
-{
-	memset(sfp_detail, 0, (sizeof(sfp->info.vendor_name) +
-				sizeof(sfp->info.vendor_pn)));
-	memcpy(sfp_detail, sfp->info.vendor_name,
-			sizeof(sfp->info.vendor_name));
-	memcpy(&sfp_detail[sizeof(sfp->info.vendor_name)],
-			sfp->info.vendor_pn, sizeof(sfp->info.vendor_pn));
-
-}
-EXPORT_SYMBOL(fill_sfp_detail);
-
 static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 		u8 offset, unsigned int count, enum mem_type type)
 {
@@ -172,7 +202,6 @@ static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 	struct i2c_msg msg[2];
 	unsigned long timeout = 0, read_time = 0;
 	int status = 0, i = 0;
-
 
 	memset(msg, 0, sizeof(msg));
 	/* Determine the memory (eeprom/diagnostics) to read */
@@ -297,58 +326,153 @@ int sfp_raw_read(struct sfp_dev *sfp,
 }
 EXPORT_SYMBOL(sfp_raw_read);
 
-
-static int read_sfp_info(struct sfp_dev *sfp)
+static int sfp_read_info(struct sfp_dev *sfp)
 {
 	struct device *dev = &(sfp->client->dev);
-	u8 offset = 0;
 	int ret = 0;
 	unsigned int count = SFP_EEPROM_INFO_SIZE;
-	enum mem_type type = SFP_MEM_EEPROM;
 	u8 *buf = &(sfp->info.type);
+	sfp->desc[0] = 0;
 
 	/* Try reading basic eeprom info */
-	ret = sfp_raw_read(sfp, buf, offset, count, type);
+	ret = sfp_raw_read(sfp, &(sfp->info.type), 0, count, SFP_MEM_EEPROM);
 	if (ret != count) {
 		dev_dbg(dev, "basic data read failure ret: %d, count: %d",
 			ret, count);
 		goto out;
 	}
-
+	/* Try reading diagnostic info */
+	ret = sfp_raw_read(sfp, &(sfp->diag.temp_hi_alarm[0]), 0, count,
+								SFP_MEM_DIAG);
+	if (ret != count) {
+		dev_dbg(dev, "diagnostics read failure ret: %d, count: %d",
+			ret, count);
+		goto out;
+	}
+	sfp->valid = 1;
+	buf = sfp->desc;
+	snprintf(buf, sizeof(sfp->info.vendor_name) + 1, "%s",
+							sfp->info.vendor_name);
+	buf = &sfp->desc[strlen(sfp->desc)];
+	if (sfp->info.vendor_pn[0]) {
+		snprintf(buf, sizeof(sfp->info.vendor_pn) + 2, " %s",
+							sfp->info.vendor_pn);
+		buf = &sfp->desc[strlen(sfp->desc)];
+	}
+	if (sfp->info.vendor_rev[0]) {
+		snprintf(buf, sizeof(sfp->info.vendor_rev) + 6, ",rev %s",
+							sfp->info.vendor_rev);
+		buf = &sfp->desc[strlen(sfp->desc)];
+	}
+	if (sfp->info.vendor_sn[0]) {
+		snprintf(buf, sizeof(sfp->info.vendor_sn) + 2, ":%s",
+							sfp->info.vendor_sn);
+	}
 	return 0;
 out:
 	return -EINVAL;
 }
 
-
-struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node)
+int sfp_update_realtime_info(struct sfp_dev *sfp)
 {
-	struct sfp_dev *sfp_dev = NULL;
+	struct device *dev = &(sfp->client->dev);
+	int len;
+	int ret;
+	u8 tmp[24];
 
-	if (list_empty(&sfp_dev_list))
-		return NULL;
-
-	raw_spin_lock(&sfp_list_lock);
-
-	list_for_each_entry(sfp_dev, &sfp_dev_list, list) {
-		if (sfp_dev_node == sfp_dev->dev_node)
-			break;
+	len = sizeof(tmp);
+	ret = sfp_raw_read(sfp, tmp, 96, len, SFP_MEM_DIAG);
+	if (ret != len) {
+		dev_err(dev, "diagnostics read failure ret: %d, count: %d",
+			ret, len);
+		return -EINVAL;
 	}
-
-	raw_spin_unlock(&sfp_list_lock);
-
-	return sfp_dev;
+	memcpy((u8*)&sfp->diag.temp_msb, tmp, sizeof(tmp));
+	return 0;
 }
-EXPORT_SYMBOL(get_attached_sfp_dev);
+EXPORT_SYMBOL(sfp_update_realtime_info);
 
-void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value)
+void sfp_set_tx_enable(struct sfp_dev *sfp, unsigned value)
 {
-	gpio_set_value_cansleep(sfp->tx_disable, value);
+	sfp->tx_enable_state = value;
+	gpio_set_value_cansleep(sfp->tx_disable, !value);
 }
-EXPORT_SYMBOL(set_sfp_txdisable);
+EXPORT_SYMBOL(sfp_set_tx_enable);
 
+int sfp_check_gpios(struct sfp_dev *sfp)
+{
+	struct device *dev = &(sfp->client->dev);
+	int state = 0;
+	int changed = 0;
+	int val;
 
-static int config_sfp_lines(struct sfp_dev *sfp)
+	/* Pin is high for Loss of RX signal */
+	val = gpio_get_value_cansleep(sfp->rxlos);
+	if (val)
+		state |= SFP_STATE_RXLOS;
+	if (sfp->rxlos_state != val) {
+		sfp->rxlos_state = val;
+		changed |= SFP_STATE_RXLOS;
+		if (val)
+			sfp->rxlos_count++;
+	}
+	/* Pin is high for TX Fault */
+	val = gpio_get_value_cansleep(sfp->txfault);
+	if (val)
+		state |= SFP_STATE_TXFAULT;
+	if (sfp->txfault_state != val) {
+		sfp->txfault_state = val;
+		changed |= SFP_STATE_TXFAULT;
+		if (val)
+			sfp->txfault_count++;
+	}
+	/* Pin is low when SFP module is present */
+	val = !gpio_get_value_cansleep(sfp->prs);
+	if (val)
+		state |= SFP_STATE_PRS;
+	if (sfp->prs_state != val) {
+		sfp->prs_state = val;
+		changed |= SFP_STATE_PRS;
+		if (val) {
+			sfp->prs_count++;
+			if (sfp_read_info(sfp) < 0)
+				dev_err(dev, "sfp i2c read fail");
+		} else {
+			sfp->valid = 0;
+		}
+	}
+	if (changed && (sfp->debug & 2))
+		dev_info(dev, "sfp%d state = %d\n", sfp->id, state);
+	if (changed && (sfp->debug & 1)) {
+		if (changed & SFP_STATE_PRS) {
+			if (!(state & SFP_STATE_PRS))
+				dev_info(dev, "sfp%d module removed\n",
+						sfp->id);
+			else if (sfp->valid)
+				dev_info(dev, "sfp%d %s\n",
+						sfp->id, sfp->desc);
+			else
+				dev_info(dev, "sfp%d unknown module inserted\n",
+						sfp->id);
+		} else if (state & SFP_STATE_PRS) {
+			if (changed & SFP_STATE_RXLOS)
+				dev_info(dev, "sfp%d RX signal %s\n", sfp->id,
+					(state & SFP_STATE_RXLOS) ? "lost" : "OK");
+			if (changed & SFP_STATE_TXFAULT)
+				dev_info(dev, "sfp%d TX fault %s\n", sfp->id,
+					(state & SFP_STATE_TXFAULT) ? "occured" :
+								     "cleared");
+		}
+	}
+	/* Notify framer */
+	if (changed && sfp->attached_framer)
+		cpri_framer_handle_sfp_pin_changes(sfp->attached_framer,
+								changed, state);
+	return 0;
+}
+EXPORT_SYMBOL(sfp_check_gpios);
+
+static int sfp_config_gpios(struct sfp_dev *sfp)
 {
 	struct device *dev = &(sfp->client->dev);
 
@@ -398,7 +522,133 @@ static int config_sfp_lines(struct sfp_dev *sfp)
 		gpio_request(sfp->tx_disable, "gpio-sfp-tx_disable");
 		gpio_direction_output(sfp->tx_disable, 1);
 	}
+	sfp->prs_state = 0;
+	sfp->rxlos_state = 0;
+	sfp->txfault_state = 0;
+	sfp->tx_enable_state = 0;
 	return 0;
+}
+
+static ssize_t show_stat(struct device *dev,
+			struct device_attribute *devattr, char *buf);
+
+static ssize_t show_info(struct device *dev,
+			struct device_attribute *devattr, char *buf);
+
+static ssize_t show_desc(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	struct sfp_dev *sfp = dev_get_drvdata(dev);
+	return sprintf(buf, "%s\n", sfp->valid ? sfp->desc : "");
+}
+
+static ssize_t set_debug(struct device *dev, struct device_attribute *devattr,
+			const char *buf, size_t count)
+{
+	struct sfp_dev *sfp = dev_get_drvdata(dev);
+	int err;
+	unsigned int val;
+
+	err = kstrtouint(buf, 10, &val);
+	if (err)
+		return err;
+
+	sfp->debug = val;
+	return count;
+}
+
+static DEVICE_ATTR(prs_state,        S_IRUGO, show_stat,   NULL);
+static DEVICE_ATTR(prs_count,        S_IRUGO, show_stat,   NULL);
+static DEVICE_ATTR(rxlos_state,      S_IRUGO, show_stat,   NULL);
+static DEVICE_ATTR(rxlos_count,      S_IRUGO, show_stat,   NULL);
+static DEVICE_ATTR(txfault_state,    S_IRUGO, show_stat,   NULL);
+static DEVICE_ATTR(txfault_count,    S_IRUGO, show_stat,   NULL);
+static DEVICE_ATTR(txenable_state,   S_IRUGO, show_stat,   NULL);
+static DEVICE_ATTR(debug,  S_IWUSR | S_IRUGO, show_stat,   set_debug);
+static DEVICE_ATTR(info,             S_IRUGO, show_desc,   NULL);
+static DEVICE_ATTR(eeprom,           S_IRUGO, show_info,   NULL);
+static DEVICE_ATTR(diag,             S_IRUGO, show_info,   NULL);
+static DEVICE_ATTR(diag_realtime,    S_IRUGO, show_info,   NULL);
+
+static struct attribute *attributes[] = {
+	&dev_attr_prs_state.attr,
+	&dev_attr_prs_count.attr,
+	&dev_attr_rxlos_state.attr,
+	&dev_attr_rxlos_count.attr,
+	&dev_attr_txfault_state.attr,
+	&dev_attr_txfault_count.attr,
+	&dev_attr_txenable_state.attr,
+	&dev_attr_debug.attr,
+	&dev_attr_info.attr,
+	&dev_attr_eeprom.attr,
+	&dev_attr_diag.attr,
+	&dev_attr_diag_realtime.attr,
+	NULL
+};
+
+static const struct attribute_group attr_group = {
+	.attrs = attributes,
+};
+
+static ssize_t show_stat(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	unsigned int val;
+	struct sfp_dev *sfp = dev_get_drvdata(dev);
+	if      (devattr == &dev_attr_prs_state)     val = sfp->prs_state;
+	else if (devattr == &dev_attr_prs_count)     val = sfp->prs_count;
+	else if (devattr == &dev_attr_rxlos_state)   val = sfp->rxlos_state;
+	else if (devattr == &dev_attr_rxlos_count)   val = sfp->rxlos_count;
+	else if (devattr == &dev_attr_txfault_state) val = sfp->txfault_state;
+	else if (devattr == &dev_attr_txfault_count) val = sfp->txfault_count;
+	else if (devattr == &dev_attr_txenable_state)
+						   val = sfp->tx_enable_state;
+	else if (devattr == &dev_attr_debug)         val = sfp->debug;
+	else val = 0;
+	return sprintf(buf, "%d\n", val);
+}
+
+static ssize_t show_info(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	struct sfp_dev *sfp = dev_get_drvdata(dev);
+	int i;
+	int ret;
+	int len;
+	char *bp;
+	u8 *sp;
+	u8 tmp[24];
+
+	if (!sfp->valid)
+		goto out;
+
+	if (devattr == &dev_attr_eeprom) {
+		len = 128;
+		sp = (u8*)&sfp->info;
+	} else if (devattr == &dev_attr_diag) {
+		len = 128;
+		sp = (u8*)&sfp->diag;
+	} else if (devattr == &dev_attr_diag_realtime) {
+		ret = sfp_update_realtime_info(sfp);
+		if (ret)
+			goto out;
+		len = sizeof(tmp);
+		sp = (u8*)&sfp->diag.temp_msb;
+	} else
+		goto out;
+
+	bp = buf;
+	sprintf(bp, "%02X ", *sp++);
+	for (i = 0; i < len; i++) {
+		bp += 3;
+		sprintf(bp, "%02X ", *sp++);
+	}
+	bp += 2;
+	*bp++ = '\n';
+	return (bp - buf);
+
+out:
+	return sprintf(buf, "\n");
 }
 
 static int sfp_probe(struct i2c_client *client,
@@ -407,28 +657,49 @@ static int sfp_probe(struct i2c_client *client,
 	struct sfp_dev *sfp = NULL;
 	struct device_node *node = NULL;
 	struct device *dev = &client->dev;
+	struct device *sysfs_dev;
+	dev_t devno;
 	int use_smbus = 0, err = 0;
 	unsigned write_max;
-	u8 sfp_detail[33] = {0};
+	u8 device_name[10];
 
-	/* Getting the device node from platform */
+	/* Getting the device node from i2c client */
 	node = client->dev.of_node;
-	/* Get the number of eeproms supported by the transceiver */
+	if (!node) {
+		err = -ENODEV;
+		goto err_out;
+	}
+	/* Create the device driver data structure */
 	sfp = kzalloc(sizeof(struct sfp_dev), GFP_KERNEL);
 	if (!sfp) {
 		err = -ENOMEM;
 		goto err_out;
 	}
 
-	if (client->dev.of_node) {
-		of_property_read_u32(client->dev.of_node, "max-addr",
-				&sfp->addr_cnt);
-	} else {
-		err = -ENODEV;
+	/* Obtain the SFP id number */
+	err = of_property_read_u32(node, "id", &sfp->id);
+	if (err) {
+		dev_err(dev, "Missing 'id' field in DTB\n");
 		goto err_struct;
 	}
-
-	/* Chek for smbus support in adapter */
+	if (sfp->id >= MAX_SFPS) {
+		err = -EINVAL;
+		dev_err(dev, "SFP id %d is beyond supported max of %d\n",
+			sfp->id, MAX_SFPS-1);
+		goto err_struct;
+	}
+	/* Get the maximum I2C address supported by the client */
+	err = of_property_read_u32(node, "max-addr", &sfp->addr_cnt);
+	if (err) {
+		dev_err(dev, "Missing 'max_addr' field in DTB\n");
+		goto err_struct;
+	}
+	err = of_property_read_u32_array(node, "reg", sfp->addr, sfp->addr_cnt);
+	if (err) {
+		dev_err(dev, "Missing 'reg' field in DTB\n");
+		goto err_struct;
+	}
+	/* Check for smbus support in adapter */
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		if (i2c_check_functionality(client->adapter,
 				I2C_FUNC_SMBUS_READ_I2C_BLOCK)) {
@@ -451,6 +722,7 @@ static int sfp_probe(struct i2c_client *client,
 		write_max = I2C_SMBUS_BLOCK_MAX;
 
 	/* ------------ Start populating sfp_dev ---------- */
+	sfp->debug = debug;
 	sfp->dev_node = node;
 	sfp->write_max = write_max;
 	sfp->use_smbus = use_smbus;
@@ -463,15 +735,14 @@ static int sfp_probe(struct i2c_client *client,
 		goto err_struct;
 	}
 
-	of_property_read_u32_array(client->dev.of_node, "reg", sfp->addr,
-			sfp->addr_cnt);
-
-	/* Getting mem interface address */
+	/* Set the client data for this i2c transceiver device */
 	sfp->client = client;
+	i2c_set_clientdata(client, sfp);
 
 	/* ------------ End populating sfp_dev ---------- */
+
 	/* Configure transceiver pins */
-	err = config_sfp_lines(sfp);
+	err = sfp_config_gpios(sfp);
 	if (err < 0) {
 		dev_err(dev, "sfp pin configuration failed\n");
 		if (err == -EPROBE_DEFER)
@@ -481,7 +752,7 @@ static int sfp_probe(struct i2c_client *client,
 		gpio_get_value_cansleep(sfp->prs);
 		gpio_get_value_cansleep(sfp->rxlos);
 		gpio_get_value_cansleep(sfp->txfault);
-		dev_dbg(dev, "prbs: 0x%x, rxloss: 0x%x, txfault: 0x%x",
+		dev_dbg(dev, "prs: 0x%x, rxloss: 0x%x, txfault: 0x%x",
 			gpio_get_value_cansleep(sfp->prs),
 			gpio_get_value_cansleep(sfp->rxlos),
 			gpio_get_value_cansleep(sfp->txfault));
@@ -494,19 +765,34 @@ static int sfp_probe(struct i2c_client *client,
 			use_smbus == I2C_SMBUS_WORD_DATA ? "word" : "byte");
 	}
 
+	/* Personalize to the SFP id number */
+	devno = MKDEV(sfp_major, sfp_minor + sfp->id);
+	sprintf(device_name, SFP_DEVICE_NAME "%d", sfp->id);
+
+	/* Create sysfs device */
+	sysfs_dev = device_create(sfp_class, dev, devno, NULL, device_name);
+	if (IS_ERR(sysfs_dev)) {
+		err = PTR_ERR(sysfs_dev);
+		dev_err(dev, "error %d while trying to create sysfs %s",
+			err, device_name);
+		goto device_fail;
+	}
+
+	err = sysfs_create_group(&dev->kobj, &attr_group);
+	if (err < 0) {
+		dev_err(dev, "error %d while trying to create group %s",
+			err, SFP_DEVICE_NAME);
+		goto group_fail;
+	}
+
 	/* Do SFP presence test */
 	if (gpio_get_value_cansleep(sfp->prs))
-		dev_err(dev, "sfp not inserted\n");
+		dev_err(dev, "sfp%d not inserted\n", sfp->id);
 	else  {
-		if (read_sfp_info(sfp) < 0)
-			dev_err(dev, "sfp i2c read fail");
+		if (sfp_read_info(sfp) < 0)
+			dev_err(dev, "sfp%d i2c read fail\n", sfp->id);
 		else {
-			memcpy(sfp_detail, sfp->info.vendor_name,
-				sizeof(sfp->info.vendor_name));
-			memcpy(&sfp_detail[sizeof(sfp->info.vendor_name)],
-				sfp->info.vendor_pn,
-				sizeof(sfp->info.vendor_pn));
-			dev_info(dev, "SFP detected: %s\n", sfp_detail);
+			dev_info(dev, "sfp%d %s\n", sfp->id, sfp->desc);
 		}
 	}
 
@@ -514,14 +800,16 @@ static int sfp_probe(struct i2c_client *client,
 	list_add_tail(&sfp->list, &sfp_dev_list);
 	raw_spin_unlock(&sfp_list_lock);
 
-	/* Set the client data for this i2c transceiver device */
-	i2c_set_clientdata(client, sfp);
-
 	return 0;
 
+group_fail:
+	device_destroy(sfp_class, devno);
+device_fail:
 err_clients:
 	i2c_unregister_device(sfp->client);
 err_struct:
+	if (sfp->writebuf)
+		kfree(sfp->writebuf);
 	kfree(sfp);
 err_out:
 	dev_err(dev, "probe error %d", err);
@@ -532,9 +820,9 @@ static int sfp_remove(struct i2c_client *client)
 {
 	struct sfp_dev *sfp, *sfpdev;
 	struct list_head *pos, *nx;
+	struct device *dev = &client->dev;
 
 	sfp = i2c_get_clientdata(client);
-	kfree(sfp->writebuf);
 	gpio_free(sfp->txfault);
 	gpio_free(sfp->rxlos);
 	gpio_free(sfp->prs);
@@ -551,6 +839,11 @@ static int sfp_remove(struct i2c_client *client)
 		}
 	}
 	raw_spin_unlock(&sfp_list_lock);
+
+	sysfs_remove_group(&dev->kobj, &attr_group);
+	device_destroy(sfp_class, MKDEV(sfp_major, sfp_minor + sfp->id));
+	kfree(sfp->writebuf);
+	kfree(sfp);
 
 	return 0;
 }
@@ -573,14 +866,42 @@ static struct i2c_driver sfp_driver = {
 
 static int __init sfp_init(void)
 {
+	int err;
+	dev_t devno;
+
 	if (!io_limit) {
 		pr_err("sfp: io_limit must not be 0!\n");
-		return -EINVAL;
+		err = -EINVAL;
+		goto chrdev_fail;
 	}
-
 	io_limit = rounddown_pow_of_two(io_limit);
 
-	return i2c_add_driver(&sfp_driver);
+	/* Dynamically allocate  */
+	err = alloc_chrdev_region(&devno, 0, MAX_SFPS, SFP_DEVICE_NAME);
+	if (err < 0) {
+		pr_err("sfp: can't get major number: %d\n", err);
+		goto chrdev_fail;
+	}
+	sfp_major = MAJOR(devno);
+	sfp_minor = MINOR(devno);
+
+	/* Create the device class */
+	sfp_class = class_create(THIS_MODULE, SFP_DEVICE_NAME);
+	if (IS_ERR(sfp_class)) {
+		err = PTR_ERR(sfp_class);
+		pr_err("sfp: class_create() failed %d\n", err);
+		goto class_fail;
+	}
+
+	err = i2c_add_driver(&sfp_driver);
+	if (err == 0)
+		return 0;
+
+	class_destroy(sfp_class);
+class_fail:
+	unregister_chrdev_region(sfp_major, MAX_SFPS);
+chrdev_fail:
+	return err;
 }
 module_init(sfp_init);
 
@@ -598,6 +919,9 @@ static void __exit sfp_exit(void)
 		kfree(sfp);
 	}
 	raw_spin_unlock(&sfp_list_lock);
+
+	class_destroy(sfp_class);
+	unregister_chrdev_region(sfp_major, MAX_SFPS);
 }
 module_exit(sfp_exit);
 

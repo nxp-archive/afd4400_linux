@@ -40,7 +40,7 @@ struct cpri_priv {
  */
 	int sfp_int;
 	int sfp_irq;
-	struct work_struct sfp_irq_wq;
+	struct delayed_work sfp_irq_wq;
 };
 
 struct cpri_dev {
@@ -72,19 +72,32 @@ enum d4400_rev_clk_dev {
 struct sfp_dev {
 	u32 id;
 	struct device_node *dev_node;
+	struct cpri_framer *attached_framer;
 	unsigned int addr_cnt;
 	unsigned int addr[MAX_SFP_ADDR];
 	enum mem_type type;
 	int use_smbus;
 	struct cpri_framer *pair_framer;
 	struct sfp info;
+	struct sfp_diag_info diag;
 	struct mutex lock;
 	u8 *writebuf;
 	unsigned write_max;
+	char desc[64];
+	unsigned debug;
 	/* SFP stats */
-	unsigned int txfault;
-	unsigned int rxlos;
+	int valid;
+	int prs_state;
+	int rxlos_state;
+	int txfault_state;
+	int tx_enable_state;
+	unsigned int prs_count;
+	unsigned int rxlos_count;
+	unsigned int txfault_count;
+	/* Pins */
 	unsigned int prs;
+	unsigned int rxlos;
+	unsigned int txfault;
 	unsigned int tx_disable;
 	struct list_head list;
 	struct i2c_client *client;
@@ -358,8 +371,6 @@ struct cpri_framer {
 	u64 cpri_enabled_monitor;
 	/* Each element corresponds to one error */
 	atomic_t err_cnt[CPRI_ERR_CNT];
-	/* Work struct the monitor the sfp */
-	struct work_struct sfp_wq;
 	/* Autoneg data structures per framer*/
 	struct cpri_autoneg_params autoneg_params;
 	struct cpri_autoneg_output autoneg_output;
@@ -391,6 +402,10 @@ struct axc_cmd_regs {
 	u32 rcmd0[3072];
 	u32 rcmd1[3072];
 };
+
+#define SFP_STATE_PRS			(1<<0)
+#define SFP_STATE_RXLOS			(1<<1)
+#define SFP_STATE_TXFAULT		(1<<2)
 
 #define CLASS_NAME	"cp"
 #define DEV_NAME	"cp"
@@ -778,16 +793,30 @@ extern int cpri_eth_handle_tx(struct cpri_framer *framer);
 extern int cpri_eth_handle_error(struct cpri_framer *framer);
 
 /* SFP exported functions */
+extern void cpri_framer_handle_sfp_pin_changes(struct cpri_framer *framer,
+					unsigned changed, unsigned state);
 extern struct cpri_framer
 	*get_attached_cpri_dev(struct device_node **sfp_dev_node);
+extern void sfp_set_attached_framer(struct sfp_dev *sfp,
+					struct cpri_framer *framer);
 extern struct sfp_dev *get_attached_sfp_dev(struct device_node *sfp_dev_node);
-void fill_sfp_detail(struct sfp_dev *sfp_dev, u8 *buf);
-extern void set_sfp_txdisable(struct sfp_dev *sfp, unsigned value);
+extern void sfp_set_tx_enable(struct sfp_dev *sfp, unsigned value);
 extern int sfp_raw_write(struct sfp_dev *sfp, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
-int sfp_raw_read(struct sfp_dev *sfp, u8 *buf, u8 offset,
+extern int sfp_raw_read(struct sfp_dev *sfp, u8 *buf, u8 offset,
 		unsigned int count, enum mem_type type);
+extern int sfp_check_gpios(struct sfp_dev *sfp);
 extern void d4400_rev_clk_select(u8 cpri_id, u8 clk_dev);
+extern int sfp_update_realtime_info(struct sfp_dev *sfp);
+static inline bool sfp_is_ready(const struct sfp_dev *sfp) {
+	return sfp->valid ? true : false;
+}
+static inline bool sfp_has_rx_signal(const struct sfp_dev *sfp) {
+	return (sfp->valid & !sfp->rxlos_state) ? true : false;
+}
+static inline bool sfp_has_tx_fault(const struct sfp_dev *sfp) {
+	return (sfp->valid & sfp->txfault_state) ? true : false;
+}
 
 /* AxC mapping functions */
 int cpri_axc_ioctl(struct cpri_framer *framer, unsigned long arg,

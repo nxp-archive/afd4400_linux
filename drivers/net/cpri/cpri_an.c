@@ -398,10 +398,6 @@ static void link_monitor_handler(unsigned long ptr)
 			atomic_inc(&framer->err_cnt[CPRI_RATE_SYNC_BITPOS]);
 	}
 
-	/* Do SFP check, can sleep */
-	if (framer->cpri_enabled_monitor & SFP_MONITOR)
-		schedule_work(&framer->sfp_wq);
-
 	mod_timer(&framer->link_monitor_timer, jiffies + HZ);
 }
 
@@ -662,7 +658,7 @@ static int check_linesync(struct cpri_framer *framer,
 	cpri_reg_set(&regs->cpri_config,
 			(CONF_RX_EN_MASK | CONF_TX_EN_MASK));
 
-	set_sfp_txdisable(framer->sfp_dev, 0);
+	sfp_set_tx_enable(framer->sfp_dev, 1);
 
 	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK |
 		RX_LOS_MASK | RX_STATE_MASK);

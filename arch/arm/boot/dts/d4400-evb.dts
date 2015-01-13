@@ -92,6 +92,7 @@
 				};
 
 				cpriphy0: sfp0@50 {
+					id = <0>;
 					compatible = "sfp-dev";
 					reg = <0x50 0x51>;
 					max-addr = <0x2>;
@@ -110,6 +111,7 @@
 				pinctrl-0 = <&pinctrl_i2c2_1>;
 
 				cpriphy1: sfp1@50 {
+					id = <1>;
 					compatible = "sfp-dev";
 					reg = <0x50 0x51>;
 					max-addr = <0x2>;
@@ -129,6 +131,7 @@
 				pinctrl-0 = <&pinctrl_i2c3_1>;
 
 				cpriphy2: sfp2@50 {
+					id = <2>;
 					compatible = "sfp-dev";
 					reg = <0x50 0x51>;
 					max-addr = <0x2>;
@@ -153,6 +156,7 @@
 				pinctrl-0 = <&pinctrl_i2c5_1>;
 
 				cpriphy3: sfp3@50 {
+					id = <3>;
 			      		compatible = "sfp-dev";
 					reg = <0x50 0x51>;
 					max-addr = <0x2>;

@@ -108,19 +108,43 @@ static int cpri_open(struct inode *inode, struct file *fp)
 	return rc;
 }
 
-static void sfp_read_pins(struct work_struct *work)
+void cpri_framer_handle_sfp_pin_changes(struct cpri_framer *framer,
+					unsigned changed, unsigned state)
 {
-	struct cpri_framer *framer =
-		container_of(work, struct cpri_framer, sfp_wq);
+	char name[32];
+	struct device *dev = framer->cpri_dev->dev;
 	struct sfp_dev *sfp = framer->sfp_dev;
 
-	if (gpio_get_value_cansleep(sfp->prs))
-		atomic_inc(&framer->err_cnt[SFP_PRESENCE_BITPOS]);
-	if (gpio_get_value_cansleep(sfp->rxlos))
-		atomic_inc(&framer->err_cnt[SFP_RXLOS_BITPOS]);
-	if (gpio_get_value_cansleep(sfp->txfault))
-		atomic_inc(&framer->err_cnt[SFP_TXFAULT_BITPOS]);
+	/* printk(KERN_INFO "CPRI %d Framer %d: pins changed %d, state %d\n",
+			framer->cpri_dev->dev_id, framer->id, changed, state); */
+	sprintf(name,"cp%d_frmr%d", framer->cpri_dev->dev_id, framer->id);
+	if (changed & SFP_STATE_PRS) {
+		if (!(state & SFP_STATE_PRS))
+			dev_info(dev, "%s sfp module removed\n", name);
+		else if (sfp->valid)
+			dev_info(dev, "%s sfp module inserted\n", name);
+		else
+			dev_info(dev, "%s unknown module inserted\n", name);
+	} else if (state & SFP_STATE_PRS) {
+		if (changed & SFP_STATE_RXLOS)
+			dev_info(dev, "%s RX signal %s\n", name,
+				(state & SFP_STATE_RXLOS) ? "lost" : "OK");
+		if (changed & SFP_STATE_TXFAULT)
+			dev_info(dev, "%s TX fault %s\n", name,
+				(state & SFP_STATE_TXFAULT) ? "occured" :
+							     "cleared");
+	}
 
+	if (framer->cpri_enabled_monitor & SFP_MONITOR) {
+		if ((changed & SFP_STATE_PRS) && !(state & SFP_STATE_PRS))
+			atomic_inc(&framer->err_cnt[SFP_PRESENCE_BITPOS]);
+		if ((changed & SFP_STATE_RXLOS) && (state & SFP_STATE_RXLOS))
+			atomic_inc(&framer->err_cnt[SFP_RXLOS_BITPOS]);
+		if ((changed & SFP_STATE_TXFAULT) && (state & SFP_STATE_TXFAULT))
+			atomic_inc(&framer->err_cnt[SFP_TXFAULT_BITPOS]);
+	}
+
+	// TODO - handle state changes intelligently
 }
 
 static int cpri_release(struct inode *inode, struct file *fp)
@@ -147,7 +171,7 @@ static const struct file_operations cpri_fops = {
 static void handle_sfp_irq(struct work_struct *work)
 {
 	struct cpri_priv *priv =
-			container_of(work, struct cpri_priv, sfp_irq_wq);
+		container_of(to_delayed_work(work), struct cpri_priv, sfp_irq_wq);
 	struct cpri_dev *cpri_dev = NULL;
 	struct cpri_framer *framer;
 	struct sfp_dev *sfp;
@@ -159,11 +183,9 @@ static void handle_sfp_irq(struct work_struct *work)
 			sfp = framer->sfp_dev;
 			/*TODO: pca9555 is not accessible from i2c5 node */
 			/* This is to unmask the interrupt line gpio 15 */
-				gpio_get_value_cansleep(sfp->prs);
-				gpio_get_value_cansleep(sfp->rxlos);
-				gpio_get_value_cansleep(sfp->txfault);
-			}
+			sfp_check_gpios(sfp);
 		}
+	}
 }
 
 /* CPRI rx timing interrupt handler
@@ -463,7 +485,7 @@ static irqreturn_t cpri_err_handler(int irq, void *cookie)
 
 static irqreturn_t cpri_sfp_int_handler(int irq, void *cookie)
 {
-	schedule_work(&priv->sfp_irq_wq);
+	schedule_delayed_work(&priv->sfp_irq_wq, 0);
 	return IRQ_HANDLED;
 }
 
@@ -472,8 +494,7 @@ static int cpri_init_sfp_irq(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *np = pdev->dev.of_node;
 	int ret;
-
-	INIT_WORK(&priv->sfp_irq_wq, handle_sfp_irq);
+	INIT_DELAYED_WORK(&priv->sfp_irq_wq, handle_sfp_irq);
 
 	priv->sfp_int = of_get_named_gpio(np,
 			"sfp-plug-int", 0);
@@ -684,8 +705,6 @@ static int cpri_probe(struct platform_device *pdev)
 		spin_lock_init(&framer->tx_cw_lock);
 		sema_init(&framer->axc_sem, 1);
 
-		INIT_WORK(&framer->sfp_wq, sfp_read_pins);
-
 		cpri_mask_irq_events(framer);
 		if (process_framer_irqs(child, framer) < 0) {
 			dev_err(dev, "framer events not supported");
@@ -702,6 +721,7 @@ static int cpri_probe(struct platform_device *pdev)
 			dev_err(dev, "get_attached_sfp_dev fail");
 			goto err_cdev;
 		}
+		sfp_set_attached_framer(framer->sfp_dev, framer);
 		if (cpri_eth_init(pdev, framer, child) < 0)
 			dev_err(dev, "ethernet init failed");
 
@@ -723,6 +743,8 @@ static int cpri_probe(struct platform_device *pdev)
 	/* Only the CPRI complex 1 has this SFP gpio interrupt entry */
 	if (cpri_dev->dev_id == 0)
 		cpri_init_sfp_irq(pdev);
+	else
+		schedule_delayed_work(&priv->sfp_irq_wq, HZ);
 
 	dev_info(dev, "%s done", __func__);
 
@@ -771,7 +793,6 @@ static int cpri_remove(struct platform_device *pdev)
 		free_irq(framer->irq_tx_c, framer);
 		cdev_del(&framer->cdev);
 		del_timer(&framer->link_monitor_timer);
-		cancel_work_sync(&framer->sfp_wq);
 		device_destroy(priv->cpri_class, framer->dev_t);
 		unregister_chrdev_region(framer->dev_t, 1);
 		kfree(framer);
