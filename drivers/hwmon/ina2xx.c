@@ -222,6 +222,7 @@ static int ina2xx_probe(struct i2c_client *client,
 	struct ina2xx_platform_data *pdata;
 	int ret;
 	long shunt = 10000; /* default shunt value 10mOhms */
+	u16 config_value;
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_WORD_DATA))
 		return -ENODEV;
@@ -229,6 +230,11 @@ static int ina2xx_probe(struct i2c_client *client,
 	data = devm_kzalloc(&client->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
+
+	/* set the device type */
+	data->kind = id->driver_data;
+	data->config = &ina2xx_config[data->kind];
+	config_value = data->config->config_default;
 
 	if (client->dev.platform_data) {
 		pdata =
@@ -238,23 +244,24 @@ static int ina2xx_probe(struct i2c_client *client,
 	} else if (client->dev.of_node) {
 		const __be32 *property;
 		int len;
+		/* Get shunt resistor value */
 		property = of_get_property(client->dev.of_node,
 						"shunt-uohms", &len);
 		if (property && len == sizeof(int))
 			shunt = be32_to_cpup(property);
+		/* Get configuration register value */
+		property = of_get_property(client->dev.of_node,
+						"config", &len);
+		if (property && len == sizeof(int))
+			config_value = be32_to_cpup(property);
 #endif
 	}
 
 	if (shunt <= 0)
 		return -ENODEV;
 
-	/* set the device type */
-	data->kind = id->driver_data;
-	data->config = &ina2xx_config[data->kind];
-
 	/* device configuration */
-	i2c_smbus_write_word_swapped(client, INA2XX_CONFIG,
-				     data->config->config_default);
+	i2c_smbus_write_word_swapped(client, INA2XX_CONFIG, config_value);
 	/* set current LSB to 1mA, shunt is in uOhms */
 	/* (equation 13 in datasheet) */
 	i2c_smbus_write_word_swapped(client, INA2XX_CALIBRATION,
