@@ -199,6 +199,7 @@
 				ina220@40 {
 					compatible = "ti,ina220";
 					reg = <0x40>;
+					config = <0x04df>;
 					shunt-uohms = <1000>;
 				};
 
