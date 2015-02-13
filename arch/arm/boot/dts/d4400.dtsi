@@ -1347,14 +1347,59 @@
 				reg = <0x00098000 0x4000>;
 				interrupts = <0 180 0x4>;
 			};
-		};
 
+			qspi@0A8000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "fsl,d4400-qspi";
+				reg = <0xA8000 0x4000>;
+				status = "okay";
+			};
+
+		};
                 weim-bus@30000000 {
-                        compatible = "simple-bus";
+                        compatible = "fsl,d4400-weim-flash", "simple-bus";
                         #address-cells = <1>;
                         #size-cells = <1>;
                         reg = <0x30000000 0x20000000>;
                         ranges = <0x0 0x30000000 0x20000000>;
+                };
+                ocram1-bus@60000000 {
+                        compatible = "fsl,d4400-ocram1", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0x60000000 0x10000>;
+                        ranges = <0x0 0x60000000 0x10000>;
+                };
+                ocram2-bus@61000000 {
+                        compatible = "fsl,d4400-ocram2", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0x61000000 0x10000>;
+                };
+                ocram3-bus@70000000 {
+                        compatible = "fsl,d4400-ocram3", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0x70000000 0x10000>;
+                };
+                ocram4-bus@71000000 {
+                        compatible = "fsl,d4400-ocram4", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0x71000000 0x10000>;
+                };
+                ocram5-bus@0xF0000000 {
+                        compatible = "fsl,d4400-ocram5", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0xF0000000 0x10000>;
+                };
+                ocram6-bus@0xF1000000 {
+                        compatible = "fsl,d4400-ocram6", "simple-bus";
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        reg = <0xF1000000 0x10000>;
                 };
         };
 };

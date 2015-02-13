@@ -29,5 +29,6 @@ int qixis_jcpll_use_refc(int enable);
 int qixis_jcpll_locked(void);
 int qixis_xcvr_present(int xcvr_id);
 int qixis_leds_set_clear(unsigned int set, unsigned int clear);
+int qixis_set_reboot_method(unsigned int method);
 
 #endif

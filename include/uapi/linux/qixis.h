@@ -85,4 +85,6 @@ struct qixis_jcpll_write_buf {
 							unsigned int)
 #define QIXIS_LEDS_SET_CLEAR			_IOW(QIXIS_MAGIC, 8, \
 							unsigned int)
+#define QIXIS_SET_REBOOT_METHOD			_IOW(QIXIS_MAGIC, 9, \
+							unsigned int)
 #endif /* _UAPI_QIXIS_H */

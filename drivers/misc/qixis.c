@@ -38,6 +38,7 @@
 #include <linux/spi/spi.h>
 
 #include <linux/qixis.h>
+#include <mach/mach-d4400.h>
 
 #define DRIVER_NAME "d4400-fpga"
 #define QIXIS_DEVICE_NAME "qixis"
@@ -333,6 +334,16 @@ int qixis_leds_set_clear(unsigned int set, unsigned int clear)
 	return 0;
 }
 EXPORT_SYMBOL(qixis_leds_set_clear);
+
+int qixis_set_reboot_method(unsigned int method)
+{
+	/* 0-hard/WDT reset, nonzero-simulated reset */
+	mutex_lock(&qixis_lock);
+	d4400_set_reboot_method(method);
+	mutex_unlock(&qixis_lock);
+	return 0;
+}
+EXPORT_SYMBOL(qixis_set_reboot_method);
 
 static int __qixis_jcpll_write_reg(u8 val, u16 offset)
 {
@@ -678,6 +689,10 @@ static long qixis_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	/* Set / Clear the software LEDs */
 	case QIXIS_LEDS_SET_CLEAR:
 		err = qixis_leds_set_clear((arg>>8)&0xFF, arg&0xFF);
+		break;
+	/* Set reboot method */
+	case QIXIS_SET_REBOOT_METHOD:
+		err = qixis_set_reboot_method(arg);
 		break;
 	default:
 		err = -EINVAL;

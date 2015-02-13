@@ -29,11 +29,23 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
 #include <asm/system_misc.h>
+#include <mach/simreset.h>
 
 #include "common.h"
 #include "hardware.h"
 
 #define D4400_SILICON_REVISION_REG	0x24
+
+/* Reboot method: 0-reboot using hard reset, nonzero-simulated reset */
+static int reboot_method;
+int d4400_query_reboot_method(void)
+{
+	return reboot_method;
+}
+void d4400_set_reboot_method(int method)
+{
+	reboot_method = method;
+}
 
 static int d4400_revision(void)
 {
@@ -65,37 +77,50 @@ static int d4400_revision(void)
 
 void d4400_restart(char mode, const char *cmd)
 {
-	struct device_node *np;
-	void __iomem *wdog_base;
+	if (d4400_query_reboot_method()) {
+		/* Simulated reboot */
+		pr_info("Executing simulated reset sequence.\n");
+		sim_reset(); /* Never returns */
+	} else {
+		/* Hard reset using WDT */
+		struct device_node *np;
+		void __iomem *wdog_base;
 
-	np = of_find_compatible_node(NULL, NULL, "fsl,d4400-wdt");
-	if (!np) {
-		pr_warn("Failed to find compatible DT node, using soft reset");
-		goto soft;
-	}
+		/* Clear simreset marker to notify bootup that this is NOT
+		 * a simulated reset.
+		 */
+		clear_ram_simreset_marker();
 
-	wdog_base = of_iomap(np, 0);
-	if (!wdog_base) {
-		pr_warn("Unable to remap watchdog address, using soft reset");
-		goto soft;
-	}
+		np = of_find_compatible_node(NULL, NULL, "fsl,d4400-wdt");
+		if (!np) {
+			pr_warn("Failed to find compatible DT node, using soft reset");
+			goto soft;
+		}
 
-	/* enable wdog */
-	writew_relaxed(1 << 2, wdog_base);
-	/* write twice to ensure the request will not get ignored */
-	writew_relaxed(1 << 2, wdog_base);
+		wdog_base = of_iomap(np, 0);
+		if (!wdog_base) {
+			pr_warn("Unable to remap watchdog address, using soft reset");
+			goto soft;
+		}
+		pr_info("Executing cpu reset sequence.\n");
 
-	/* wait for reset to assert ... */
-	mdelay(500);
+		/* enable wdog */
+		writew_relaxed(1 << 2, wdog_base);
+		/* write twice to ensure the request will not get ignored */
+		writew_relaxed(1 << 2, wdog_base);
 
-	pr_err("Watchdog reset failed to assert reset\n");
+		/* wait for reset to assert ... */
+		mdelay(500);
 
-	/* delay to allow the serial port to show the message */
-	mdelay(50);
+		pr_err("Watchdog reset failed to assert reset\n");
+
+		/* delay to allow the serial port to show the message */
+		mdelay(50);
 
 soft:
-	/* we'll take a jump through zero as a poor second */
-	soft_restart(0);
+		/* we'll take a jump through zero as a poor second */
+		soft_restart(0);
+	}
 }
 
 static void __init d4400_init_late(void)
@@ -104,13 +129,19 @@ static void __init d4400_init_late(void)
  *FIXME - Add power management register function here
  */
 	d4400_gpc_init();
-	#if defined(D4400_GIT_LAST_COMMIT_HASH) && defined(D4400_GIT_LAST_COMMIT_DATE)
+	#if defined(D4400_GIT_LAST_COMMIT_HASH) && \
+		defined(D4400_GIT_LAST_COMMIT_DATE)
 	pr_err("KERNEL: git commit: Hash: %.7s; Date: %s)\n",
 		D4400_GIT_LAST_COMMIT_HASH,
 		D4400_GIT_LAST_COMMIT_DATE);
 
 	pr_err("KERNEL: Built %s %s\n", __DATE__, __TIME__);
 	#endif
+
+	/* System initialization is ending, reset marker. */
+	clear_simreset_marker();
+	/* By default, reset method is cpu reset. */
+	d4400_set_reboot_method(0);
 }
 
 static void __init d4400_map_io(void)
@@ -142,6 +173,7 @@ static void __init d4400_timer_init(void)
 static void __init d4400_init_machine(void)
 {
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
+	check_ram_simreset_marker();
 }
 
 static struct sys_timer d4400_timer = {
