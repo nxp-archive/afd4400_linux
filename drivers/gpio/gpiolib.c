@@ -102,7 +102,7 @@ static int gpio_ensure_requested(struct gpio_desc *desc, unsigned offset)
 	if (WARN(test_and_set_bit(FLAG_REQUESTED, &desc->flags) == 0,
 			"autorequest GPIO-%d\n", gpio)) {
 		if (!try_module_get(chip->owner)) {
-			pr_err("GPIO-%d: module can't be gotten \n", gpio);
+			pr_err("GPIO-%d: module can't be gotten\n", gpio);
 			clear_bit(FLAG_REQUESTED, &desc->flags);
 			/* lose */
 			return -EIO;
@@ -192,7 +192,7 @@ err:
 }
 
 /* caller ensures gpio is valid and requested, chip->get_direction may sleep  */
-static int gpio_get_direction(unsigned gpio)
+int gpio_get_direction(unsigned gpio)
 {
 	struct gpio_chip	*chip;
 	struct gpio_desc	*desc = &gpio_desc[gpio];
@@ -216,6 +216,7 @@ static int gpio_get_direction(unsigned gpio)
 	}
 	return status;
 }
+EXPORT_SYMBOL_GPL(gpio_get_direction);
 
 #ifdef CONFIG_GPIO_SYSFS
 

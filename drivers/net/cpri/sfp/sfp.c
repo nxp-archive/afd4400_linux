@@ -29,6 +29,7 @@
 #include <linux/interrupt.h>
 
 #include <linux/cpri.h>
+#include <mach/simreset.h>
 
 #define MAX_SFPS	4
 #define SFP_DEVICE_NAME "sfp"
@@ -520,7 +521,14 @@ static int sfp_config_gpios(struct sfp_dev *sfp)
 				sfp->tx_disable);
 	else {
 		gpio_request(sfp->tx_disable, "gpio-sfp-tx_disable");
-		gpio_direction_output(sfp->tx_disable, 1);
+
+		/* If tx_disable is an input (1-input), then set tx_disable
+		 * as output.
+		 */
+		if (gpio_get_direction(sfp->tx_disable) == 1) {
+			/* Set as output/high to disable. */
+			gpio_direction_output(sfp->tx_disable, 1);
+		}
 	}
 	sfp->prs_state = 0;
 	sfp->rxlos_state = 0;

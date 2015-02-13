@@ -105,8 +105,7 @@ static int pca953x_write_reg(struct pca953x_chip *chip, int reg, u32 val)
 						(reg << 2) | REG_ADDR_AI,
 						3,
 						(u8 *) &val);
-	}
-	else {
+	} else {
 		switch (chip->chip_type) {
 		case PCA953X_TYPE:
 			ret = i2c_smbus_write_word_data(chip->client,
@@ -139,8 +138,7 @@ static int pca953x_read_reg(struct pca953x_chip *chip, int reg, u32 *val)
 	if (chip->gpio_chip.ngpio <= 8) {
 		ret = i2c_smbus_read_byte_data(chip->client, reg);
 		*val = ret;
-	}
-	else if (chip->gpio_chip.ngpio == 24) {
+	} else if (chip->gpio_chip.ngpio == 24) {
 		*val = 0;
 		ret = i2c_smbus_read_i2c_block_data(chip->client,
 						(reg << 2) | REG_ADDR_AI,
@@ -158,6 +156,40 @@ static int pca953x_read_reg(struct pca953x_chip *chip, int reg, u32 *val)
 	}
 
 	return 0;
+}
+
+static int pca953x_gpio_get_direction(struct gpio_chip *gc, unsigned off)
+{
+	struct pca953x_chip *chip;
+	uint reg_val;
+	int ret, offset = 0;
+
+	chip = container_of(gc, struct pca953x_chip, gpio_chip);
+
+	mutex_lock(&chip->i2c_lock);
+	reg_val = chip->reg_direction | (1u << off);
+
+	switch (chip->chip_type) {
+	case PCA953X_TYPE:
+		offset = PCA953X_DIRECTION;
+		break;
+	case PCA957X_TYPE:
+		offset = PCA957X_CFG;
+		break;
+	}
+	ret = pca953x_read_reg(chip, offset, &reg_val);
+	if (ret)
+		goto exit;
+	if (reg_val & (1u << off)) {
+		ret = 1; /* Input */
+		chip->reg_direction |= (1u << off);
+	} else {
+		ret = 0; /* Output */
+		chip->reg_direction &= ~(1u << off);
+	}
+exit:
+	mutex_unlock(&chip->i2c_lock);
+	return ret;
 }
 
 static int pca953x_gpio_direction_input(struct gpio_chip *gc, unsigned off)
@@ -310,6 +342,7 @@ static void pca953x_setup_gpio(struct pca953x_chip *chip, int gpios)
 
 	gc->direction_input  = pca953x_gpio_direction_input;
 	gc->direction_output = pca953x_gpio_direction_output;
+	gc->get_direction = pca953x_gpio_get_direction;
 	gc->get = pca953x_gpio_get_value;
 	gc->set = pca953x_gpio_set_value;
 	gc->can_sleep = 1;
@@ -496,7 +529,8 @@ static int pca953x_irq_setup(struct pca953x_chip *chip,
 		chip->irq_stat &= chip->reg_direction;
 		mutex_init(&chip->irq_lock);
 
-		chip->irq_base = irq_alloc_descs(-1, irq_base, chip->gpio_chip.ngpio, -1);
+		chip->irq_base = irq_alloc_descs(-1, irq_base,
+			chip->gpio_chip.ngpio, -1);
 		if (chip->irq_base < 0)
 			goto out_failed;
 
@@ -594,7 +628,8 @@ pca953x_get_alt_pdata(struct i2c_client *client, int *gpio_base, u32 *invert)
 
 	*gpio_base = -1;
 	val = of_get_property(node, "linux,gpio-base", &size);
-	WARN(val, "%s: device-tree property 'linux,gpio-base' is deprecated!", __func__);
+	WARN(val, "%s: device-tree property 'linux,gpio-base' is deprecated!"
+		, __func__);
 	if (val) {
 		if (size != sizeof(*val))
 			dev_warn(&client->dev, "%s: wrong linux,gpio-base\n",
@@ -604,7 +639,8 @@ pca953x_get_alt_pdata(struct i2c_client *client, int *gpio_base, u32 *invert)
 	}
 
 	val = of_get_property(node, "polarity", NULL);
-	WARN(val, "%s: device-tree property 'polarity' is deprecated!", __func__);
+	WARN(val, "%s: device-tree property 'polarity' is deprecated!",
+		__func__);
 	if (val)
 		*invert = *val;
 }
@@ -688,12 +724,14 @@ static int pca953x_probe(struct i2c_client *client,
 	} else {
 		pca953x_get_alt_pdata(client, &chip->gpio_start, &invert);
 #ifdef CONFIG_OF_GPIO
-		/* If I2C node has no interrupts property, disable GPIO interrupts */
-		if (of_find_property(client->dev.of_node, "interrupts", NULL) == NULL)
+		/* If I2C node has no interrupts property, disable GPIO
+		 * interrupts.
+		 */
+		if (of_find_property(client->dev.of_node, "interrupts",
+			NULL) == NULL)
 			irq_base = -1;
 #endif
 	}
-
 	chip->client = client;
 
 	chip->chip_type = id->driver_data & (PCA953X_TYPE | PCA957X_TYPE);
