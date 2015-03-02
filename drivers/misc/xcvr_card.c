@@ -174,7 +174,10 @@ int rf_assert_reset(struct xcvr_dev *xcvr_dev, int dev_id)
 		goto out;
 	}
 
+	/* Per ADI spec, ensure at least 100usec before/after reset pulse. */
+	udelay(100);
 	rc = src_assert_reset(xcvr_dev->src_handle, SW_RST, reset);
+	udelay(100);
 	if (rc) {
 		dev_err(xcvr_dev->dev, "Reset Failed, dev_id %d, err %d\n",
 			dev_id, rc);
