@@ -111,6 +111,10 @@ static const char * const board_names[] = {
 	"UNKNOWN", "D4400_EVB", "D4400_RDB"
 };
 
+static const char rdb_rev_letter[4] = {
+	'A', '1', '2', '3'
+};
+
 static int qixis_jcpll_init(void);
 
 static int match_spi_device_from_np(struct device *dev, void *data)
@@ -812,7 +816,9 @@ static int __init d4400_fpga_probe(struct platform_device *pdev)
 	if (brd > (sizeof(board_names)/sizeof(char *)))
 		brd = 0;
 	rev = qixis_board_info.board_rev < 0 ? '?' :
-		qixis_board_info.board_rev + 'A';
+		(qixis_board_info.board_type == QIXIS_BOARD_TYPE_D4400RDB ?
+			rdb_rev_letter[qixis_board_info.board_rev] :
+			qixis_board_info.board_rev + 'A');
 	dev_info(&pdev->dev,
 		"QIXIS board type: %s, rev %c\n", board_names[brd], rev);
 
