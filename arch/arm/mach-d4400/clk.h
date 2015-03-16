@@ -49,6 +49,7 @@ struct clk *d4400_clk_gate(struct device *dev, const char *name,
 extern void d4400_rev_clk_select(u8 cpri_id, u8 clk_dev);
 extern int d4400_ccm_vspa_full_pow_gate(u8 vspa_id);
 extern int d4400_ccm_vspa_full_pow_up(u8 vspa_id);
+extern int d4400_ccm_vspa_full_pow(u8 vspa_id);
 
 #endif
 

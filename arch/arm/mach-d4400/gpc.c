@@ -50,6 +50,19 @@ int d4400_gpc_vspa_full_pow_up(u8 vspa_id)
 	return d4400_ccm_vspa_full_pow_up(vspa_id);
 }
 
+/* returns 1 if VSPA power is on */
+/* vspa_id max = 10 , start ID = 0 */
+int d4400_gpc_vspa_full_pow(u8 vspa_id)
+{
+	u32 val;
+	u32 offset = FULL_VSPA0_PGC_OFFSET + vspa_id * 0x20;
+	if (offset > FULL_VSPA10_PGC_OFFSET)
+		return -EINVAL;
+	val = readl(gpc_base + offset + GPC_PGC_PGCR_REG_OFFSET);
+	return (val & GPC_PGC_PGCR_PCR_MASK) ?
+					d4400_ccm_vspa_full_pow(vspa_id) : 1;
+}
+
 void __init d4400_gpc_init(void)
 {
 	struct device_node *np;

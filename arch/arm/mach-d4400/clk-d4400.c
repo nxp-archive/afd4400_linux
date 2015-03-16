@@ -129,6 +129,14 @@ int d4400_ccm_vspa_full_pow_up(u8 vspa_id)
 	return 0;
 }
 
+/* returns 1 if VSPA power is on */
+/* vspa_id starts at 0 for first VSPA core */
+int d4400_ccm_vspa_full_pow(u8 vspa_id)
+{
+	return (readl(ccm_base + CCM_VPGCSR_OFFSET)
+		& BITS_MASK(1, (vspa_id + 0x10))) ? 0 : 1;
+}
+
 int __init d4400_clocks_init(void)
 {
 	struct device_node *np;
