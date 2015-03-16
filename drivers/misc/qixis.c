@@ -112,7 +112,7 @@ static const char * const board_names[] = {
 };
 
 static const char rdb_rev_letter[4] = {
-	'A', '1', '2', '3'
+	'A', 'C', '2', '3'
 };
 
 static int qixis_jcpll_init(void);
