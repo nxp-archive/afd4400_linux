@@ -44,6 +44,12 @@
 
 #define VSPA_DMA_CHANNELS		(32)
 
+/* mmap offset argument for vspa regsiters */
+#define VSPA_REG_OFFSET			(0)
+
+/* mmap offset argument for dbg regsiter */
+#define VSPA_DBG_OFFSET			(4096)
+
 /* IP register offset for the registers used by the driver */
 #define HWVERSION_REG_OFFSET		(0x0000>>2)
 #define SWVERSION_REG_OFFSET		(0x0004>>2)
@@ -88,65 +94,70 @@
 #define IPPU_HWVERSION_REG_OFFSET	(0x0710>>2)
 #define IPPU_SWVERSION_REG_OFFSET	(0x0714>>2)
 
-#define DBG_GDBEN_REG_OFFSET		(0x0000>>2)
-#define DBG_RCR_REG_OFFSET		(0x0004>>2)
-#define DBG_RCSTATUS_REG_OFFSET		(0x0008>>2)
+#define DBG_GDBEN_REG_OFFSET		(0x0800>>2)
+#define DBG_RCR_REG_OFFSET		(0x0804>>2)
+#define DBG_RCSTATUS_REG_OFFSET		(0x0808>>2)
 
 
-#define STATUS_REG_PDN_ACTIVE           (0x80000000)
-#define STATUS_REG_PDN_DONE             (0x40000000)
-#define STATUS_REG_BUSY                 (0x00000100)
-#define STATUS_REG_IRQ_VCPU_MSG         (0x00000040)
-#define STATUS_REG_IRQ_DMA_ERR          (0x00000020)
-#define STATUS_REG_IRQ_DMA_COMP         (0x00000010)
-#define STATUS_REG_IRQ_FLAGS1           (0x00000008)
-#define STATUS_REG_IRQ_FLAGS0           (0x00000004)
-#define STATUS_REG_IRQ_IPPU_DONE        (0x00000002)
-#define STATUS_REG_IRQ_DONE             (0x00000001)
+#define STATUS_REG_PDN_ACTIVE		(0x80000000)
+#define STATUS_REG_PDN_DONE		(0x40000000)
+#define STATUS_REG_BUSY			(0x00000100)
+#define STATUS_REG_IRQ_VCPU_MSG		(0x00000040)
+#define STATUS_REG_IRQ_DMA_ERR		(0x00000020)
+#define STATUS_REG_IRQ_DMA_COMP		(0x00000010)
+#define STATUS_REG_IRQ_FLAGS1		(0x00000008)
+#define STATUS_REG_IRQ_FLAGS0		(0x00000004)
+#define STATUS_REG_IRQ_IPPU_DONE	(0x00000002)
+#define STATUS_REG_IRQ_DONE		(0x00000001)
 
 #define MBOX_STATUS_IN_64_BIT		(0x00000008)
 #define MBOX_STATUS_IN_32_BIT		(0x00000004)
 #define MBOX_STATUS_OUT_64_BIT		(0x00000002)
 #define MBOX_STATUS_OUT_32_BIT		(0x00000001)
 
-#define DMA_FLAG_COMPLETE	(1<<0)
-#define DMA_FLAG_XFRERR		(1<<1)
-#define DMA_FLAG_CFGERR		(1<<2)
+#define DMA_FLAG_COMPLETE		(1<<0)
+#define DMA_FLAG_XFRERR			(1<<1)
+#define DMA_FLAG_CFGERR			(1<<2)
 
-#define DEBUG_DMA		(1<<0)
-#define DEBUG_CMD_BD		(1<<1)
-#define DEBUG_REPLY_BD		(1<<2)
-#define DEBUG_SEQID		(1<<3)
-#define DEBUG_CMD		(1<<4)
-#define DEBUG_FLAGS0_IRQ	(1<<5)
-#define DEBUG_FLAGS1_IRQ	(1<<6)
-#define DEBUG_DMA_IRQ		(1<<7)
-#define DEBUG_IOCTL		(1<<8)
-#define DEBUG_STARTUP		(1<<9)
-#define DEBUG_SPM		(1<<10)
-#define DEBUG_EVENT		(1<<11)
+#define DEBUG_MESSAGES			(1<<0)
+#define DEBUG_STARTUP			(1<<1)
+#define DEBUG_DMA			(1<<2)
+#define DEBUG_CMD			(1<<3)
+#define DEBUG_REPLY			(1<<4)
+#define DEBUG_SPM			(1<<5)
+#define DEBUG_EVENT			(1<<6)
+#define DEBUG_WATCHDOG			(1<<7)
+#define DEBUG_MBOX64_OUT		(1<<8)
+#define DEBUG_MBOX32_OUT		(1<<9)
+#define DEBUG_MBOX64_IN			(1<<10)
+#define DEBUG_MBOX32_IN			(1<<11)
+#define DEBUG_DMA_IRQ			(1<<12)
+#define DEBUG_FLAGS0_IRQ		(1<<13)
+#define DEBUG_FLAGS1_IRQ		(1<<14)
+#define DEBUG_IOCTL			(1<<15)
+#define DEBUG_SEQID			(1<<16)
+#define DEBUG_CMD_BD			(1<<17)
+#define DEBUG_REPLY_BD			(1<<18)
+#define DEBUG_TEST_SPM			(1<<24)
 
-#define DEBUG_MBOX64_OUT	(1<<12)
-#define DEBUG_MBOX32_OUT	(1<<13)
-#define DEBUG_MBOX64_IN		(1<<14)
-#define DEBUG_MBOX32_IN		(1<<15)
-#define DEBUG_WATCHDOG		(1<<16)
-
-#define DEBUG_TEST		(1<<24)
-
-#define MBOX_QUEUE_ENTRIES (16)
+#define MBOX_QUEUE_ENTRIES		(16)
 struct mbox_queue {
 	volatile int	idx_enqueue;
 	volatile int	idx_dequeue;
 	volatile int	idx_complete;
 };
 
-#define EVENT_LIST_ENTRIES (256)
+#define EVENT_LIST_ENTRIES		(256)
 struct event_list {
 	struct list_head list;
-	uint8_t		flags;
-	uint8_t		id;
-	uint16_t	type;
+	union {
+	  uint32_t	control;
+	  struct {
+	    uint8_t	id;
+	    uint8_t	err;
+	    uint16_t	type;
+	  };
+	};
 	uint32_t	data0;
 	uint32_t	data1;
 };
@@ -158,21 +169,36 @@ uint32_t  dma_info  payload0  payload0  word0     msb    data   msb   data  val
 uint32_t  dma_info  size/0    size/idx  ptr       lsb    0      lsb   0     ctr
 */
 
-#define EVENT_QUEUE_ENTRIES (256)
+struct event_entry {
+	union {
+	  uint32_t      control;
+	  struct {
+	    uint8_t     id;
+	    uint8_t     err;
+	    uint8_t     rsvd;
+	    uint8_t     type;
+	  };
+	};
+	uint32_t	data0;
+	uint32_t	data1;
+	uint32_t	lost;
+};
+
+#define EVENT_QUEUE_ENTRIES		(256)
 struct event_queue {
-	struct vspa_event entry[EVENT_QUEUE_ENTRIES];
+	struct event_entry entry[EVENT_QUEUE_ENTRIES];
 	volatile int    idx_enqueue;	/* Index for next item to enqueue */
 	volatile int    idx_queued;	/* Index for last item enqueued */
 	volatile int    idx_dequeue;	/* Index for next item to dequeue */
 };
 
-#define DMA_QUEUE_ENTRIES (16)
+#define DMA_QUEUE_ENTRIES		(16)
 struct dma_queue {
 	struct vspa_dma_req entry[DMA_QUEUE_ENTRIES];
 	int		chan;
-	int             idx_queue;	/* Index for next item to enqueue */
-	int             idx_dma;	/* Index for next item to DMA */
-	int             idx_chk;	/* Index for next item to check */
+	int		idx_queue;	/* Index for next item to enqueue */
+	int		idx_dma;	/* Index for next item to DMA */
+	int		idx_chk;	/* Index for next item to check */
 };
 
 struct memory_pool_bd {
@@ -184,10 +210,10 @@ struct memory_pool_bd {
 };
 
 //TODO - support 32 reply bds
-#define CMD_BUFFER_DEPTH (16)
+#define BD_ENTRIES		(16)
 struct memory_pool {
 	uint32_t	free_bds;
-	struct memory_pool_bd bd[CMD_BUFFER_DEPTH];
+	struct memory_pool_bd bd[BD_ENTRIES];
 	uint32_t	tail;
 	uint32_t	size;
 	uint32_t	*paddr;
@@ -203,7 +229,7 @@ struct circular_buffer {
 	uint32_t	*vaddr;
 };
 
-#define MAX_SEQIDS (16)
+#define MAX_SEQIDS			(16)
 struct seqid {
 	uint32_t	flags;
 	int		cmd_id;
@@ -237,124 +263,124 @@ enum vspa_driver_state {
 struct vspa_device {
 
 	/* VSPA instance */
-	int     id;
+	int		id;
 
-	struct device *dev;
+	struct device	*dev;
 
 	/* Char device structure */
-	struct cdev cdev;
+	struct cdev	cdev;
 
 	/* Major minor information */
 	dev_t dev_t;
 
 	/* IRQ numbers */
-	uint32_t flags1_irq_no;
-	uint32_t flags0_irq_no;
-	uint32_t dma_irq_no;
-	uint32_t general_irq_no;
+	uint32_t	flags1_irq_no;
+	uint32_t	flags0_irq_no;
+	uint32_t	dma_irq_no;
+	uint32_t	general_irq_no;
 
 	/* IP registers */
-	resource_size_t mem_size; /* size */
-	u32 __iomem *mem_addr;    /* physical address */
-	u32 __iomem *regs;        /* virtual address */
+	resource_size_t	mem_size; /* size */
+	u32 __iomem	*mem_addr;    /* physical address */
+	u32 __iomem	*regs;	/* virtual address */
 
 	/* Debug registers */
-	resource_size_t dbg_size; /* size */
-	u32 __iomem *dbg_addr;    /* physical address */
-	u32 __iomem *dbg_regs;    /* virtual address */
+	resource_size_t	dbg_size; /* size */
+	u32 __iomem	*dbg_addr;    /* physical address */
+	u32 __iomem	*dbg_regs;    /* virtual address */
 
-	uint32_t debug;
+	uint32_t	debug;
 
 	/* Buffer sizes */
-	uint32_t spm_buffer_bytes;
-	uint32_t cmd_buffer_bytes;
-	uint32_t reply_buffer_bytes;
-	uint32_t *spm_buffer_paddr;
-	uint32_t *spm_buffer_vaddr;
+	uint32_t	spm_buffer_bytes;
+	uint32_t	cmd_buffer_bytes;
+	uint32_t	reply_buffer_bytes;
+	uint32_t	*spm_buffer_paddr;
+	uint32_t	*spm_buffer_vaddr;
 
 	/* Working set for SPM buffer */
-	int	spm_user_buf;
-	uint32_t spm_buf_bytes;
-	uint32_t *spm_buf_paddr;
-	uint32_t *spm_buf_vaddr;
+	int		spm_user_buf;
+	uint32_t	spm_buf_bytes;
+	uint32_t	*spm_buf_paddr;
+	uint32_t	*spm_buf_vaddr;
 
 	/* DMA queue */
 	struct dma_queue dma_queue;
-	spinlock_t dma_enqueue_lock;
-	spinlock_t dma_tx_queue_lock; /* called from irq handler */
-	unsigned long dma_tx_queue_lock_flags;
+	spinlock_t	dma_enqueue_lock;
+	spinlock_t	dma_tx_queue_lock; /* called from irq handler */
+	unsigned long	dma_tx_queue_lock_flags;
 
 	/* Event queue */
 	struct event_queue event_queue;
 	struct event_list events[EVENT_LIST_ENTRIES];
 	struct list_head events_free_list;
 	struct list_head events_queued_list;
-	spinlock_t event_list_lock;
-	spinlock_t event_queue_lock; /* called from irq handler */
+	spinlock_t	event_list_lock;
+	spinlock_t	event_queue_lock; /* called from irq handler */
 
 	/* Memory pools */
 	struct circular_buffer cmd_buffer;
 	struct memory_pool cmd_pool;
 	struct memory_pool reply_pool;
 
-	uint32_t cmdbuf_addr;
-	uint32_t spm_addr;
+	uint32_t	cmdbuf_addr;
+	uint32_t	spm_addr;
 
 	/* Sequence IDs */
-	uint32_t active_seqids;
-	uint32_t last_seqid;
-	struct seqid seqid[MAX_SEQIDS];
+	uint32_t	active_seqids;
+	uint32_t	last_seqid;
+	struct seqid	seqid[MAX_SEQIDS];
 
-	uint32_t first_cmd;
-	uint32_t last_wstart;
+	uint32_t	first_cmd;
+	uint32_t	last_wstart;
 
 	struct mbox_queue mb32_queue;
 	struct mbox_queue mb64_queue;
 	struct vspa_mb32 mb32[MBOX_QUEUE_ENTRIES];
 	struct vspa_mb64 mb64[MBOX_QUEUE_ENTRIES];
-	spinlock_t mb32_lock; /* called from irq handler */
-	spinlock_t mb64_lock; /* called from irq handler */
+	spinlock_t	mb32_lock; /* called from irq handler */
+	spinlock_t	mb64_lock; /* called from irq handler */
 
 	/* DMA channel usage */
-	uint8_t spm_dma_chan;
-	uint8_t bulk_dma_chan;
-	uint8_t reply_dma_chan;
-	uint8_t cmd_dma_chan;
+	uint8_t		spm_dma_chan;
+	uint8_t		bulk_dma_chan;
+	uint8_t		reply_dma_chan;
+	uint8_t		cmd_dma_chan;
 
-	uint8_t legacy_cmd_dma_chan;
-	char eld_filename[VSPA_MAX_ELD_FILENAME];
+	uint8_t		legacy_cmd_dma_chan;
+	char		eld_filename[VSPA_MAX_ELD_FILENAME];
 	struct vspa_versions versions;
 	struct vspa_hardware hardware;
 
 	/* Watchdog */
 	struct timer_list watchdog_timer;
-	uint32_t watchdog_interval_msecs;
-	uint32_t watchdog_value;
+	uint32_t	watchdog_interval_msecs;
+	uint32_t	watchdog_value;
 	struct completion watchdog_complete;
 
 	/* IRQ handling */
 //TODO	spinlock_t irq_lock;
-	uint32_t irq_bits; // TODO - test code
+	uint32_t	irq_bits; // TODO - test code
 
-	spinlock_t control_lock;
+	spinlock_t	control_lock;
 
 	/* Current state of the device */
-	enum vspa_state state;
+	enum vspa_state	state;
 
 	/* Current state of the driver */
 	enum vspa_driver_state driver_state;
 
 	/* Physical address of the device context memory */
-	u32 __iomem *mem_context;
+	u32 __iomem	*mem_context;
 
 	/* Status register content of IP register set*/
-	uint32_t   status_reg;
+	uint32_t	status_reg;
 
 	/* Wait queue for event notifications*/
 	wait_queue_head_t event_wait_q;
-	uint32_t event_list_mask;
-	uint32_t event_queue_mask;
-	uint32_t poll_mask;
+	uint32_t	event_list_mask;
+	uint32_t	event_queue_mask;
+	uint32_t	poll_mask;
 
 //TODO	struct work_struct workqueue;
 

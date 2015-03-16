@@ -35,15 +35,9 @@
 
 #define VSPA_MAGIC_NUM 'V'
 
-/* mmap offset argument for vspa regsiters */
-#define VSPA_REG_OFFSET	0
-
-/* mmap offset argument for dbg regsiter */
-#define VSPA_DBG_OFFSET	4096
-
 enum vspa_state {
 	VSPA_STATE_UNKNOWN = 0,
-	VSPA_STATE_PWR_DOWN,
+	VSPA_STATE_POWER_DOWN,
 	VSPA_STATE_UNPROGRAMMED_IDLE,
 	VSPA_STATE_UNPROGRAMMED_BUSY,
 	VSPA_STATE_LOADING,
@@ -52,8 +46,15 @@ enum vspa_state {
 	VSPA_STATE_RUNNING_BUSY
 };
 
+enum vspa_power {
+	VSPA_POWER_DOWN = 0,
+	VSPA_POWER_UP,
+	VSPA_POWER_CYCLE
+};
+
 enum vspa_event_type {
-	VSPA_EVENT_DMA = 1,
+	VSPA_EVENT_NONE = 0,
+	VSPA_EVENT_DMA,
 	VSPA_EVENT_CMD,
 	VSPA_EVENT_REPLY,
 	VSPA_EVENT_SPM,
@@ -70,41 +71,47 @@ enum vspa_event_type {
 #define VSPA_FLAG_REPORT_DMA_COMPLETE	(1<<3)
 #define VSPA_FLAG_REPORT_MB_COMPLETE	(1<<4)
 
-#define VSPA_MSG_PEEK			(0x10<<0)
-#define VSPA_MSG_DMA			(0x10<<VSPA_EVENT_DMA)
-#define VSPA_MSG_CMD			(0x10<<VSPA_EVENT_CMD)
-#define VSPA_MSG_REPLY			(0x10<<VSPA_EVENT_REPLY)
-#define VSPA_MSG_SPM			(0x10<<VSPA_EVENT_SPM)
-#define VSPA_MSG_MB64_IN		(0x10<<VSPA_EVENT_MB64_IN)
-#define VSPA_MSG_MB32_IN		(0x10<<VSPA_EVENT_MB32_IN)
-#define VSPA_MSG_MB64_OUT		(0x10<<VSPA_EVENT_MB64_OUT)
-#define VSPA_MSG_MB32_OUT		(0x10<<VSPA_EVENT_MB32_OUT)
-#define VSPA_MSG_ERROR			(0x10<<VSPA_EVENT_ERROR)
+
+#define VSPA_MSG(x)			(0x10 << x)
+
+#define VSPA_MSG_PEEK			VSPA_MSG(VSPA_EVENT_NONE)
+#define VSPA_MSG_DMA			VSPA_MSG(VSPA_EVENT_DMA)
+#define VSPA_MSG_CMD			VSPA_MSG(VSPA_EVENT_CMD)
+#define VSPA_MSG_REPLY			VSPA_MSG(VSPA_EVENT_REPLY)
+#define VSPA_MSG_SPM			VSPA_MSG(VSPA_EVENT_SPM)
+#define VSPA_MSG_MB64_IN		VSPA_MSG(VSPA_EVENT_MB64_IN)
+#define VSPA_MSG_MB32_IN		VSPA_MSG(VSPA_EVENT_MB32_IN)
+#define VSPA_MSG_MB64_OUT		VSPA_MSG(VSPA_EVENT_MB64_OUT)
+#define VSPA_MSG_MB32_OUT		VSPA_MSG(VSPA_EVENT_MB32_OUT)
+#define VSPA_MSG_ERROR			VSPA_MSG(VSPA_EVENT_ERROR)
 #define VSPA_MSG_ALL			(0xFFF0)
 #define VSPA_MSG_ALL_EVENTS		(0xFFE0)
+
+#define VSPA_ERR_DMA_CFGERR		(0x10)
+#define VSPA_ERR_DMA_XFRERR		(0x11)
+#define VSPA_ERR_WATCHDOG		(0x12)
 
 struct vspa_event {
 	union {
 	  uint32_t	control;
 	  struct {
-	    uint8_t	flags;
-	    uint8_t	rsvd;
 	    uint8_t	id;
-	    uint8_t	type;
+	    uint8_t	err;
+	    uint16_t	type;
 	  };
 	};
-	uint32_t	data0;
-	uint32_t	data1;
-	uint32_t	lost;
+	uint16_t	pkt_size;
+	uint16_t	buf_size;
+	uint32_t	data[0];
 };
 
 struct vspa_dma_req {
 	union {
 	  uint32_t	control;
 	  struct {
+	    uint8_t	id;
 	    uint8_t	flags;
 	    uint8_t	rsvd;
-	    uint8_t	id;
 	    uint8_t	type;
 	  };
 	};
@@ -119,8 +126,8 @@ struct vspa_startup {
 	uint32_t	cmd_buf_size;
 	uint32_t	cmd_buf_addr;
 	uint32_t	spm_buf_size;
-	uint32_t	spm_buf_paddr;
-	uint32_t	watchdog_interval_nsecs;
+	uint32_t	spm_buf_addr;
+	uint32_t	watchdog_interval_msecs;
 	uint8_t		cmd_dma_chan;
 	char		filename[VSPA_MAX_ELD_FILENAME];
 };
@@ -154,10 +161,10 @@ struct vspa_mb32 {
 	union {
 	  uint32_t      control;
 	  struct {
-	    uint8_t     flags;
-	    uint8_t     rsvd1;
-	    uint8_t     rsvd0;
 	    uint8_t     id;
+	    uint8_t     flags;
+	    uint8_t     rsvd0;
+	    uint8_t     rsvd1;
 	  };
 	};
 	uint32_t        data;
@@ -167,10 +174,10 @@ struct vspa_mb64 {
 	union {
 	  uint32_t      control;
 	  struct {
-	    uint8_t     flags;
-	    uint8_t     rsvd1;
-	    uint8_t     rsvd0;
 	    uint8_t     id;
+	    uint8_t     flags;
+	    uint8_t     rsvd0;
+	    uint8_t     rsvd1;
 	  };
 	};
 	uint32_t        data_msb;
@@ -201,10 +208,6 @@ struct vspa_event_read {
 
 /* Power Management request for vspa */
 #define VSPA_IOC_REQ_POWER	_IO(VSPA_MAGIC_NUM, 5)
-#define VSPA_POWER_DOWN  (0)
-#define VSPA_POWER_UP    (1)
-#define VSPA_POWER_CYCLE (2)
-
 /* DMA transaction */
 #define VSPA_IOC_DMA		_IOW(VSPA_MAGIC_NUM, 6, struct vspa_dma_req)
 
@@ -226,6 +229,10 @@ struct vspa_event_read {
 /* Retrieve the next matching event */
 #define VSPA_IOC_EVENT_READ	_IOW(VSPA_MAGIC_NUM, 12, struct vspa_event_read)
 
-#define VSPA_IOC_MAX (12)
+/* Driver debug value */
+#define VSPA_IOC_GET_DEBUG	_IOR(VSPA_MAGIC_NUM, 13, int)
+#define VSPA_IOC_SET_DEBUG	_IO(VSPA_MAGIC_NUM, 14)
+
+#define VSPA_IOC_MAX (14)
 
 #endif /* _UAPI_VSPA_H */

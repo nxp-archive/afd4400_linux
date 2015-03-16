@@ -2,13 +2,40 @@
  * drivers/misc/vspa.c
  * VSPA device driver
  *
- * Copyright 2013-2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2013-2015 Freescale Semiconductor, Inc.
  *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *     * Neither the name of Freescale Semiconductor nor the
+ *       names of its contributors may be used to endorse or promote products
+ *       derived from this software without specific prior written permission.
+ *
+ *
+ * ALTERNATIVELY, this software may be distributed under the terms of the
+ * GNU General Public License ("GPL") as published by the Free Software
+ * Foundation, either version 2 of that License or (at your option) any
+ * later version.
+ *
+ * THIS SOFTWARE IS PROVIDED BY Freescale Semiconductor ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL Freescale Semiconductor BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+//TODO - review error return codes
+//TODO - Add CMD_ERR event
+//TODO - SPM error handing
 
 #include <linux/types.h>
 #include <linux/platform_device.h>
@@ -41,7 +68,6 @@
 #include <uapi/linux/vspa.h>
 #include "vspa.h"
 
-/* Number of minor number allocation required */
 #define MAX_VSPA 11
 
 #define VSPA_DEVICE_NAME "vspa"
@@ -71,7 +97,8 @@ static struct class *vspa_class = NULL;
 
 /* Debug and error reporting macros */
 #define IF_DEBUG(x)	if (vspadev->debug & (x))
-#define ERR(...)	pr_err(VSPA_DEVICE_NAME __VA_ARGS__)
+#define ERR(...)	{if (vspadev->debug & DEBUG_MESSAGES) \
+				pr_err(VSPA_DEVICE_NAME __VA_ARGS__);}
 
 /*********************** Accessor Functions ***************************/
 
@@ -83,140 +110,6 @@ static inline void vspa_reg_write(void __iomem *addr, u32 val)
 static inline unsigned int vspa_reg_read(void __iomem *addr)
 {
 	return ioread32(addr);
-}
-
-/************************** Event Queue *******************************/
-
-static uint32_t events_present(struct vspa_device *vspadev)
-{
-	uint32_t mask = vspadev->event_list_mask;
-	struct event_queue *eq = &(vspadev->event_queue);
-
-	if (eq->idx_enqueue != eq->idx_dequeue) /* Queue is not empty */
-		mask |= vspadev->event_queue_mask;
-	return mask;
-}
-
-static inline int event_next_index(int curr)
-{
-	return (curr == (EVENT_QUEUE_ENTRIES - 1)) ? 0 : curr + 1;
-}
-
-static void event_reset_queue(struct vspa_device *vspadev)
-{
-	int i;
-	unsigned long irqflags;
-
-	spin_lock_irqsave(&vspadev->event_queue_lock, irqflags);
-	vspadev->event_queue_mask = 0;
-	vspadev->event_queue.idx_enqueue = 0;
-	vspadev->event_queue.idx_dequeue = 0;
-	vspadev->event_queue.idx_queued = 0;
-	spin_unlock_irqrestore(&vspadev->event_queue_lock, irqflags);
-
-	spin_lock(&vspadev->event_list_lock);
-	vspadev->event_list_mask = 0;
-	INIT_LIST_HEAD(&vspadev->events_free_list);
-	INIT_LIST_HEAD(&vspadev->events_queued_list);
-	for (i = 0; i < EVENT_LIST_ENTRIES; i++)
-		list_add(&vspadev->events[i].list,
-			 &vspadev->events_free_list);
-	spin_unlock(&vspadev->event_list_lock);
-}
-
-/* This routine is usually called from IRQ handlers */
-static void event_enqueue(struct vspa_device *vspadev, uint8_t type,
-	uint8_t id, uint8_t flags, uint32_t data0, uint32_t data1)
-{
-	struct event_queue *eq = &(vspadev->event_queue);
-	struct vspa_event *er = &(eq->entry[eq->idx_enqueue]);
-	int next_slot;
-	unsigned long irqflags;
-
-	spin_lock_irqsave(&vspadev->event_queue_lock, irqflags);
-
-	if (eq->idx_enqueue == eq->idx_dequeue) /* Queue is empty */
-		vspadev->event_queue_mask = 0;
-
-	next_slot = event_next_index(eq->idx_enqueue);
-
-	if (next_slot == eq->idx_dequeue) /* Queue is full */
-	{
-		er = &(eq->entry[eq->idx_queued]);
-		if (type > 7) type = 0;
-		er->lost |= 1 << type;
-	} else {
-		er = &(eq->entry[eq->idx_enqueue]);
-		er->type  = type;
-		er->id    = id;
-		er->flags = flags;
-		er->data0 = data0;
-		er->data1 = data1;
-		er->lost = 0;
-		eq->idx_queued = eq->idx_enqueue;
-		eq->idx_enqueue = next_slot;
-
-		vspadev->event_queue_mask |= 0x10 << type;
-		wake_up_interruptible(&vspadev->event_wait_q);
-	}
-	spin_unlock_irqrestore(&vspadev->event_queue_lock, irqflags);
-}
-
-static void event_list_update(struct vspa_device *vspadev)
-{
-	struct event_list *ptr;
-	struct event_list *last;
-	struct event_queue *eq = &(vspadev->event_queue);
-	struct vspa_event *er;
-
-	if (eq->idx_enqueue == eq->idx_dequeue)
-		return;
-
-	spin_lock(&vspadev->event_list_lock);
-
-	if (list_empty(&vspadev->events_queued_list))
-		last = NULL;
-	else
-		last = list_last_entry(&vspadev->events_queued_list,
-				       struct event_list, list);
-
-	while (eq->idx_enqueue != eq->idx_dequeue) {
-		er = &(eq->entry[eq->idx_dequeue]);
-// TODO - check SPM for command error messages
-		if (last && last->type ==
-				((0x10<<VSPA_EVENT_ERROR)|VSPA_EVENT_ERROR) &&
-				er->type == VSPA_EVENT_ERROR && er->id == 0) {
-			last->data0 = er->data0;
-			last->data1++;
-			IF_DEBUG(DEBUG_EVENT)
-				pr_info("vspa%d: co %04X %02X %02X %08X %08X\n",
-					vspadev->id, last->type, last->id,
-					last->flags, last->data0, last->data1);
-		} else if (list_empty(&vspadev->events_free_list)) {
-			ERR("%d: Event queue is full\n", vspadev->id);
-			break;
-// TODO - add lost events
-		} else {
-			ptr = list_first_entry(&vspadev->events_free_list,
-					       struct event_list, list);
-			ptr->flags = er->flags;
-			ptr->id    = er->id;
-			ptr->type  = (0x10 << er->type) | er->type;
-			ptr->data0 = er->data0;
-			ptr->data1 = er->data1;
-			IF_DEBUG(DEBUG_EVENT)
-				pr_info("vspa%d: up %04X %02X %02X %08X %08X\n",
-					vspadev->id, ptr->type, ptr->id,
-					ptr->flags, ptr->data0, ptr->data1);
-			list_move_tail(&ptr->list, &vspadev->events_queued_list);
-			last = ptr;
-			vspadev->event_list_mask |= 0x10 << er->type;
-		}
-		eq->idx_dequeue = event_next_index(eq->idx_dequeue);
-	}
-
-	spin_unlock(&vspadev->event_list_lock);
-// TODO - report lost events
 }
 
 /*********************** DMA Request Queue ****************************/
@@ -319,6 +212,7 @@ static void cbuffer_init(struct circular_buffer *cbuf, uint32_t size,
 	cbuffer_reset(cbuf);
 }
 
+/* Make sure size is AXI aligned */
 static int cbuffer_add(struct circular_buffer *cbuf, uint32_t size)
 {
 	uint32_t space;
@@ -368,7 +262,7 @@ static void pool_print(struct memory_pool *pool)
 {
 	int i;
 	pr_info("Pool: free = %04X, tail = %d\n", pool->free_bds, pool->tail);
-	for (i=0; i < CMD_BUFFER_DEPTH; i++) {
+	for (i=0; i < BD_ENTRIES; i++) {
 		pr_info("[%02d] = %4d %4d %3d %3d %2d\n", i,
 			pool->bd[i].start, pool->bd[i].wstart,
 			pool->bd[i].size, pool->bd[i].free,
@@ -379,7 +273,7 @@ static void pool_print(struct memory_pool *pool)
 /* Bit map manipulation for checking a free command descriptor */
 #define GET_FREE_BD(n) { \
 	n = ffs(pool->free_bds); \
-	if ((n > CMD_BUFFER_DEPTH) || (n == 0)) \
+	if ((n > BD_ENTRIES) || (n == 0)) \
 		n = -1; \
 	else {\
 		n = n - 1;\
@@ -390,14 +284,14 @@ static void pool_print(struct memory_pool *pool)
 static void pool_reset(struct memory_pool *pool)
 {
 	int i;
-	for (i=0; i < CMD_BUFFER_DEPTH; i++) {
+	for (i=0; i < BD_ENTRIES; i++) {
 		pool->bd[i].wstart = -1;
 		pool->bd[i].start = 0;
 		pool->bd[i].size = 0;
 		pool->bd[i].free = 0;
 		pool->bd[i].next = -1;
 	}
-	pool->free_bds = (1 << CMD_BUFFER_DEPTH) - 1;
+	pool->free_bds = (1 << BD_ENTRIES) - 1;
 	GET_FREE_BD(i);
 	pool->bd[i].start = pool->size;
 	pool->bd[i].free = pool->size;
@@ -463,7 +357,7 @@ static void pool_free_bd(struct memory_pool *pool, uint8_t index)
 	uint32_t size;
 
 //pr_info("pool_free: %d\n", index);
-	if (index < 0 || index >= CMD_BUFFER_DEPTH)
+	if (index < 0 || index >= BD_ENTRIES)
 		return;
 
 	pool->bd[index].wstart = -1;
@@ -570,6 +464,448 @@ static void seqid_release(struct vspa_device *vspadev, int seqid)
 	vspadev->active_seqids &= ~(1 << seqid);
 }
 
+/************************** Event Queue *******************************/
+
+static inline uint32_t events_present(struct vspa_device *vspadev)
+{
+	uint32_t mask = vspadev->event_list_mask;
+	struct event_queue *eq = &(vspadev->event_queue);
+
+	if (eq->idx_enqueue != eq->idx_dequeue) /* Queue is not empty */
+		mask |= vspadev->event_queue_mask;
+	return mask;
+}
+
+static inline int event_next_index(int curr)
+{
+	return (curr == (EVENT_QUEUE_ENTRIES - 1)) ? 0 : curr + 1;
+}
+
+static void event_reset_queue(struct vspa_device *vspadev)
+{
+	int i;
+	unsigned long irqflags;
+
+	spin_lock_irqsave(&vspadev->event_queue_lock, irqflags);
+	vspadev->event_queue_mask = 0;
+	vspadev->event_queue.idx_enqueue = 0;
+	vspadev->event_queue.idx_dequeue = 0;
+	vspadev->event_queue.idx_queued = 0;
+	spin_unlock_irqrestore(&vspadev->event_queue_lock, irqflags);
+
+	spin_lock(&vspadev->event_list_lock);
+	vspadev->event_list_mask = 0;
+	INIT_LIST_HEAD(&vspadev->events_free_list);
+	INIT_LIST_HEAD(&vspadev->events_queued_list);
+	for (i = 0; i < EVENT_LIST_ENTRIES; i++)
+		list_add(&vspadev->events[i].list,
+			 &vspadev->events_free_list);
+	spin_unlock(&vspadev->event_list_lock);
+}
+
+/* This routine is usually called from IRQ handlers */
+static void event_enqueue(struct vspa_device *vspadev, uint8_t type,
+	uint8_t id, uint8_t err, uint32_t data0, uint32_t data1)
+{
+	struct event_queue *eq = &(vspadev->event_queue);
+	struct event_entry *er;
+	int next_slot;
+	unsigned long irqflags;
+
+	spin_lock_irqsave(&vspadev->event_queue_lock, irqflags);
+
+	if (eq->idx_enqueue == eq->idx_dequeue) /* Queue is empty */
+		vspadev->event_queue_mask = 0;
+
+	next_slot = event_next_index(eq->idx_enqueue);
+
+	if (next_slot == eq->idx_dequeue) /* Queue is full */
+	{
+		er = &(eq->entry[eq->idx_queued]);
+		if (type > 7) type = 0;
+		er->lost |= 1 << type;
+	} else {
+		er = &(eq->entry[eq->idx_enqueue]);
+		er->type  = type;
+		er->id    = id;
+		er->err   = err;
+		er->data0 = data0;
+		er->data1 = data1;
+		er->lost = 0;
+		eq->idx_queued = eq->idx_enqueue;
+		eq->idx_enqueue = next_slot;
+
+		vspadev->event_queue_mask |= 0x10 << type;
+		wake_up_interruptible(&vspadev->event_wait_q);
+	}
+	spin_unlock_irqrestore(&vspadev->event_queue_lock, irqflags);
+}
+
+static void event_list_update(struct vspa_device *vspadev)
+{
+	struct event_list *ptr;
+	struct event_list *last;
+	struct event_queue *eq = &(vspadev->event_queue);
+	struct event_entry *er;
+	uint32_t mask = 1;
+	int reply_bd_idx;
+
+	if (eq->idx_enqueue == eq->idx_dequeue)
+		return;
+
+	spin_lock(&vspadev->event_list_lock);
+
+	if (list_empty(&vspadev->events_queued_list))
+		last = NULL;
+	else
+		last = list_last_entry(&vspadev->events_queued_list,
+				       struct event_list, list);
+		mask = 0;
+
+	while (eq->idx_enqueue != eq->idx_dequeue) {
+		er = &(eq->entry[eq->idx_dequeue]);
+// TODO - check SPM for command error messages
+		/* coalese error events of the same type */
+		if (last &&
+		    last->type == ((0x10<<VSPA_EVENT_ERROR)|VSPA_EVENT_ERROR) &&
+		    er->type == VSPA_EVENT_ERROR &&
+		    er->id == last->id &&
+		    er->id == VSPA_ERR_WATCHDOG) {
+			last->data0 = er->data0;
+			last->data1++;
+			IF_DEBUG(DEBUG_EVENT)
+				pr_info("vspa%d: co %04X %02X %02X %08X %08X\n",
+					vspadev->id, last->type, last->id,
+					last->err, last->data0, last->data1);
+		} else {
+			if (list_empty(&vspadev->events_free_list)) {
+				mask = 0;
+				ERR("%d: Event queue overflowed\n",
+								 vspadev->id);
+// TODO - add lost events
+				ptr = list_first_entry(
+						&vspadev->events_queued_list,
+						struct event_list, list);
+				reply_bd_idx = ptr->data1 >> 24;
+				if ((ptr->type == VSPA_EVENT_REPLY) &&
+				    (reply_bd_idx < BD_ENTRIES)) {
+					pool_free_bd(&vspadev->reply_pool,
+								reply_bd_idx);
+				}
+				list_move_tail(&ptr->list,
+						 &vspadev->events_free_list);
+			}
+			ptr = list_first_entry(&vspadev->events_free_list,
+					       struct event_list, list);
+			ptr->err   = er->err;
+			ptr->id    = er->id;
+			ptr->type  = (0x10 << er->type) | er->type;
+			ptr->data0 = er->data0;
+			ptr->data1 = er->data1;
+			IF_DEBUG(DEBUG_EVENT)
+				pr_info("vspa%d: up %04X %02X %02X %08X %08X\n",
+					vspadev->id, ptr->type, ptr->id,
+					ptr->err, ptr->data0, ptr->data1);
+			list_move_tail(&ptr->list, &vspadev->events_queued_list);
+			last = ptr;
+			vspadev->event_list_mask |= 0x10 << er->type;
+		}
+		eq->idx_dequeue = event_next_index(eq->idx_dequeue);
+	}
+
+	/* update event list mask if needed */
+	if (mask == 0) {
+		list_for_each_entry(ptr, &vspadev->events_queued_list, list) {
+			mask |= ptr->type;
+		}
+		vspadev->event_list_mask = mask & VSPA_MSG_ALL_EVENTS;
+	}
+
+	spin_unlock(&vspadev->event_list_lock);
+// TODO - report lost events
+}
+
+static const int event_size[16] = {
+	0, 0, 0, 0, 0, 8, 4, 0, 0, 8, 0, 0, 0, 0, 0, 0
+};
+
+static int read_event(struct vspa_device *vspadev,
+	struct vspa_event_read *evt_rd)
+{
+	struct event_list *ptr, *ptr1;
+	uint32_t buf[sizeof(struct vspa_event)/sizeof(uint32_t) + 2];
+	struct vspa_event *evt = (struct vspa_event*)buf;
+	uint32_t *payload = &evt->data[0];
+	int err;
+	unsigned int mask;
+	int type;
+	uint32_t *src_ptr;
+	uint32_t src_len;
+	size_t length;
+	struct list_head *prev;
+	int timeout;
+	unsigned long start_time, new_time;
+	size_t len;
+	int reply_bd_idx, start;
+
+	start_time = jiffies;
+
+	event_list_update(vspadev);
+
+	/* Convert timeout to jiffies */
+	timeout = evt_rd->timeout;
+	if (timeout > 0) timeout = msecs_to_jiffies(timeout);
+	/* If no filter is specified then match all message types */
+	mask = evt_rd->event_mask & VSPA_MSG_ALL;
+	if ((mask & VSPA_MSG_ALL_EVENTS) == 0)
+		mask |= VSPA_MSG_ALL_EVENTS;
+
+	spin_lock(&vspadev->event_list_lock);
+	while (((vspadev->event_list_mask & mask) == 0) &&
+		(vspadev->state > VSPA_STATE_POWER_DOWN)) {
+		/* nothing to read */
+		spin_unlock(&vspadev->event_list_lock);
+		if (vspadev->state <= VSPA_STATE_POWER_DOWN)
+			return 0;
+		if (timeout == 0) /* non-blocking */
+			return -EAGAIN;
+//pr_err("vspa%d sleep: mask %04X, elm %04X, ep %04X, st %d\n", vspadev->id, mask, vspadev->event_list_mask, events_present(vspadev), vspadev->state);
+		if (timeout < 0) {
+			err = wait_event_interruptible(vspadev->event_wait_q,
+				((events_present(vspadev) & mask) ||
+				 (vspadev->state <= VSPA_STATE_POWER_DOWN)));
+			if (err < 0)
+				return err;
+		} else {
+			err = wait_event_interruptible_timeout(
+				vspadev->event_wait_q,
+				((events_present(vspadev) & mask) ||
+				 (vspadev->state <= VSPA_STATE_POWER_DOWN)),
+				timeout);
+			if (err < 0)
+				return err;
+			new_time = jiffies;
+			timeout -= new_time - start_time;
+			start_time = new_time;
+			if (timeout < 0) timeout = 0;
+		}
+//pr_err("vspa%d wakup: mask %04X, elm %04X, ep %04X, st %d\n", vspadev->id, mask, vspadev->event_list_mask, events_present(vspadev), vspadev->state);
+		event_list_update(vspadev);
+		/* otherwise loop, but first reacquire the lock */
+		spin_lock(&vspadev->event_list_lock);
+	}
+
+	/* Find first event that matches the mask */
+	type = 0;
+	list_for_each_entry(ptr, &vspadev->events_queued_list, list) {
+//pr_err("vspa%d: read %04X check %04X\n", vspadev->id, mask, ptr->type);
+		if (ptr->type & mask) {
+			type = ptr->type & 0xF;
+			break;
+		}
+	}
+	if (!type) {
+		spin_unlock(&vspadev->event_list_lock);
+		return (vspadev->state <= VSPA_STATE_POWER_DOWN) ? 0 : -EAGAIN;
+	}
+	src_len = 0;
+	src_ptr = NULL;
+	reply_bd_idx = -1;
+	if (type == VSPA_EVENT_REPLY) {
+		reply_bd_idx = ptr->data1 >> 24;
+		if (reply_bd_idx >= BD_ENTRIES)
+			reply_bd_idx = -1;
+		else {
+			start   = vspadev->reply_pool.bd[reply_bd_idx].wstart;
+			if (start >= 0) {
+				src_len = ptr->data1 & 0xFFFF;
+				src_ptr = &vspadev->reply_pool.vaddr[start];
+			}
+			IF_DEBUG(DEBUG_REPLY) {
+				int i;
+				uint32_t *st = src_ptr;
+				pr_info("vspa%d: evt_read Reply %08X %d->%04X %d\n",
+					vspadev->id, ptr->data1, reply_bd_idx,
+					start, src_len);
+				for (i=0; i < src_len/4; i--)
+					pr_info("%02d = %08X\n", i, *st++);
+			}
+		}
+	} else if (type == VSPA_EVENT_SPM) {
+		start   = ptr->data1 >> 16;
+		src_len = ptr->data1 & 0xFFFF;
+		src_ptr = &vspadev->spm_buf_vaddr[start];
+		IF_DEBUG(DEBUG_SPM) {
+			int i;
+			uint32_t *st = src_ptr;
+			pr_info("vspa%d: evt_read SPM %08X %04X %d\n",
+				vspadev->id, ptr->data1, start, src_len);
+			for (i = src_len/4; i>0; i--)
+				pr_info("[%2d] %08X\n", i, *st++);
+		}
+	}
+
+	length = event_size[type];
+	evt->control  = ptr->control;
+	evt->type     = type;
+	evt->pkt_size = length ? length : src_len;
+	payload[0]    = ptr->data0;
+	payload[1]    = ptr->data1;
+
+	src_len = evt_rd->buf_len - sizeof(*evt);
+	if (src_len > evt->pkt_size) src_len = evt->pkt_size;
+	if (src_len < 0) src_len = 0;
+	evt->buf_size = src_len;
+
+	IF_DEBUG(DEBUG_EVENT) {
+		pr_info("vspa%d: evt_read %2d %2d %2d %2d %08X %08X\n",
+			vspadev->id, type, evt->err, evt->pkt_size,
+			 evt->buf_size, ptr->data0, ptr->data1);
+		if (src_len) {
+			int i;
+			uint32_t *st = src_ptr;
+			for (i = src_len/4; i>0; i--)
+				pr_info("[%2d] %08X\n", i, *st++);
+		}
+	}
+
+	/* free the message unless PEEKing */
+	if (!(mask & VSPA_MSG_PEEK)) {
+		prev = ptr->list.prev;
+		list_move_tail(&ptr->list, &vspadev->events_free_list);
+		/* If not at the end of the list try coalescing messages */
+		if (prev->next != &vspadev->events_queued_list &&
+			    prev != &vspadev->events_queued_list) {
+			/* try to coalese Watchdog errors */
+			ptr = list_entry(prev, struct event_list, list);
+			ptr1 = list_first_entry(prev, struct event_list, list);
+			if (ptr->type ==
+				((0x10<<VSPA_EVENT_ERROR)|VSPA_EVENT_ERROR) &&
+			    ptr1->type ==
+				((0x10<<VSPA_EVENT_ERROR)|VSPA_EVENT_ERROR) &&
+			    ptr->id == ptr1->id &&
+			    ptr->id == VSPA_ERR_WATCHDOG) {
+				ptr->data0 = ptr1->data0;
+				ptr->data1++;
+				list_move_tail(&ptr1->list,
+					&vspadev->events_free_list);
+			}
+		}
+		/* update event list mask */
+		mask = 0;
+		list_for_each_entry(ptr, &vspadev->events_queued_list, list) {
+			mask |= ptr->type;
+		}
+		vspadev->event_list_mask = mask & VSPA_MSG_ALL_EVENTS;
+	}
+
+	/* only copy up to the length of the message */
+	length += sizeof(*evt);
+	len = evt_rd->buf_len;
+	if (length > len)
+		length = len;
+	err = copy_to_user(evt_rd->buf_ptr, evt, length);
+
+	/* copy the data buffer contents if needed */
+	len -= length;
+	if (err == 0 && src_len > 0 && len > 0) {
+		if (src_len > len)
+			src_len = len;
+		length += src_len;
+		err = copy_to_user(&(evt_rd->buf_ptr->data[0]), src_ptr, src_len);
+	}
+
+	/* Release reply buffer */
+	if ((reply_bd_idx >= 0) && (!(mask & VSPA_MSG_PEEK)))
+		pool_free_bd(&vspadev->reply_pool, reply_bd_idx);
+
+	spin_unlock(&vspadev->event_list_lock);
+//pr_err("vspa%d: err %d, length %d bytes\n", vspadev->id, err, length);
+
+	return err ? -EFAULT : length;
+}
+
+/************************ Command Buffer ***************************/
+
+static void cmd_reset(struct vspa_device *vspadev)
+{
+	vspadev->first_cmd = 1;
+	vspadev->cmd_pool.size = 0;
+	cbuffer_reset(&vspadev->cmd_buffer);
+	pool_reset(&vspadev->cmd_pool);
+	pool_reset(&vspadev->reply_pool);
+	seqid_reset(vspadev);
+	/* clear SPM buffer */
+	memset(vspadev->spm_buf_vaddr, 0 ,vspadev->spm_buf_bytes);
+	vspadev->spm_addr = (vspadev->spm_buf_bytes - 4) >> 2;
+}
+
+/************************ SPM Processing ***************************/
+
+static void spm_update(struct vspa_device *vspadev, uint32_t flags)
+{
+	uint32_t ptr;
+	int size;
+	int size_max;
+	int err;
+
+	err = 0;
+	if (flags & DMA_FLAG_CFGERR)
+		err = VSPA_ERR_DMA_CFGERR;
+	else if (flags & DMA_FLAG_XFRERR)
+		err = VSPA_ERR_DMA_XFRERR;
+//TODO handle error case
+	ptr = vspadev->spm_buf_vaddr[vspadev->spm_addr];
+	IF_DEBUG(DEBUG_SPM) {
+		pr_info("vspa%d: SPM DMA IRQ, %d\n", vspadev->id, flags);
+		pr_info("[%04X] = %08X\n", vspadev->spm_addr, ptr);
+		IF_DEBUG(DEBUG_TEST_SPM) {
+			int i;
+			for (i=0; i < (vspadev->spm_buf_bytes>>2); i++) {
+				if (vspadev->spm_buf_vaddr[i])
+					pr_info("[%04X] = %08X\n", i,
+						vspadev->spm_buf_vaddr[i]);
+			}
+		}
+	}
+
+	while (ptr) {
+		if (ptr >= (uint32_t)vspadev->spm_buf_paddr)
+			ptr -= (uint32_t)vspadev->spm_buf_paddr;
+		if (ptr >= vspadev->spm_buf_bytes || ptr & 3) {
+			vspadev->spm_buf_vaddr[vspadev->spm_addr] = 0;
+			ERR("%d: bad SPM ptr %08X\n", vspadev->id, ptr);
+//TODO report error
+		} else {
+			ptr >>= 2;
+			size_max = ptr > vspadev->spm_addr ?
+					(vspadev->spm_buf_bytes >> 2) - ptr :
+					vspadev->spm_addr - ptr;
+			size = (vspadev->spm_buf_vaddr[ptr] >> 16) & 0xFF;
+			if (size >= size_max)
+				size = size_max - 1;
+			err = 0; // TODO flags ??
+			event_enqueue(vspadev, VSPA_EVENT_SPM, 0, err,
+				      vspadev->spm_buf_vaddr[ptr],
+				      (ptr << 16) | (size << 2));
+			vspadev->spm_addr = ptr - 1;
+			IF_DEBUG(DEBUG_SPM) {
+				while (size >= 0) {
+					pr_info("[%04X] = %08X\n", ptr,
+						vspadev->spm_buf_vaddr[ptr]);
+					ptr++;
+					size--;
+				}
+			}
+		}
+		ptr = vspadev->spm_buf_vaddr[vspadev->spm_addr];
+		IF_DEBUG(DEBUG_SPM) {
+			pr_info("vspa%d: SPM cont\n", vspadev->id);
+			pr_info("[%04X] = %08X\n", vspadev->spm_addr, ptr);
+		}
+	}
+}
+
 /************************ Mailbox Queues ***************************/
 
 static void mbox_reset(struct vspa_device *vspadev)
@@ -648,180 +984,6 @@ static int mb64_transmit(struct vspa_device *vspadev)
 	return ret;
 }
 
-/************************ Command Buffer ***************************/
-
-static void cmd_reset(struct vspa_device *vspadev)
-{
-	vspadev->first_cmd = 1;
-	vspadev->cmd_pool.size = 0;
-	cbuffer_reset(&vspadev->cmd_buffer);
-	pool_reset(&vspadev->cmd_pool);
-	pool_reset(&vspadev->reply_pool);
-	seqid_reset(vspadev);
-	/* clear SPM buffer */
-	memset(vspadev->spm_buf_vaddr, 0 ,vspadev->spm_buf_bytes);
-	vspadev->spm_addr = (vspadev->spm_buf_bytes - 4) >> 2;
-}
-
-static int read_event(struct vspa_device *vspadev,
-	struct vspa_event_read *evt_rd)
-{
-	struct event_list *ptr, *ptr1;
-	int err;
-	struct vspa_event evt[10]; // TODO size
-	unsigned int mask;
-	uint32_t *data_ptr;
-	uint32_t *src_ptr;
-	uint32_t idx, words;
-	size_t length;
-	struct list_head *prev;
-	int timeout;
-	unsigned long start_time, new_time;
-	size_t len;
-
-	start_time = jiffies;
-
-	event_list_update(vspadev);
-
-	/* Convert timeout to jiffies */
-	timeout = evt_rd->timeout;
-	if (timeout > 0) timeout = msecs_to_jiffies(timeout);
-	/* If no filter is specified then match all message types */
-	mask = evt_rd->event_mask & VSPA_MSG_ALL;
-	if ((mask & VSPA_MSG_ALL_EVENTS) == 0)
-		mask |= VSPA_MSG_ALL_EVENTS;
-
-	spin_lock(&vspadev->event_list_lock);
-	while (((vspadev->event_list_mask & mask) == 0) &&
-		(vspadev->state > VSPA_STATE_PWR_DOWN)) {
-		/* nothing to read */
-		spin_unlock(&vspadev->event_list_lock);
-		if (vspadev->state <= VSPA_STATE_PWR_DOWN) // TODO flag?
-			return 0;
-		if (timeout == 0) /* non-blocking */
-			return -EAGAIN;
-//pr_err("vspa%d sleep: mask %04X, elm %04X, ep %04X, st %d\n", vspadev->id, mask, vspadev->event_list_mask, events_present(vspadev), vspadev->state);
-		if (timeout < 0) {
-			err = wait_event_interruptible(vspadev->event_wait_q,
-				((events_present(vspadev) & mask) ||
-				 (vspadev->state <= VSPA_STATE_PWR_DOWN)));
-			if (err < 0)
-				return err;
-		} else {
-			err = wait_event_interruptible_timeout(
-				vspadev->event_wait_q,
-				((events_present(vspadev) & mask) ||
-				 (vspadev->state <= VSPA_STATE_PWR_DOWN)),
-				timeout);
-			if (err < 0)
-				return err;
-			new_time = jiffies;
-			timeout -= new_time - start_time;
-			start_time = new_time;
-			if (timeout < 0) timeout = 0;
-		}
-//pr_err("vspa%d wakup: mask %04X, elm %04X, ep %04X, st %d\n", vspadev->id, mask, vspadev->event_list_mask, events_present(vspadev), vspadev->state);
-		event_list_update(vspadev);
-		/* otherwise loop, but first reacquire the lock */
-		spin_lock(&vspadev->event_list_lock);
-	}
-
-	/* Find first event that matches the mask */
-	length = 0;
-	list_for_each_entry(ptr, &vspadev->events_queued_list, list) {
-//pr_err("vspa%d: read %04X check %04X\n", vspadev->id, mask, ptr->type);
-		if (ptr->type & mask) {
-			length = sizeof(struct vspa_event) - sizeof(uint32_t);
-			break;
-		}
-	}
-	if (!length) {
-		spin_unlock(&vspadev->event_list_lock);
-		return (vspadev->state <= VSPA_STATE_PWR_DOWN) ? 0 : -EAGAIN;
-	}
-
-//pr_err("vspa%d: read %04X matched %04X\n", vspadev->id, mask, ptr->type);
-	evt[0].type = ptr->type & 0xF;
-	evt[0].id   = ptr->id;
-	evt[0].rsvd = 0;
-	evt[0].flags = ptr->flags;
-	evt[0].data0 = ptr->data0;
-	evt[0].data1 = ptr->data1;
-	evt[0].lost  = 0;
-
-	IF_DEBUG(DEBUG_EVENT)
-		pr_info("vspa%d: evt_read %08X %08X %08X\n",
-			vspadev->id, evt[0].control,
-			evt[0].data0, evt[0].data1);
-
-	data_ptr = &evt[0].data1;
-	if (evt[0].type == VSPA_EVENT_SPM) {
-		length -= 4;
-		idx = ptr->data1 & 0xFFFF;
-		for (words = ptr->data1 >> 16; words; words--) {
-			*data_ptr++ = vspadev->spm_buf_vaddr[idx++];
-			length += 4;
-		}
-		if (!(mask & VSPA_MSG_PEEK)) {
-			// Nothing to do to free SPM buffer
-		}
-	} else if (evt[0].type == VSPA_EVENT_REPLY) {
-		idx = (ptr->data1) >> 24;
-		*data_ptr++ = ptr->data1 & 0xFFFFFF;
-		if (idx < CMD_BUFFER_DEPTH) {
-			words = ptr->data1 & 0xFFFFFF;
-			src_ptr = &vspadev->reply_pool.vaddr[idx];
-			for (; words; words--) {
-				*data_ptr++ = *src_ptr++;
-				length += 4;
-			}
-			if (!(mask & VSPA_MSG_PEEK)) {
-				pool_free_bd(&vspadev->reply_pool, idx);
-			}
-		}
-	}
-
-	/* free the message unless PEEKing */
-	if (!(mask & VSPA_MSG_PEEK)) {
-		prev = ptr->list.prev;
-		list_move_tail(&ptr->list, &vspadev->events_free_list);
-		/* If not at the end of the list try coalescing messages */
-		if (prev->next != &vspadev->events_queued_list &&
-			    prev != &vspadev->events_queued_list) {
-			/* try to coalese watchdog errors */
-			ptr = list_entry(prev, struct event_list, list);
-			ptr1 = list_first_entry(prev, struct event_list, list);
-			if (ptr->type ==
-				((0x10<<VSPA_EVENT_ERROR)|VSPA_EVENT_ERROR) &&
-			    ptr1->type ==
-				((0x10<<VSPA_EVENT_ERROR)|VSPA_EVENT_ERROR) &&
-			    ptr->id == 0 && ptr1->id == 0) {
-				ptr->data0 = ptr1->data0;
-				ptr->data1++;
-				list_move_tail(&ptr1->list,
-					&vspadev->events_free_list);
-			}
-		}
-		/* update event list mask */
-		mask = 0;
-		list_for_each_entry(ptr, &vspadev->events_queued_list, list) {
-			mask |= ptr->type;
-		}
-		vspadev->event_list_mask = mask & VSPA_MSG_ALL_EVENTS;
-	}
-
-	spin_unlock(&vspadev->event_list_lock);
-
-	/* only copy up to the length of the message */
-	len = evt_rd->buf_len;
-	if (len > length)
-		len = length;
-
-	err = copy_to_user(evt_rd->buf_ptr, &evt, len);
-
-	return err ? -EFAULT : len;
-}
-
 /*************************** Watchdog ******************************/
 
 static void watchdog_callback(unsigned long data)
@@ -837,8 +999,8 @@ static void watchdog_callback(unsigned long data)
 			pr_info("vspa%d: watchdog_value = %04X\n",
 							vspadev->id, val);
 		if (val == vspadev->watchdog_value) {
-//TODO error code
-			event_enqueue(vspadev, VSPA_EVENT_ERROR, 0, 0, val, 0);
+			event_enqueue(vspadev, VSPA_EVENT_ERROR,
+					VSPA_ERR_WATCHDOG, 0, val, 0);
 		}
 		vspadev->watchdog_value = val;
 		val = vspa_reg_read(regs + CONTROL_REG_OFFSET);
@@ -888,30 +1050,6 @@ static void vspa_enable_mailbox_irqs(struct vspa_device *vspadev)
 	vspa_reg_write(regs + IRQEN_REG_OFFSET, irqen);
 }
 
-//TODO - remove
-#if 0
-static irqreturn_t vspa_irq_handler(int irq, void *dev)
-{
-	struct vspa_device *vspadev = (struct vspa_device *)dev;
-	u32 __iomem *regs = vspadev->regs;
-//	int ret;
-
-//	spin_lock(&vspadev->lock);
-	vspadev->status_reg = vspa_reg_read(regs + STATUS_REG_OFFSET);
-pr_info("vspa%d: IRQEN %08x, STATUS %08x\n", vspadev->id,
-vspa_reg_read(regs + IRQEN_REG_OFFSET), vspadev->status_reg);
-	vspadev->status_reg &= ~0x3C;
-
-	if (vspadev->status_reg > 0) {
-		/* disable irqs */
-		//vspa_reg_write(vspadev->regs + IRQEN_REG_OFFSET, 0x3C);
-// TODO		wake_up_interruptible(&vspadev->irq_wait_q);
-	}
-//	spin_unlock(&vspadev->lock);
-	return IRQ_HANDLED;
-}
-#endif
-
 /* Command Reply has been sent */
 static irqreturn_t vspa_flags1_irq_handler(int irq, void *dev)
 {
@@ -923,7 +1061,7 @@ static irqreturn_t vspa_flags1_irq_handler(int irq, void *dev)
 	uint32_t flags0 = vspa_reg_read(regs + HOST_FLAGS0_REG_OFFSET);
 	vspa_reg_write(regs + HOST_FLAGS1_REG_OFFSET, flags1);
 
-//TODO	spin_lock(&vspadev->irq_lock);
+//	spin_lock(&vspadev->irq_lock);
 	if (vspadev->irq_bits) { pr_err("VSPA%d flg1 irqs = %d\n",
 			vspadev->id, vspadev->irq_bits);
 	}
@@ -937,6 +1075,10 @@ static irqreturn_t vspa_flags1_irq_handler(int irq, void *dev)
 	if (flags1 & (1<<31)) {
 		flags1 &= ~(1<<31);
 		clr_flags0 = 1 << 31;
+		IF_DEBUG(DEBUG_SPM) {
+			pr_info("vspa%d: SPM Flags1 IRQ\n", vspadev->id);
+		}
+		spm_update(vspadev, 0);
 //TODO - handle SPM if no SPM DMA ?
 	}
 
@@ -949,15 +1091,13 @@ static irqreturn_t vspa_flags1_irq_handler(int irq, void *dev)
 			if (vspadev->seqid[seqid].flags &
 						VSPA_FLAG_REPORT_CMD_CONSUMED)
 				event_enqueue(vspadev, VSPA_EVENT_CMD,
-				      vspadev->seqid[seqid].cmd_id,
-				      vspadev->seqid[seqid].flags,
+				      vspadev->seqid[seqid].cmd_id, 0,
 				      vspadev->seqid[seqid].payload1,
 				      vspadev->seqid[seqid].reply_size);
 		}
 		if (vspadev->seqid[seqid].flags & VSPA_FLAG_REPORT_CMD_REPLY)
 			event_enqueue(vspadev, VSPA_EVENT_REPLY,
-			      vspadev->seqid[seqid].cmd_id,
-			      vspadev->seqid[seqid].flags,
+			      vspadev->seqid[seqid].cmd_id, 0,
 			      vspadev->seqid[seqid].payload1,
 			      vspadev->seqid[seqid].reply_size |
 			      vspadev->seqid[seqid].reply_bd_index << 24);
@@ -1025,8 +1165,7 @@ static irqreturn_t vspa_flags0_irq_handler(int irq, void *dev)
 			if (vspadev->mb64[idx].flags &
 						VSPA_FLAG_REPORT_MB_COMPLETE)
 				event_enqueue(vspadev, VSPA_EVENT_MB64_OUT,
-						 vspadev->mb64[idx].id,
-						 vspadev->mb64[idx].flags,
+						 vspadev->mb64[idx].id, 0,
 						 vspadev->mb64[idx].data_msb,
 						 vspadev->mb64[idx].data_lsb);
 			vspadev->mb64_queue.idx_complete = idx;
@@ -1040,8 +1179,7 @@ static irqreturn_t vspa_flags0_irq_handler(int irq, void *dev)
 			if (vspadev->mb32[idx].flags &
 						VSPA_FLAG_REPORT_MB_COMPLETE)
 				event_enqueue(vspadev, VSPA_EVENT_MB32_OUT,
-						 vspadev->mb32[idx].id,
-						 vspadev->mb32[idx].flags,
+						 vspadev->mb32[idx].id, 0,
 						 vspadev->mb32[idx].data, 0);
 			vspadev->mb32_queue.idx_complete = idx;
 			mb32_transmit(vspadev);
@@ -1058,8 +1196,7 @@ static irqreturn_t vspa_flags0_irq_handler(int irq, void *dev)
 		/* Optionally send CMD consumed event message */
 		if (vspadev->seqid[seqid].flags & VSPA_FLAG_REPORT_CMD_CONSUMED)
 			event_enqueue(vspadev, VSPA_EVENT_CMD,
-				      vspadev->seqid[seqid].cmd_id,
-				      vspadev->seqid[seqid].flags,
+				      vspadev->seqid[seqid].cmd_id, 0,
 				      vspadev->seqid[seqid].payload1,
 				      vspadev->seqid[seqid].reply_size);
 		/* Release SEQID if no reply is expected */
@@ -1093,6 +1230,7 @@ static irqreturn_t vspa_dma_irq_handler(int irq, void *dev)
 	u32 stat;
 	u32 mask;
 	u32 spm_mask;
+	int err;
 
 //	spin_lock(&vspadev->irq_lock);
 	if (vspadev->irq_bits) { pr_err("VSPA%d dma irqs = %d\n",
@@ -1171,9 +1309,15 @@ static irqreturn_t vspa_dma_irq_handler(int irq, void *dev)
 	if (flags) {
 		dr = &(dq->entry[dq->idx_chk]);
 		if (dr->type == VSPA_EVENT_DMA) {
-			if (dr->flags & VSPA_FLAG_REPORT_DMA_COMPLETE)
+			err = 0;
+			if (flags & DMA_FLAG_CFGERR)
+				err = VSPA_ERR_DMA_CFGERR;
+			else if (flags & DMA_FLAG_XFRERR)
+				err = VSPA_ERR_DMA_XFRERR;
+			if (dr->flags & VSPA_FLAG_REPORT_DMA_COMPLETE || err) {
 				event_enqueue(vspadev, VSPA_EVENT_DMA, dr->id,
-					flags, dr->dmem_addr, dr->byte_cnt);
+					err, dr->dmem_addr, dr->byte_cnt);
+			}
 		} else if (dr->type == VSPA_EVENT_CMD) {
 			if (dr->id >= MAX_SEQIDS)
 				; // skip multiple DMAs
@@ -1188,47 +1332,12 @@ static irqreturn_t vspa_dma_irq_handler(int irq, void *dev)
 		dq->idx_chk = dq->idx_dma;
 		dma_transmit(vspadev);
 	}
+
 	if (spm_flags) {
-		uint32_t ptr;
-		int size;
-		int size_max;
-
-		ptr = vspadev->spm_buf_vaddr[vspadev->spm_addr];
-		IF_DEBUG(DEBUG_SPM) {
-			pr_info("vspa%d: SPM\n", vspadev->id);
-			pr_info("[%04X] = %08X\n", vspadev->spm_addr, ptr);
-		}
-		if (ptr) {
-			if (ptr >= (uint32_t)vspadev->spm_buf_paddr)
-				ptr -= (uint32_t)vspadev->spm_buf_paddr;
-			if (ptr >= vspadev->spm_buf_bytes || ptr & 3) {
-				ERR("%d: bad SPM ptr %08X\n", vspadev->id, ptr);
-			} else {
-				ptr >>= 2;
-				size_max = ptr > vspadev->spm_addr ?
-					(vspadev->spm_buf_bytes >> 2) - ptr :
-					vspadev->spm_addr - ptr;
-
-				size = (vspadev->spm_buf_vaddr[ptr]>>16)&0xFF;
-				if (size >= size_max)
-					size = size_max - 1;
-				event_enqueue(vspadev, VSPA_EVENT_SPM, 0,
-					spm_flags, vspadev->spm_buf_vaddr[ptr],
-					      (size << 16) | ptr);
-				vspadev->spm_addr = ptr - 1;
-				IF_DEBUG(DEBUG_SPM) {
-					while (size >= 0) {
-						pr_info("[%04X] = %08X\n", ptr,
-						vspadev->spm_buf_vaddr[ptr]);
-						ptr++;
-						size--;
-					}
-				}
-			}
-		}
+		spm_update(vspadev, spm_flags);
 	}
 
-//TODO	spin_unlock(&vspadev->irq_lock);
+//	spin_unlock(&vspadev->irq_lock);
 	vspadev->irq_bits &= ~4;
 
 	return IRQ_HANDLED;
@@ -1253,7 +1362,7 @@ static irqreturn_t vspa_gen_irq_handler(int irq, void *dev)
 		vspadev->id, irqen, status,
 		vspa_reg_read(regs + STATUS_REG_OFFSET));
 
-//TODO	spin_unlock(&vspadev->irq_lock);
+//	spin_unlock(&vspadev->irq_lock);
 	vspadev->irq_bits &= ~8;
 
 	return IRQ_HANDLED;
@@ -1265,11 +1374,18 @@ static int powerdown(struct vspa_device *vspadev)
 {
 	u32 __iomem *regs = vspadev->regs;
 	u32 __iomem *dbg_regs = vspadev->dbg_regs;
-	int ret;
+	int ret = 0;
 	int ctr;
+	int powered;
+
+	/* check if the VSPA core is powered */
+	powered = d4400_gpc_vspa_full_pow(vspadev->id);
+	if (powered < 0)
+		return powered;
 
 	/* Disable all interrupts */
-	vspa_reg_write(regs + IRQEN_REG_OFFSET, 0x0);
+	if (powered)
+		vspa_reg_write(regs + IRQEN_REG_OFFSET, 0x0);
 
 	vspadev->state = VSPA_STATE_UNKNOWN;
 	vspadev->versions.vspa_sw_version = ~0;
@@ -1280,36 +1396,41 @@ static int powerdown(struct vspa_device *vspadev)
 	/* shut the timer down */
 	mod_timer(&vspadev->watchdog_timer, jiffies);
 
-	/* Enable the invasive (halting) debug mode */
-	vspa_reg_write(dbg_regs + DBG_GDBEN_REG_OFFSET, 0x1);
+	if (powered) {
+		/* Enable the invasive (halting) debug mode */
+		vspa_reg_write(dbg_regs + DBG_GDBEN_REG_OFFSET, 0x1);
 
-	/* Stop all VSPA activities using “force_halt” */
-	vspa_reg_write(dbg_regs + DBG_RCR_REG_OFFSET, 0x4);
+		/* Stop all VSPA activities using “force_halt” */
+		vspa_reg_write(dbg_regs + DBG_RCR_REG_OFFSET, 0x4);
 
-	/* Wait for the “halted” bit to be set */
-	for (ctr = VSPA_HALT_TIMEOUT; ctr; ctr--) {
-		if (vspa_reg_read(dbg_regs + DBG_RCR_REG_OFFSET) & (1 << 13))
-			break;
-		udelay(1);
+		/* Wait for the “halted” bit to be set */
+		for (ctr = VSPA_HALT_TIMEOUT; ctr; ctr--) {
+			udelay(1);
+			ret = vspa_reg_read(dbg_regs + DBG_RCSTATUS_REG_OFFSET)
+								 & (1 << 13);
+			if (ret)
+				break;
+		}
+		if (!(ret)) {
+			ERR("%d: powerdown() timeout waiting for halt\n",
+								 vspadev->id);
+			ret = -1;
+		} else {
+			ret = d4400_gpc_vspa_full_pow_gate(vspadev->id);
+		}
+		if (ret)
+			ERR("%d: powerdown() => %d\n", vspadev->id, ret);
 	}
-	if (ctr == 0)
-		ERR("%d: powerdown() timeout waiting for halt\n", vspadev->id);
-	if (!(vspa_reg_read(dbg_regs + DBG_RCR_REG_OFFSET) & (1 << 13)))
-		ret = -1;
-	else
-		ret = d4400_gpc_vspa_full_pow_gate(vspadev->id);
-	if (ret)
-		ERR("%d: powerdown() => %d\n", vspadev->id, ret);
-
-	vspadev->state = ret ? VSPA_STATE_UNKNOWN : VSPA_STATE_PWR_DOWN;
+	vspadev->state = ret ? VSPA_STATE_UNKNOWN : VSPA_STATE_POWER_DOWN;
 	return ret;
 }
 
 static int powerup(struct vspa_device *vspadev)
 {
 	int ret;
+	u32 __iomem *regs = vspadev->regs;
 
-	if (vspadev->state != VSPA_STATE_PWR_DOWN)
+	if (vspadev->state != VSPA_STATE_POWER_DOWN)
 		return -EPERM;
 
 	ret = d4400_gpc_vspa_full_pow_up(vspadev->id);
@@ -1317,6 +1438,8 @@ static int powerup(struct vspa_device *vspadev)
 		ERR("%d: powerup() ret = %d\n", vspadev->id, ret);
 		powerdown(vspadev);
 	} else {
+		/* Disable all interrupts */
+		vspa_reg_write(regs + IRQEN_REG_OFFSET, 0x0);
 		dma_reset_queue(vspadev);
 		event_reset_queue(vspadev);
 		mbox_reset(vspadev);
@@ -1339,8 +1462,15 @@ static int startup(struct vspa_device *vspadev)
 	if (vspadev->state != VSPA_STATE_LOADING)
 		return -EPERM;
 
-	IF_DEBUG(DEBUG_STARTUP)
+	IF_DEBUG(DEBUG_STARTUP) {
 		pr_info("vspa%d: startup()\n", vspadev->id);
+		pr_info("Filename: '%s'\n", vspadev->eld_filename);
+		pr_info("Command buffer: addr = %08X, bytes = %08X\n",
+			vspadev->cmdbuf_addr, vspadev->cmd_pool.size * 4);
+		pr_info("SPM %s buffer: addr = %p, bytes = %08X\n",
+			vspadev->spm_user_buf ? "User" : "Driver",
+			vspadev->spm_buf_paddr, vspadev->spm_buf_bytes);
+	}
 
 	/* Ask the VSPA to go */
 	val = vspa_reg_read(regs + CONTROL_REG_OFFSET);
@@ -1502,6 +1632,7 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	struct vspa_mb32 mb32;
 	struct vspa_mb64 mb64;
 	struct vspa_event_read evt_rd;
+	uint32_t align_bytes = vspadev->hardware.axi_data_width >> 3;
 	int state;
 
 	IF_DEBUG(DEBUG_IOCTL)
@@ -1586,7 +1717,7 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		case VSPA_POWER_DOWN:  rc = powerdown(vspadev); break;
 		case VSPA_POWER_CYCLE: rc = powerdown(vspadev); /*FALLTHROUGH*/
 		case VSPA_POWER_UP:    if (rc==0) rc = powerup(vspadev); break;
-		default:	  rc = -EINVAL; break;
+		default:	       rc = -EINVAL; break;
 		}
 		spin_unlock(&vspadev->control_lock);
 		break;
@@ -1604,8 +1735,13 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		if (rc)
 			rc = -EFAULT;
 		else {
-			dma_req.type = VSPA_EVENT_DMA;
-			rc = dma_enqueue(vspadev, &dma_req);
+			if ((dma_req.dmem_addr & (align_bytes - 1)) ||
+			    (dma_req.axi_addr & (align_bytes - 1))) {
+				rc = -EINVAL;
+			} else {
+				dma_req.type = VSPA_EVENT_DMA;
+				rc = dma_enqueue(vspadev, &dma_req);
+			}
 		}
 
 /*pr_info("vspa%d: ctrl %08x, dmem %08x, axi %08x, cnt %08x, ctrl %08x\n",
@@ -1621,6 +1757,13 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			(struct vspa_startup*)arg, sizeof(startup_desc));
 		if (rc)
 			rc = -EFAULT;
+		else if ((startup_desc.cmd_buf_size & (align_bytes - 1)) ||
+			 (startup_desc.cmd_buf_addr & (align_bytes - 1)))
+			rc = -EINVAL;
+		else if (startup_desc.spm_buf_size && (
+			 (startup_desc.spm_buf_size & (align_bytes - 1)) ||
+			 (startup_desc.spm_buf_addr & (align_bytes - 1))))
+			rc = -EINVAL;
 		else {
 			spin_lock(&vspadev->control_lock);
 			IF_DEBUG(DEBUG_IOCTL)
@@ -1643,10 +1786,10 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 				vspadev->spm_buf_bytes =
 						startup_desc.spm_buf_size;
 				vspadev->spm_buf_paddr =
-					(uint32_t*)startup_desc.spm_buf_paddr;
+					(uint32_t*)startup_desc.spm_buf_addr;
 				vspadev->spm_buf_vaddr = ioremap(
-						startup_desc.spm_buf_paddr,
-						startup_desc.spm_buf_size);
+						(int)vspadev->spm_buf_paddr,
+						vspadev->spm_buf_bytes);
 			} else {
 				vspadev->spm_buf_bytes =
 						vspadev->spm_buffer_bytes;
@@ -1655,10 +1798,14 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 				vspadev->spm_buf_vaddr =
 						vspadev->spm_buffer_vaddr;
 			}
-			if (startup_desc.watchdog_interval_nsecs <
+			vspadev->spm_addr = (vspadev->spm_buf_bytes - 4) >> 2;
+			memset(vspadev->spm_buf_vaddr, 0,
+						vspadev->spm_buf_bytes);
+
+			if (startup_desc.watchdog_interval_msecs <
 						VSPA_WATCHDOG_INTERVAL_MAX)
 			vspadev->watchdog_interval_msecs =
-					startup_desc.watchdog_interval_nsecs;
+					startup_desc.watchdog_interval_msecs;
 			strncpy(vspadev->eld_filename, startup_desc.filename,
 							VSPA_MAX_ELD_FILENAME);
 			vspadev->eld_filename[VSPA_MAX_ELD_FILENAME-1] = '\0';
@@ -1755,6 +1902,16 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 
+	case VSPA_IOC_GET_DEBUG:
+		rc = __put_user(vspadev->debug, (int*)arg);
+		if (rc)
+			rc = -EFAULT;
+		break;
+
+	case VSPA_IOC_SET_DEBUG:
+		vspadev->debug = arg;
+		break;
+
 	default:
 		rc = -ENOTTY;
 		break;
@@ -1817,6 +1974,8 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 	int cmd_id = 0;
 	uint32_t flags = 0;
 	int reply_idx = -1;
+	int align_bytes = vspadev->hardware.axi_data_width >> 3;
+	int align_words = vspadev->hardware.axi_data_width >> 5;
 
 	IF_DEBUG(DEBUG_IOCTL)
 		pr_info("vspa%d: vspa_write() len = %d\n", vspadev->id, len);
@@ -1844,7 +2003,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 
 	words = len/4;
 	if (vspadev->first_cmd) words++;
-	words = 4 * ((words + 3) / 4);
+	words = align_words * ((words + align_words - 1) / align_words);
 	index = pool_get_bd(&vspadev->cmd_pool, words);
 	IF_DEBUG(DEBUG_CMD_BD)
 		pool_print(&vspadev->cmd_pool);
@@ -1872,11 +2031,21 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 		flags = dmabuf[0] & 0xFF;
 		if (flags & VSPA_FLAG_REPORT_CMD_REPLY)
 			flags |= VSPA_FLAG_EXPECT_CMD_REPLY;
+		if ((dmabuf[2] > 0 && dmabuf[3] == 0) ||
+		    (dmabuf[3] & (align_bytes - 1)) ||
+		    (dmabuf[5] & (align_bytes - 1))) {
+			ERR("%d: buffers must be AXI aligned\n", vspadev->id);
+			err = -EINVAL; // TODO value
+			goto pool_free;
+		}
 		if (dmabuf[4] > 0) {
 			flags |= VSPA_FLAG_EXPECT_CMD_REPLY;
 			if (dmabuf[5] == 0) {
+				int reply_words = (dmabuf[4]+3)>>2;
+				reply_words = align_words * ((reply_words +
+						align_words - 1) / align_words);
 				reply_idx = pool_get_bd(&vspadev->reply_pool,
-							 (dmabuf[4]+3)>>2);
+								 reply_words);
 				IF_DEBUG(DEBUG_REPLY_BD)
 					pool_print(&vspadev->reply_pool);
 				if (reply_idx < 0) {
@@ -1886,7 +2055,8 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 					goto pool_free;
 				}
 				dmabuf[5] = (unsigned int)
-					&vspadev->reply_pool.paddr[reply_idx];
+					&vspadev->reply_pool.paddr[
+				vspadev->reply_pool.bd[reply_idx].wstart ];
 			}
 		}
 		cmd_id = dmabuf[1] >> 24;
@@ -1908,8 +2078,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 		dmabuf[0] = 0;
 		dmabuf[1] = (dmabuf[1] & 0x00FFFFFF) | (seqid << 24);
 		dmabuf[words] = start_addr;
-IF_DEBUG(DEBUG_TEST) dmabuf[6] |= 0xFE000000; // TODO - test, remove
-		for (i = len/4; i < words; i++)
+		for (i = len/4; i < words; i++) /* filler words */
 			dmabuf[i] = 0;
 		if (vspadev->first_cmd)
 			dmabuf[words-1] = start_addr;
@@ -2054,7 +2223,7 @@ static const struct file_operations vspa_fops = {
 };
 
 /***************************** Sysfs *******************************/
-//TODO - complete sysfs: events, seqids, registers,
+//TODO - complete sysfs: registers, bds
 
 static ssize_t show_stat(struct device *dev,
 			struct device_attribute *devattr, char *buf);
@@ -2106,9 +2275,9 @@ static ssize_t show_events(struct device *dev,
 	ctr = 0;
 	total_len = 0;
 	list_for_each_entry(ptr, &vspadev->events_queued_list, list) {
-		len = sprintf(buf, "[%2d] %-5s %02X %04X %08X %08X\n",
+		len = sprintf(buf, "[%2d] %-5s %02X %02X %08X %08X\n",
 			ctr++, event_name[ptr->type & 0xF], ptr->id,
-			ptr->flags, ptr->data0, ptr->data1);
+			ptr->err, ptr->data0, ptr->data1);
 		total_len += len;
 		buf += len;
 		if (total_len >= (PAGE_SIZE - 50)) {
@@ -2355,7 +2524,7 @@ static int vspa_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(&pdev->dev, vspadev);
 	vspadev->state = VSPA_STATE_UNKNOWN;
-	vspadev->debug = 0;
+	vspadev->debug = DEBUG_MESSAGES; // TODO set to 0
 	vspadev->spm_buffer_paddr = &((uint32_t*)dma_paddr)[0];
 	vspadev->spm_buffer_vaddr = &dma_vaddr[0];
 	vspadev->spm_user_buf = 0;
@@ -2412,7 +2581,7 @@ static int vspa_probe(struct platform_device *pdev)
 	spin_lock_init(&vspadev->mb64_lock);
 	spin_lock_init(&vspadev->control_lock);
 	vspadev->poll_mask = VSPA_MSG_ALL;
-//TODO	spin_lock_init(&vspadev->irq_lock);
+//	spin_lock_init(&vspadev->irq_lock);
 	init_waitqueue_head(&(vspadev->event_wait_q));
 	vspadev->driver_state = VSPA_PROBED;
 //TODO power cycle ?
@@ -2575,7 +2744,7 @@ static int __init vspa_mod_init(void)
 	/* Register our major, and accept a dynamic number. */
 	err = alloc_chrdev_region(&devno, 0, MAX_VSPA, VSPA_DEVICE_NAME);
 	if (err < 0) {
-		ERR(": can't get major number: %d\n", err);
+		pr_err("vspa: can't get major number: %d\n", err);
 		goto chrdev_fail;
 	}
 	vspa_major = MAJOR(devno);
@@ -2585,7 +2754,7 @@ static int __init vspa_mod_init(void)
 	vspa_class = class_create(THIS_MODULE, VSPA_DEVICE_NAME);
 	if (IS_ERR(vspa_class)) {
 		err = PTR_ERR(vspa_class);
-		ERR(": class_create() failed %d\n", err);
+		pr_err("vspa: class_create() failed %d\n", err);
 		goto class_fail;
 	}
 
