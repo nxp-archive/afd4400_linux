@@ -94,6 +94,15 @@ void jesd_read_reg(u32 *reg)
 	ioread32(reg);
 }
 
+/* The lane swap option is cancelled here due to the fact
+ * that the lane swap is dependent on the board design, thus
+ * it's not possible to create a lane swap case that fits all.
+ * For ADI ROC card and DFE EVB, the connection for the tx lanes
+ * between DFE and Ad9368-2 chip is opposite, so in the dual lane
+ * case use IQ swap option to swap back intead.
+ */
+
+/*
 static int jesd_get_tx_lane_swap_en(struct jesd_transport_dev *tdev,
 	struct lane_device *lane)
 {
@@ -132,6 +141,7 @@ static int jesd_get_lane_swap_en(struct jesd_transport_dev *tdev,
 
 	return swap_enable;
 }
+*/
 
 static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 {
@@ -161,14 +171,11 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 		goto out;
 	}
 
-	dev_info(tdev->dev, "%s: data src %d\n", tdev->name, phy_data_src);
-
 	for (i = 0; i < tdev->active_lanes; i++) {
 		lane = tdev->lane_devs[i];
-		swap_enable = jesd_get_lane_swap_en(tdev, lane);
 
-		dev_info(tdev->dev, "%s: [%d] lane_swap %d\n",
-			tdev->name, lane->id, swap_enable);
+		/* No lane swap */
+		swap_enable = 0;
 		if (lane->flags & LANE_FLAGS_PRIMARY)
 			phy_gasket_swap_lanes(tdev->phy, lane->id,
 					swap_enable, tdev->type);
@@ -365,42 +372,20 @@ out:
 	return rc;
 }
 
-
 static int jesd_set_delays(struct jesd_transport_dev *tdev)
 {
 	int rc = 0;
-	int delay;
-	/* this shall be either tx or rx delay have the segregation here
-	* itself config delay
-	*/
-	if (tdev->type == JESD_DEV_TX)
-		iowrite32(tdev->delay & 0xF, &tdev->tx_regs->tx_sync_delay);
-	else if ((tdev->type == JESD_DEV_RX) || (tdev->type == JESD_DEV_SRX)) {
-		/*Set to 2 when K=5, F=4
-		Set to 4 when K=10, F=2
-		Set to 5 when K=6, F=4
-		Set to 10 when K=12, F=2 as per RM*/
-		if (tdev->ils.frame_per_mf_k == 5 &&
-				tdev->ils.octect_per_frame_f == 4)
-			delay = 0;
-		else if (tdev->ils.frame_per_mf_k == 10 &&
-				tdev->ils.octect_per_frame_f == 2)
-			delay = 0;
-		else if (tdev->ils.frame_per_mf_k == 6 &&
-					tdev->ils.octect_per_frame_f == 4)
-			delay = 3;
-		else if (tdev->ils.frame_per_mf_k == 12 &&
-					tdev->ils.octect_per_frame_f == 2)
-			delay = 6;
-		else
-			delay = 0;
 
-		if (rc < 0)
-			return rc;
+	if (tdev->type == JESD_DEV_TX)
+		iowrite32(tdev->delay & 0x3F, &tdev->tx_regs->tx_sync_delay);
+	else if ((tdev->type == JESD_DEV_RX) || (tdev->type == JESD_DEV_SRX)) {
+		if (tdev->delay > 12)
+			return -EINVAL;
 		else
-			iowrite32(delay, &tdev->rx_regs->rx_rcv_delay);
+			iowrite32(tdev->delay, &tdev->rx_regs->rx_rcv_delay);
 	} else
 		rc = -EINVAL;
+
 	return rc;
 }
 
