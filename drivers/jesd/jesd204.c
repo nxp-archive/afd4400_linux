@@ -1672,6 +1672,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		rc = jesd_force_sync(tdev);
 		break;
 	case JESD_GET_STATS:
+		/* TODO: Implement stats */
 		dev_err(tdev->dev, "%s: Not implemented\n", tdev->name);
 		rc = -ENOSYS;
 		break;
@@ -1681,6 +1682,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 			sizeof(struct lane_stats));
 		memset(&tdev->lane_devs[1]->l_stats, 0,
 			sizeof(struct lane_stats));
+		rc = 0;
 		break;
 	case JESD_WRITE_REG:
 

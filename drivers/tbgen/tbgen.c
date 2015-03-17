@@ -240,7 +240,7 @@ int validate_refclk(struct tbgen_dev *tbg, u32 ref_clk)
 	return retcode;
 }
 
-/* XXX: TPLL init to be moved to ccm */
+/* TODO: TPLL init to be moved to ccm */
 #define PLL_TIMEOUT_MS	100
 #define CCM_BASE	0x01094000
 #define CCM_SIZE	0x4000
@@ -368,7 +368,7 @@ int tbgen_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 
 	tbg->refclk_khz = pll_params->refclk_khz;
 
-	/* XXX: TBD - Enable/programe TBGEN PLL using, using clk_get/enable.
+	/* TODO: Enable/programe TBGEN PLL using, using clk_get/enable.
 	 * For medusa programming TBGEN PLL is not required
 	 */
 	 retcode = hack_tbg_pll_init(tbg, pll_params);
@@ -533,7 +533,8 @@ int tbgen_rfg_init(struct tbgen_dev *tbg, struct tbg_rfg *rfg_params)
 int tbgen_restart_radio_frame_generation(struct tbgen_dev *tbg)
 {
 	int retcode = 0;
-/*XXX: Fixed RFG reset */
+
+	/* TODO: Fixed RFG reset */
 #if 0
 	rfg_enable(tbg, 0);
 	retcode = tbgen_rfg_init(tbg);
@@ -663,7 +664,7 @@ static int tbgen_config_tx_timer_regs(struct tbgen_timer *timer,
 
 	if (timer_param->config_flags & TIMER_CONF_ACTIVE_LOW) {
 
-		/* XXX: Active low hack : D4400 uses all the strobes as
+		/* NOTE: Active low hack : D4400 uses all the strobes as
 		 * active high to activate the signal that the strobe is
 		 * driving.
 		 * But during BSP testing we don't know the exact strobe
@@ -1394,7 +1395,7 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 			write_reg.regs++;
 			count--;
 		}
-
+		retcode = 0;
 		kfree(write_reg.regs);
 		break;
 	case TBGEN_READ_REG:
@@ -1432,6 +1433,8 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 		if (copy_to_user((u64 *)arg, &master_counter,
 						sizeof(master_counter)))
 			retcode = -EFAULT;
+		else
+			retcode = 0;
 		break;
 	case TBGEN_GET_L10MCNTR:
 		l10_counter = tbgen_get_l10_mcntr(tbg);
@@ -1439,9 +1442,11 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 		if (copy_to_user((u64 *)arg, &l10_counter,
 						sizeof(l10_counter)))
 			retcode = -EFAULT;
+		else
+			retcode = 0;
 		break;
 	case TBGEN_RESET:
-		/*XXX: Implement TBGEN reset:
+		/* TODO: Implement TBGEN reset:
 		 * 1. Disable all timers
 		 * 2. Rset RFG
 		 * 3. Reset TBGEN
@@ -1643,7 +1648,7 @@ static int tbgen_of_remove(struct platform_device *pdev)
 	for (id = 0; id < MAX_GP_EVENT_TIMERS; id++)
 		tbgen_timer_ctrl(tbg, JESD_GP_EVENT, id, 0);
 
-	/*XXX: Disable IRQ and RFG */
+	/* TODO: Disable IRQ and RFG */
 
 	misc_deregister(&tbg_miscdev);
 
