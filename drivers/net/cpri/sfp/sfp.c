@@ -34,6 +34,16 @@
 #define MAX_SFPS	4
 #define SFP_DEVICE_NAME "sfp"
 
+/* Debug and error reporting macros */
+#define IF_DEBUG(x)     if (sfp->debug & (x))
+#define ERR(...)        {if (sfp->debug & DEBUG_MESSAGES) \
+				pr_err(SFP_DEVICE_NAME __VA_ARGS__);}
+
+#define DEBUG_MESSAGES		(1<<0)
+#define DEBUG_CHANGE		(1<<1)
+#define DEBUG_CHANGE_FULL	(1<<2)
+#define DEBUG_EEPROM		(1<<3)
+
 /* Device major/minor numbers */
 static s32 sfp_major;
 static s32 sfp_minor;
@@ -63,7 +73,7 @@ MODULE_PARM_DESC(write_timeout, "Time (in ms) to try writes (default 25)");
 
 /* Debug level controls runtime messages from the SFP.
  */
-static unsigned debug = 0;
+static unsigned debug = DEBUG_MESSAGES;
 module_param(debug, uint, 0);
 MODULE_PARM_DESC(debug, "Debug message setting");
 
@@ -139,8 +149,9 @@ static int sfp_eeprom_write(struct sfp_dev *sfp, u8 *buf,
 			if (status == 1)
 				status = count;
 		}
-		dev_dbg(&client->dev, "write %zu@%d --> %zd (%ld)\n",
-				count, offset, status, jiffies);
+		IF_DEBUG(DEBUG_EEPROM)
+			pr_info("sfp%d: I2C write %zu@%d --> %zd (%ld)\n",
+				sfp->id, count, offset, status, jiffies);
 
 		if (status == count)
 			return count;
@@ -276,8 +287,9 @@ static int sfp_eeprom_read(struct sfp_dev *sfp, u8 *buf,
 			if (status == 2)
 				status = count;
 		}
-		dev_dbg(&client->dev, "read %zu@%d --> %d (%ld)\n",
-				count, offset, status, jiffies);
+		IF_DEBUG(DEBUG_EEPROM)
+			pr_info("sfp%d: I2C read %zu@%d --> %d (%ld)\n",
+				sfp->id, count, offset, status, jiffies);
 		usleep_range(1000, 2000);
 
 		if (status == count)
@@ -329,7 +341,6 @@ EXPORT_SYMBOL(sfp_raw_read);
 
 static int sfp_read_info(struct sfp_dev *sfp)
 {
-	struct device *dev = &(sfp->client->dev);
 	int ret = 0;
 	unsigned int count = SFP_EEPROM_INFO_SIZE;
 	u8 *buf = &(sfp->info.type);
@@ -338,16 +349,16 @@ static int sfp_read_info(struct sfp_dev *sfp)
 	/* Try reading basic eeprom info */
 	ret = sfp_raw_read(sfp, &(sfp->info.type), 0, count, SFP_MEM_EEPROM);
 	if (ret != count) {
-		dev_dbg(dev, "basic data read failure ret: %d, count: %d",
-			ret, count);
+		ERR("%d: basic data read failure ret: %d, count: %d",
+			sfp->id, ret, count);
 		goto out;
 	}
 	/* Try reading diagnostic info */
 	ret = sfp_raw_read(sfp, &(sfp->diag.temp_hi_alarm[0]), 0, count,
 								SFP_MEM_DIAG);
 	if (ret != count) {
-		dev_dbg(dev, "diagnostics read failure ret: %d, count: %d",
-			ret, count);
+		ERR("%d: diagnostics read failure ret: %d, count: %d",
+			sfp->id, ret, count);
 		goto out;
 	}
 	sfp->valid = 1;
@@ -376,7 +387,6 @@ out:
 
 int sfp_update_realtime_info(struct sfp_dev *sfp)
 {
-	struct device *dev = &(sfp->client->dev);
 	int len;
 	int ret;
 	u8 tmp[24];
@@ -384,8 +394,8 @@ int sfp_update_realtime_info(struct sfp_dev *sfp)
 	len = sizeof(tmp);
 	ret = sfp_raw_read(sfp, tmp, 96, len, SFP_MEM_DIAG);
 	if (ret != len) {
-		dev_err(dev, "diagnostics read failure ret: %d, count: %d",
-			ret, len);
+		ERR("%d: diagnostics read failure ret: %d, count: %d",
+			sfp->id, ret, len);
 		return -EINVAL;
 	}
 	memcpy((u8*)&sfp->diag.temp_msb, tmp, sizeof(tmp));
@@ -402,7 +412,6 @@ EXPORT_SYMBOL(sfp_set_tx_enable);
 
 int sfp_check_gpios(struct sfp_dev *sfp)
 {
-	struct device *dev = &(sfp->client->dev);
 	int state = 0;
 	int changed = 0;
 	int val;
@@ -437,36 +446,38 @@ int sfp_check_gpios(struct sfp_dev *sfp)
 		if (val) {
 			sfp->prs_count++;
 			if (sfp_read_info(sfp) < 0)
-				dev_err(dev, "sfp i2c read fail");
+				ERR("%d: i2c read fail", sfp->id);
 		} else {
 			sfp->valid = 0;
 		}
 	}
-	if (changed && (sfp->debug & 2))
-		dev_info(dev, "sfp%d state = %d\n", sfp->id, state);
-	if (changed && (sfp->debug & 1)) {
+	if (!changed)
+		return 0;
+
+	IF_DEBUG(DEBUG_CHANGE) {
+		pr_info("sfp%d state = %d\n", sfp->id, state);
+	}
+	IF_DEBUG(DEBUG_CHANGE_FULL) {
 		if (changed & SFP_STATE_PRS) {
 			if (!(state & SFP_STATE_PRS))
-				dev_info(dev, "sfp%d module removed\n",
-						sfp->id);
+				pr_info("sfp%d module removed\n", sfp->id);
 			else if (sfp->valid)
-				dev_info(dev, "sfp%d %s\n",
-						sfp->id, sfp->desc);
+				pr_info("sfp%d %s\n", sfp->id, sfp->desc);
 			else
-				dev_info(dev, "sfp%d unknown module inserted\n",
+				pr_info("sfp%d unknown module inserted\n",
 						sfp->id);
 		} else if (state & SFP_STATE_PRS) {
 			if (changed & SFP_STATE_RXLOS)
-				dev_info(dev, "sfp%d RX signal %s\n", sfp->id,
+				pr_info("sfp%d RX signal %s\n", sfp->id,
 					(state & SFP_STATE_RXLOS) ? "lost" : "OK");
 			if (changed & SFP_STATE_TXFAULT)
-				dev_info(dev, "sfp%d TX fault %s\n", sfp->id,
-					(state & SFP_STATE_TXFAULT) ? "occured" :
+				pr_info("sfp%d TX fault %s\n", sfp->id,
+					(state & SFP_STATE_TXFAULT) ? "occurred" :
 								     "cleared");
 		}
 	}
 	/* Notify framer */
-	if (changed && sfp->attached_framer)
+	if (sfp->attached_framer)
 		cpri_framer_handle_sfp_pin_changes(sfp->attached_framer,
 								changed, state);
 	return 0;
@@ -557,12 +568,19 @@ static ssize_t set_debug(struct device *dev, struct device_attribute *devattr,
 	int err;
 	unsigned int val;
 
-	err = kstrtouint(buf, 10, &val);
+	err = kstrtouint(buf, 0, &val);
 	if (err)
 		return err;
 
 	sfp->debug = val;
 	return count;
+}
+
+static ssize_t show_debug(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	struct sfp_dev *sfp = dev_get_drvdata(dev);
+	return sprintf(buf, "0x%08X\n", sfp->debug);
 }
 
 static DEVICE_ATTR(prs_state,        S_IRUGO, show_stat,   NULL);
@@ -572,7 +590,7 @@ static DEVICE_ATTR(rxlos_count,      S_IRUGO, show_stat,   NULL);
 static DEVICE_ATTR(txfault_state,    S_IRUGO, show_stat,   NULL);
 static DEVICE_ATTR(txfault_count,    S_IRUGO, show_stat,   NULL);
 static DEVICE_ATTR(txenable_state,   S_IRUGO, show_stat,   NULL);
-static DEVICE_ATTR(debug,  S_IWUSR | S_IRUGO, show_stat,   set_debug);
+static DEVICE_ATTR(debug,  S_IWUSR | S_IRUGO, show_debug, set_debug);
 static DEVICE_ATTR(info,             S_IRUGO, show_desc,   NULL);
 static DEVICE_ATTR(eeprom,           S_IRUGO, show_info,   NULL);
 static DEVICE_ATTR(diag,             S_IRUGO, show_info,   NULL);
@@ -611,7 +629,6 @@ static ssize_t show_stat(struct device *dev,
 	else if (devattr == &dev_attr_txfault_count) val = sfp->txfault_count;
 	else if (devattr == &dev_attr_txenable_state)
 						   val = sfp->tx_enable_state;
-	else if (devattr == &dev_attr_debug)         val = sfp->debug;
 	else val = 0;
 	return sprintf(buf, "%d\n", val);
 }
