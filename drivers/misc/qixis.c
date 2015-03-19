@@ -577,7 +577,7 @@ static ssize_t set_leds(struct device *dev, struct device_attribute *attr,
 	int err;
 	unsigned int val;
 
-	err = kstrtouint(buf, 10, &val);
+	err = kstrtouint(buf, 0, &val);
 	if (err)
 		return err;
 
