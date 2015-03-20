@@ -16,6 +16,7 @@
 #include <mach/serdes-d4400.h>
 
 #define DRIVER_NAME "jesd204"
+#define JESD_MOD_NAME "jesd204"
 
 #define TRANSPORTS_PER_JESD_DEV 2
 #define MAX_LANES 2
@@ -433,7 +434,17 @@ struct jesd204_dev {
 	struct device_node *node;
 	dev_t devt;
 	struct list_head jesd_dev_list;
+	u32 debug;
 };
+
+/* jesd_dev->debug */
+#define DEBUG_JESD_MESSAGES		(1<<0)
+#define DEBUG_JESD_PHY			(1<<1)
+#define DEBUG_JESD_SERDES		(1<<2)
+#define DEBUG_JESD_TIMERS		(1<<3)
+#define DEBUG_JESD_CLOCKS		(1<<4)
+#define DEBUG_JESD_STATES		(1<<5)
+#define DEBUG_JESD_IRQ			(1<<6)
 
 struct jesd204_private {
 	struct list_head list;

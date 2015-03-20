@@ -45,6 +45,11 @@
 #define TRANS_TX_NAME "jesd_tx"
 #define TRANS_RX_NAME "jesd_rx"
 
+/* Debug and error reporting macros */
+#define IF_DEBUG(x)	if ((get_debug_flags(tdev)) & (x))
+#define ERR(...)	{if (get_debug_flags(tdev) & DEBUG_JESD_MESSAGES) \
+				pr_err(JESD_MOD_NAME __VA_ARGS__); }
+
 static struct class *jesd204_class;
 static struct jesd204_private *pri;
 
@@ -73,6 +78,14 @@ static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
 
 static int jesd_init_serdes_lanes(struct jesd_transport_dev *tdev);
 static int jesd_stop_serdes_lanes(struct jesd_transport_dev *tdev);
+
+static ssize_t set_debug(struct device *dev, struct device_attribute *devattr,
+			const char *buf, size_t count);
+static ssize_t show_debug(struct device *dev,
+			struct device_attribute *devattr, char *buf);
+static u32 get_debug_flags(struct jesd_transport_dev *tdev);
+static void set_debug_flags(struct jesd_transport_dev *tdev, int index, u32 flags);
+
 
 void jesd_update_reg(u32 *reg, u32 val, u32 mask)
 {
@@ -159,8 +172,9 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 	case JESD_DEV_RX:
 	case JESD_DEV_SRX:
 		if (tdev->dev_flags & DEV_FLG_PHYGASKET_LOOPBACK_EN) {
-			dev_info(tdev->dev, "%s: Enabling PHYGASKET loopback\n",
-				tdev->name);
+			IF_DEBUG(DEBUG_JESD_PHY)
+				pr_info("%s: Enabling phygasket loopback\n",
+					tdev->name);
 			phy_data_src = PHY_DATA_RX_LOOPBACK;
 		} else {
 			phy_data_src = PHY_DATA_JESDRX;
@@ -181,7 +195,7 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 					swap_enable, tdev->type);
 		rc = phy_gasket_lane_ctrl(tdev->phy, phy_data_src, lane->id);
 		if (rc) {
-			dev_err(tdev->dev, "%s: Phy init Failed, lane %d\n",
+			ERR(" %s: Phy init failed, lane=%d\n",
 				tdev->name, lane->id);
 			goto out;
 		}
@@ -200,7 +214,7 @@ void lane_stats_update(struct jesd_transport_dev *tdev,
 						u32 stats_field,
 						u32 lane_id)
 {
-	/*XXX: To be implemented */
+	/* TODO: To be implemented */
 }
 
 static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
@@ -221,15 +235,15 @@ static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 		clkdiv -= 1;
 		break;
 	default:
-		dev_err(tdev->dev, "%s: Data rate %dKhz Invalid, refclk %d Khz",
+		ERR(" %s: Data rate %d KHz is invalid, refclk=%d KHz\n",
 			tdev->name, tdev->data_rate, refclk);
 		rc = -EINVAL;
 		goto out;
 	}
 
-	dev_info(tdev->dev, "%s: clkdiv %d, data rate %dKhz, refclk %dKhz\n",
-		tdev->name, clkdiv, tdev->data_rate, refclk);
-
+	IF_DEBUG(DEBUG_JESD_CLOCKS)
+		pr_info("%s: Clkdiv=%d, data rate %d KHz, revclk %d KHz\n",
+			tdev->name, clkdiv, tdev->data_rate, refclk);
 	val = (clkdiv & CLKDIV_MASK) << CLKDIV_SHIFT; /*mask for three bits*/
 	mask = CLKDIV_MASK << CLKDIV_SHIFT;
 	if (tdev->type == JESD_DEV_TX)
@@ -252,7 +266,8 @@ int jesd_reg_write_from_user(struct jesd_transport_dev *tdev,
 	size = count * sizeof(struct jesd_reg_val);
 	reg_buf = kzalloc(size, GFP_KERNEL);
 	if (!reg_buf) {
-		dev_err(tdev->dev, "Failed to alloc reg buf\n");
+		ERR(" %s: Failed to allocate register buffer, size=%d\n",
+			tdev->name, size);
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -271,8 +286,8 @@ int jesd_reg_write_from_user(struct jesd_transport_dev *tdev,
 
 	for (i = 0; i < count; i++) {
 		if (reg_buf[i].offset > size) {
-			dev_err(tdev->dev, "Invalid offset 0x%x\n",
-				reg_buf[i].offset);
+			ERR(" %s: Invalid register offset 0x%x\n",
+				tdev->name, reg_buf[i].offset);
 			continue;
 		}
 		reg = (u32 *) ((u32) reg_base + (u32) reg_buf[i].offset);
@@ -474,13 +489,15 @@ static int jesd_update_ils_csum(struct jesd_transport_dev *tdev)
 	val &= LID_MASK;
 	csum = (sum + val) & CSUM_MASK;
 
-	dev_info(tdev->dev, "%s: Lane0 csum 0x%x\n", tdev->name, csum);
+	IF_DEBUG(DEBUG_JESD_PHY)
+		pr_info("%s: Lane0 csum=0x%x\n", tdev->name, csum);
 	iowrite32(csum, lane0_csum_reg);
 
 	if (tdev->type == JESD_DEV_TX && tdev->active_lanes == 2) {
 		val = ioread32(&tdev->tx_regs->tx_lid_1);
 		csum = (sum + val) & CSUM_MASK;
-		dev_info(tdev->dev, "%s: Lane1 csum 0x%x\n", tdev->name, csum);
+		IF_DEBUG(DEBUG_JESD_PHY)
+			pr_info("%s: Lane1 csum=0x%x\n", tdev->name, csum);
 		iowrite32(csum, &tdev->tx_regs->tx_csum_1);
 	}
 
@@ -507,7 +524,7 @@ static int jesd_setup_tx_transport(struct jesd_transport_dev *tdev)
 
 	jesd_update_ils_csum(tdev);
 
-	/* XXX: setting up sync pipiline to 6 according to validation script
+	/* NOTE: setting up sync pipiline to 6 according to validation script
 	 * need to come up with right way to do it
 	 */
 	reg = &tdev->tx_regs->tx_transcontrol;
@@ -545,7 +562,7 @@ int jesd_setup_rx_transport(struct jesd_transport_dev *tdev)
 	jesd_update_reg(reg, enable_mask, mask);
 
 	jesd_update_ils_csum(tdev);
-	/* XXX: setting up sync pipiline to 3 according to validation script
+	/* NOTE: setting up sync pipiline to 3 according to validation script
 	 * need to come up with right way to do it
 	 */
 	reg = &tdev->rx_regs->rx_transcontrol;
@@ -594,7 +611,7 @@ static int jesd_serdes_lane_stop(struct jesd_transport_dev *tdev,
 
 	rc = serdes_lane_power_down(tdev->serdes_handle, lane->serdes_lane_id);
 	if (rc) {
-		dev_err(tdev->dev, "%s: Failed to power down lane %d\n",
+		ERR(" %s: Failed to power down jesd lane %d\n",
 			tdev->name, lane->serdes_lane_id);
 	}
 
@@ -629,8 +646,8 @@ static int jesd_serdes_lane_init(struct jesd_transport_dev *tdev,
 		lane_param.grp_prot = SERDES_PROT_JESD_2_LANE;
 
 	if (tdev->dev_flags & DEV_FLG_SERDES_LOOPBACK_EN) {
-		dev_info(tdev->dev, "%s: Enabling SERDES loopback\n",
-			tdev->name);
+		IF_DEBUG(DEBUG_JESD_SERDES)
+			pr_info("%s: Enabling serdes loopback\n", tdev->name);
 		lane_param.gen_conf.cflag |= SERDES_LOOPBACK_EN;
 	}
 
@@ -639,7 +656,7 @@ static int jesd_serdes_lane_init(struct jesd_transport_dev *tdev,
 
 	rc = serdes_lane_power_up(tdev->serdes_handle, lane_param.lane_id);
 	if (rc) {
-		dev_err(tdev->dev, "%s: power up failed lane id %d",
+		ERR(" %s: Failed to power up lane id=%d\n",
 			tdev->name, lane_param.lane_id);
 		goto out;
 	}
@@ -670,8 +687,9 @@ static int jesd_init_serdes_pll(struct jesd_transport_dev *tdev)
 	}
 	rc = serdes_init_pll(tdev->serdes_handle, &pll_param);
 	if (rc == -EALREADY) {
-		dev_dbg(tdev->dev, "%s: Serder PLL already initialized\n",
-			tdev->name);
+		IF_DEBUG(DEBUG_JESD_SERDES)
+			pr_info("%s: Serdes pll already initialized\n",
+				tdev->name);
 		rc = 0;
 	}
 
@@ -703,38 +721,37 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 
 	rc = jesd_change_state(tdev, JESD_STATE_ENABLED);
 	if (rc) {
-		dev_err(tdev->dev, "%s:Cannot be enabled in state %d\n",
-			__func__, tdev->old_state);
+		ERR(" %s: Cannot be enabled in current state %d\n",
+			tdev->name, tdev->old_state);
 		goto out;
 	}
 
 	rc = jesd_config_phygasket(tdev);
 	if (rc) {
-		dev_err(tdev->dev, "Failed to configure phy-gasket, err %d\n",
-			rc);
+		ERR(" %s: Failed to configure phygasket\n", tdev->name);
 		goto out;
 	}
 	rc = jesd_setclkdiv(tdev);
 	if (rc) {
-		dev_err(tdev->dev, "Failed to set clkdiv, err %d\n", rc);
+		ERR(" %s: Failed to set clkdiv\n", tdev->name);
 		goto out;
 	}
 
 	rc = jesd_set_delays(tdev);
 	if (rc) {
-		dev_err(tdev->dev, "Failed to set delays, err %d\n", rc);
+		ERR(" %s: Failed to set delays\n", tdev->name);
 		goto out;
 	}
 
 	rc = jesd_init_serdes_lanes(tdev);
 	if (rc) {
-		dev_err(tdev->dev, "Failed setup serdes lanes, err %d\n", rc);
+		ERR(" %s: Failed to initialize serdes lanes\n", tdev->name);
 		goto out;
 	}
 
 	rc = jesd_setup_transport(tdev);
 	if (rc) {
-		dev_err(tdev->dev, "Failed to enable transport, err %d\n", rc);
+		ERR(" %s: Failed to enable transport\n", tdev->name);
 		goto out;
 	}
 
@@ -774,13 +791,13 @@ static int jesd_set_ilas_len(struct jesd_transport_dev *tdev, int ilas_len)
 	int rc = 0;
 	u32 val, *reg;
 
-	dev_dbg(tdev->dev, "%s: ILAS lenght %d\n", tdev->name, ilas_len);
+	IF_DEBUG(DEBUG_JESD_PHY)
+		pr_info("%s: ILAS length %d\n", tdev->name, ilas_len);
 
 	val = (ilas_len / 4);
 
 	if (val & ~MAX_ILAS_LEN_MASK) {
-		dev_err(tdev->dev, "%s: Invalid ILAS lenght %d\n", tdev->name,
-			ilas_len);
+		ERR(" %s: Invalid ILAS length %d\n", tdev->name, ilas_len);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -914,15 +931,15 @@ static int __jesd_attach_timer(struct jesd_transport_dev *tdev,
 			tdev->timer_id);
 
 	if (!timer_handle) {
-		dev_err(tdev->dev, "%s:Failed to get timer type %d, id %d\n",
-				tdev->name, timer_type, tdev->timer_id);
+		ERR(" %s: Failed to get timer type=%d id=%d\n",
+			tdev->name, timer_type, tdev->timer_id);
 		rc = -ENODEV;
 		goto out;
 	}
 
 	rc = tbgen_attach_timer(timer_handle, tdev);
 	if (rc) {
-		dev_err(tdev->dev, "%s: Attach failed timer type %d, id %d\n",
+		ERR(" %s: Failed to attach timer type=%d id=%d\n",
 			tdev->name, timer_type, tdev->timer_id);
 		goto out;
 	}
@@ -932,7 +949,8 @@ static int __jesd_attach_timer(struct jesd_transport_dev *tdev,
 	else
 		tdev->timer_handle = timer_handle;
 
-	dev_info(tdev->dev, "%s: Attached timer %d, type %d, handle 0x%p\n",
+	IF_DEBUG(DEBUG_JESD_TIMERS)
+		pr_info("%s: Attached timer id=%d, type=%d, handle=0x%p\n",
 			tdev->name, tdev->timer_id, timer_type, timer_handle);
 	return rc;
 out:
@@ -948,7 +966,7 @@ static int jesd_attach_tbgen_timer(struct jesd_transport_dev *tdev)
 	tdev->tbgen_dev_handle = get_tbgen_device();
 
 	if (!tdev->tbgen_dev_handle) {
-		dev_err(tdev->dev, "Failed to get tbgen device\n");
+		ERR(" %s: Failed to get tbgen device\n", tdev->name);
 		rc = -ENODEV;
 		goto out;
 	}
@@ -1010,17 +1028,15 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 	}
 
 	if (trans_p->lanes > tdev->max_lanes) {
-		dev_err(tdev->dev, "%s: Invalid lanes (%d), max %d\n",
+		ERR(" %s: Invalid lanes %d max=%d\n",
 			tdev->name, trans_p->lanes, tdev->max_lanes);
 		rc = -EINVAL;
 		return rc;
 	}
 
 	if (jdev->used_lanes >= jdev->max_lanes) {
-		dev_err(tdev->dev, "%s: Parent's all lanes (%d) are used\n",
-			tdev->name, jdev->max_lanes);
-		dev_err(tdev->dev, "%s: used lanes %d\n", tdev->name,
-			jdev->used_lanes);
+		ERR(" %s: All lanes are used (%d). Used lanes %d\n",
+			tdev->name, jdev->max_lanes, jdev->used_lanes);
 		rc = -EBUSY;
 		return rc;
 	}
@@ -1029,7 +1045,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 
 		lane = kzalloc(sizeof(struct lane_device), GFP_KERNEL);
 		if (!lane) {
-			dev_err(tdev->dev, "%s: Lane allocation Failed [%d]\n",
+			ERR(" %s: Lane %d memory allocation failed\n",
 				tdev->name, i);
 			rc = -ENOMEM;
 			return rc;
@@ -1037,7 +1053,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 
 		rc = jesd_attach_serdes_lanes(tdev, lane, i);
 		if (rc) {
-			dev_err(tdev->dev, "%s: SERDES attached failed [%d]\n",
+			ERR(" %s: Failed to attach to serdes lanes %i\n",
 				tdev->name, i);
 			goto out;
 		}
@@ -1062,7 +1078,8 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 	tdev->active_lanes = trans_p->lanes;
 	jesd_init_dev_flags(tdev, trans_p->config_flags);
 
-	dev_dbg(tdev->dev, "%s: dlay %x, flags %x, lanes %d\n",
+	IF_DEBUG(DEBUG_JESD_PHY)
+		pr_info("%s: Transport init, dlay=x%x flags=x%x lanes=%d\n",
 		tdev->name, tdev->delay, tdev->config_flags,
 		tdev->active_lanes);
 
@@ -1078,8 +1095,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 
 	rc = jesd_attach_tbgen_timer(tdev);
 	if (rc) {
-		dev_err(tdev->dev, "%s: Failed to attach tbgen timer, err %d\n",
-			tdev->name, rc);
+		ERR(" %s: Failed to attach to tbgen timer\n", tdev->name);
 		goto out;
 	}
 
@@ -1123,11 +1139,13 @@ static int config_frames_per_mf(struct jesd_transport_dev *tdev)
 		/*Do not fail if application sets it different than
 		 * RM recommended value, but print info for this setting
 		 */
-		dev_dbg(tdev->dev, "%s: lanes %d, Setting Frms/multifrm to %d",
+		IF_DEBUG(DEBUG_JESD_PHY) {
+			pr_info("%s: Lanes=%d, setting frms/multfrm to %d\n",
 				tdev->name, tdev->ils.lanes_per_converter_l,
 				tdev->ils.frame_per_mf_k);
-		dev_dbg(tdev->dev, "%s: recommend Frms/multifrm is %d",
+			pr_info("%s: Recommended frms/multfrm is %d\n",
 				tdev->name, frames_per_mf);
+		}
 		frames_per_mf = tdev->ils.frame_per_mf_k;
 	}
 	if (tdev->type == JESD_DEV_TX)
@@ -1196,7 +1214,7 @@ static int config_l(struct jesd_transport_dev *tdev)
 	u32 val, *reg = NULL;
 
 	if (!tdev->ils.lanes_per_converter_l) {
-		dev_err(tdev->dev, "%s: Invalid lanes/converter %d\n",
+		ERR(" %s: Invalid lanes/converter %d\n",
 			tdev->name, tdev->ils.lanes_per_converter_l);
 		rc = -EINVAL;
 		goto out;
@@ -1294,8 +1312,8 @@ static int jesd_init_serdes_lanes(struct jesd_transport_dev *tdev)
 	for (i = 0; i < tdev->active_lanes; i++) {
 		rc = jesd_serdes_lane_init(tdev, tdev->lane_devs[i]);
 		if (rc) {
-			dev_err(tdev->dev, "%s: SERDES lane init failed %d\n",
-				tdev->name, rc);
+			ERR(" %s: Failed to initialize serdes lane %d\n",
+				tdev->name, i);
 			goto out;
 		}
 	}
@@ -1311,8 +1329,8 @@ static int jesd_stop_serdes_lanes(struct jesd_transport_dev *tdev)
 	for (i = 0; i < tdev->active_lanes; i++) {
 		rc = jesd_serdes_lane_stop(tdev, tdev->lane_devs[i]);
 		if (rc) {
-			dev_err(tdev->dev, "%s: SERDES lane init failed %d\n",
-				tdev->name, rc);
+			ERR(" %s: Failed to stop active serdes lanes %d\n",
+				tdev->name, i);
 			goto out;
 		}
 	}
@@ -1345,8 +1363,7 @@ static int jesd_set_ils_pram(struct jesd_transport_dev *tdev)
 
 	rc = jesd_init_serdes_pll(tdev);
 	if (rc != 0 && rc != -EINVAL) {
-		dev_err(tdev->dev, "Failed to configure SEDRDES, err %d\n",
-			rc);
+		ERR(" %s: Failed to initialize serdes pll\n", tdev->name);
 		goto out;
 	}
 
@@ -1477,8 +1494,8 @@ static int jesd_dev_stop(struct jesd_transport_dev *tdev)
 
 	rc = jesd_change_state(tdev, JESD_STATE_STOPPED);
 	if (rc) {
-		dev_err(tdev->dev, "%s: Cannot be stopped in %d state\n",
-			__func__, tdev->state);
+		ERR(" %s: Jesd device cannot be stopped in state %d\n",
+			tdev->name, tdev->state);
 		return rc;
 	}
 
@@ -1556,15 +1573,16 @@ static int jesd_change_state(struct jesd_transport_dev *tdev,
 			rc = 0;
 		break;
 	default:
-		dev_dbg(tdev->dev, "Invalid state transition %d -> %d\n",
-			old_state, new_state);
+		ERR(" %s: Invalid state transition %d -> %d\n",
+			tdev->name, old_state, new_state);
 		goto out;
 	}
 
 change_state:
 	if (!rc) {
-		dev_info(tdev->dev, "%s: Transitioning state %d -> %d\n",
-			tdev->name, old_state, new_state);
+		IF_DEBUG(DEBUG_JESD_STATES)
+			pr_info("%s: Transitioning state %d -> %d\n",
+				tdev->name, old_state, new_state);
 		tdev->state = new_state;
 		tdev->old_state = old_state;
 	}
@@ -1658,7 +1676,8 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		break;
 	case JESD_GET_STATS:
 		/* TODO: Implement stats */
-		dev_err(tdev->dev, "%s: Not implemented\n", tdev->name);
+		ERR(" %s: IOCTL Jesd statistics not implemented\n",
+			tdev->name);
 		rc = -ENOSYS;
 		break;
 	case JESD_CLEAR_STATS:
@@ -1703,7 +1722,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		}
 
 		if (((regcnf.len * 4) + regcnf.offset > size)) {
-			dev_err(tdev->dev, "%s: invalid len/offset (%d/0x%x)",
+			ERR(" %s: Invalid phygasket reg len/offset (%d/0x%x)\n",
 				tdev->name, regcnf.len, regcnf.offset);
 			rc = -EINVAL;
 			break;
@@ -1734,7 +1753,9 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 				rc = -EFAULT;
 		break;
 	case JESD_GET_LANE_RX_RECEIVED_PARAMS:
-		dev_info(tdev->dev, "%s: Not Implemented\n", tdev->name);
+		/* TODO: Implement command */
+		ERR(" %s: IOCTL Jesd get rx lane params not implemented\n",
+			tdev->name);
 		rc = -ENOSYS;
 		break;
 	case JESD_RX_AUTO_SYNC:
@@ -1808,7 +1829,7 @@ static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
 	for_each_child_of_node(tdev->parent->node, child) {
 		of_property_read_u32(child, "transport-id", &transport_id);
 		if (transport_id < 0) {
-			dev_err(tdev->dev, "Failed to get transport id\n");
+			ERR(" %s: Failed to get transport id\n", tdev->name);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -1818,26 +1839,26 @@ static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
 
 	if (of_get_named_serdes(child, &serdesspec,
 		"serdes-lanes", idx)) {
-		dev_err(tdev->dev, "Failed to get serdes lane handle\n");
+		ERR(" %s: Failed to get serdes lane handle\n", tdev->name);
 		rc = -ENODEV;
 		goto out;
 	}
 	of_property_read_u32(child, "pll-id", &pll_id);
 	if (lane->pll_id < 0) {
-		dev_err(tdev->dev, "Failed to get pll id\n");
+		ERR(" %s: Failed to get pll id\n", tdev->name);
 		rc = -ENODEV;
 		goto out;
 	}
 	lane->pll_id = pll_id;
 	lane->serdes_lane_id = serdesspec.args[0];
-	dev_info(tdev->dev, "%s: [%d] Serdes lane id %d pll id %d\n",
-	tdev->name, idx,
-	lane->serdes_lane_id, lane->pll_id);
+	IF_DEBUG(DEBUG_JESD_SERDES)
+		pr_info("%s: [%d] Serdes lane id=%d pll id=%d\n",
+			tdev->name, idx, lane->serdes_lane_id, lane->pll_id);
 
 	if (!tdev->serdes_handle) {
 		tdev->serdes_handle = get_attached_serdes_dev(serdesspec.np);
 		if (tdev->serdes_handle == NULL) {
-			dev_err(tdev->dev, "Failed to get serdes handle\n");
+			ERR(" %s: Failed to get serdes handle\n", tdev->name);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -1889,7 +1910,7 @@ static u32 jesd_get_dframer_state(struct jesd_transport_dev *tdev)
 	if (val == done_flag)
 		status_bitmap |= LINK_STATUS_FRM_SYNC_DONE;
 
-	/* XXX: Checksum Failure hack: DFE doesn't support M=4
+	/* NOTE: Checksum Failure hack: DFE doesn't support M=4
 	 * In order to support 2RX/TX channels we configure DFE
 	 * for LMF 124 and ADI for LMF 244 as a work around.
 	 * This causes ILAS checksum to fail. Bypassing checksum
@@ -1938,7 +1959,7 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 	val2 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
 	val3 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
 	val4 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
-	
+
 
 	/* Diagnostic registers in JESD Rx are not consistent in D4400, thus
 	 * check status flag to determine if link is ready
@@ -1951,8 +1972,9 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 	 * return same value
 	 */
 	if (val1 != val2 || val2 != val3 || val3 != val4) {
-		dev_info(tdev->dev, "%s:diag_data not consistent (%x, %x, %x, %x)\n",
-			tdev->name, val1, val2, val3, val4);
+		IF_DEBUG(DEBUG_JESD_PHY)
+			pr_info("%s: Diag reg read not consistent (x%x x%x x%x x%x)\n",
+				tdev->name, val1, val2, val3, val4);
 		goto out;
 	}
 
@@ -1986,9 +2008,10 @@ out:
 			schedule_work(&tdev->link_monitor);
 		} else {
 			if (!synced) {
-				dev_err(tdev->dev, "%s: Failed to synchronize\n",
+				ERR(" %s: Failed to synchronize link\n",
 					tdev->name);
-				jesd_change_state(tdev, JESD_STATE_SYNC_FAILED);
+				jesd_change_state(tdev,
+					JESD_STATE_SYNC_FAILED);
 			}
 		}
 	}
@@ -2086,7 +2109,8 @@ static irqreturn_t jesd_tx_isr(int irq, void *param)
 
 	irq_status = ioread32(&tx_regs->tx_irq_status);
 	if (!irq_status) {
-		dev_info(tdev->dev, "%s: Spurious IRQ\n", tdev->name);
+		IF_DEBUG(DEBUG_JESD_IRQ)
+			pr_info("%s: Spurious irq\n", tdev->name);
 		return IRQ_NONE;
 	}
 
@@ -2127,26 +2151,30 @@ void jesd_deframer_isr(struct jesd_transport_dev *tdev)
 	struct config_registers_rx *rx_regs = tdev->rx_regs;
 
 	if (ioread32(&rx_regs->rx_cgs)) {
-		dev_dbg(tdev->dev, "%s: code grp sync %x\n", tdev->name,
-			ioread32(&rx_regs->rx_cgs));
+		IF_DEBUG(DEBUG_JESD_IRQ)
+			pr_info("%s: Code grp sync reg=x%x\n",
+				tdev->name, ioread32(&rx_regs->rx_cgs));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_cgs);
 	}
 
 	if (ioread32(&rx_regs->rx_fsf)) {
-		dev_dbg(tdev->dev, "%s: Frame sync %x\n", tdev->name,
-			ioread32(&rx_regs->rx_fsf));
+		IF_DEBUG(DEBUG_JESD_IRQ)
+			pr_info("%s: Frame sync reg=x%x\n",
+				tdev->name, ioread32(&rx_regs->rx_fsf));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_fsf);
 	}
 
 	if (ioread32(&rx_regs->rx_ilsf)) {
-		dev_dbg(tdev->dev, "%s: ILS flag %x\n", tdev->name,
-			ioread32(&rx_regs->rx_ilsf));
+		IF_DEBUG(DEBUG_JESD_IRQ)
+			pr_info("%s: ILS flag reg=x%x\n",
+				tdev->name, ioread32(&rx_regs->rx_ilsf));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_ilsf);
 	}
 
 	if (ioread32(&rx_regs->rx_g_csum)) {
-		dev_dbg(tdev->dev, "%s: Good checksum %x\n", tdev->name,
-			ioread32(&rx_regs->rx_g_csum));
+		IF_DEBUG(DEBUG_JESD_IRQ)
+			pr_info("%s: Good checksum reg=x%x\n",
+				tdev->name, ioread32(&rx_regs->rx_g_csum));
 		iowrite32(DFRMR_IRQ_RESET, &rx_regs->rx_g_csum);
 	}
 
@@ -2161,7 +2189,8 @@ static irqreturn_t jesd_rx_isr(int irq, void *param)
 
 	irq_status = ioread32(&rx_regs->rx_irq_status);
 	if (!irq_status) {
-		dev_info(tdev->dev, "%s: Spurious IRQ\n", tdev->name);
+		IF_DEBUG(DEBUG_JESD_IRQ)
+			pr_info("%s: Spurious irq\n", tdev->name);
 		return IRQ_NONE;
 	}
 
@@ -2200,8 +2229,7 @@ static int transport_register_irq(struct jesd_transport_dev *tdev)
 		}
 
 		if (rc) {
-			dev_err(tdev->dev, "%s:Failed to register irq\n",
-				tdev->name);
+			ERR(" %s: Failed to register irq\n", tdev->name);
 			goto out;
 		}
 
@@ -2219,6 +2247,67 @@ static const struct file_operations jesd204_fops = {
 	.unlocked_ioctl = jesd204_ioctl,
 	.release = jesd204_release
 };
+
+static DEVICE_ATTR(debug,	S_IWUSR | S_IRUGO, show_debug, set_debug);
+static struct attribute *attributes[] = {
+	&dev_attr_debug.attr,
+	NULL
+};
+static const struct attribute_group attr_group = {
+	.attrs = attributes,
+};
+
+static u32 get_debug_flags(struct jesd_transport_dev *tdev)
+{
+	int i;
+	u32 flags = 0;
+	struct jesd204_dev *jdev = tdev->parent;
+
+	/* Debug flags are shared among the transports with
+	 * 8-bits per transport with a max of 32 flags.
+	 * transport[0] uses b[7:0]
+	 * transport[1] uses b[15:8], and so on.
+	 * This implies a max of 4 transports (32-bits).
+	 */
+
+	/* Find the index of the transport device and extract
+	 * debug flags for that particular transport.
+	 */
+	for (i = 0; i < jdev->transport_count; ++i) {
+		if (tdev == jdev->transports[i]) {
+			flags = (jdev->debug >> (i*8)) & 0xff;
+			break;
+		}
+	}
+	return flags;
+}
+static void set_debug_flags(struct jesd_transport_dev *tdev, int index, u32 flags)
+{
+	struct jesd204_dev *jdev = tdev->parent;
+	jdev->debug |= ((flags & 0xff) << (index * 8));
+}
+
+static ssize_t set_debug(struct device *dev, struct device_attribute *devattr,
+			const char *buf, size_t count)
+{
+	int err;
+	unsigned int val;
+	struct jesd204_dev *jdev = dev_get_drvdata(dev);
+
+	err = kstrtouint(buf, 0, &val);
+	if (err)
+		return err;
+
+	jdev->debug = val;
+	return count;
+}
+
+static ssize_t show_debug(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	struct jesd204_dev *jdev = dev_get_drvdata(dev);
+	return sprintf(buf, "%d / 0x%x\n", jdev->debug, jdev->debug);
+}
 
 static int create_c_dev(struct jesd_transport_dev *tdev,
 			int jesd204_major,
@@ -2259,7 +2348,7 @@ static struct jesd_transport_dev *
 	base = of_iomap(dev_node, 0);
 
 	if (!base) {
-		dev_err(tdev->dev, "transport memap maping failure");
+		dev_err(tdev->dev, "Transport memap maping failure");
 		goto out;
 	}
 
@@ -2281,7 +2370,8 @@ static struct jesd_transport_dev *
 	rc = of_property_read_u32(dev_node, "max-lanes", &max_lanes);
 
 	if (rc) {
-		dev_info(tdev->dev, "max_lanes not found, setting to 1\n");
+		dev_info(tdev->dev, "%s Max_lanes not found, setting to 1\n",
+			tdev->name);
 		tdev->max_lanes = 1;
 	} else {
 		tdev->max_lanes = max_lanes;
@@ -2297,7 +2387,7 @@ static struct jesd_transport_dev *
 
 	rc = of_property_read_u32(dev_node, "timer-id", &tdev->timer_id);
 	if (rc) {
-		dev_err(tdev->dev, "%s: Timer id property not found\n",
+		dev_err(tdev->dev, " %s: Timer id property not found\n",
 			tdev->name);
 		goto out;
 	}
@@ -2312,8 +2402,8 @@ static struct jesd_transport_dev *
 	} else {
 		irq_enable_reg = &tdev->rx_regs->rx_irq_enable;
 		irq_status_reg = &tdev->rx_regs->rx_irq_status;
-		/* XXX: disable error interrupts on RX, they seem to
-		 * be getting genrated spuriously
+		/* NOTE: disable error interrupts on RX, they seem to
+		 * be getting generated spuriously
 		 */
 		val = 0;
 		mask = RX_IRQS_EN_MASK;
@@ -2410,10 +2500,11 @@ static int jesd204_of_probe(struct platform_device *pdev)
 	rc = of_property_read_u32(node, "lanes", &max_lanes);
 
 	if (rc) {
-		dev_err(tdev->dev, "max_lanes property not found\n\n");
+		dev_err(jdev->dev, "max_lanes property not found\n\n");
 		goto out;
 	}
 	jdev->max_lanes = max_lanes;
+	jdev->debug = 0;
 
 	for_each_child_of_node(node, child) {
 		rc = of_property_read_u32(child,
@@ -2451,7 +2542,6 @@ static int jesd204_of_probe(struct platform_device *pdev)
 						"phy-gasket", 0);
 		tdev->phy = map_phygasket(tdev->phy_node);
 
-
 		if (tdev->phy == NULL) {
 			dev_err(jdev->dev, "phy gasket is not mapped\n");
 			goto out;
@@ -2477,16 +2567,27 @@ static int jesd204_of_probe(struct platform_device *pdev)
 		spin_lock_init(&tdev->lock);
 		device_create(jesd204_class, tdev->dev, tdev->devt,
 			NULL, tdev->name);
+
+		set_debug_flags(tdev, i, 1);
 		tdev->state = JESD_STATE_STANDBY;
 		jdev->transports[i] = tdev;
-		dev_dbg(jdev->dev, "%s JESD device created\n", tdev->name);
+		dev_dbg(jdev->dev, "%s Jesd device created\n", tdev->name);
 		enable_transport(tdev);
 		jesd_minor++;
 		i++;
 	}
+	/* Save count of valid transports */
+	jdev->transport_count = i;
 
 	if (rc < 0) {
-		dev_info(jdev->dev, "jesd probe failed\n");
+		dev_err(jdev->dev, "Jesd probe failed\n");
+		goto out;
+	}
+
+	rc = sysfs_create_group(&pdev->dev.kobj, &attr_group);
+	if (rc < 0) {
+		dev_err(&pdev->dev, "Error %d while creating group %s",
+			rc, JESD_MOD_NAME);
 		goto out;
 	}
 
@@ -2494,7 +2595,6 @@ static int jesd204_of_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, jdev);
 
 	return rc;
-
 out:
 	if (jdev)
 		unregister_chrdev_region(jdev->devt, TRANSPORTS_PER_JESD_DEV);
