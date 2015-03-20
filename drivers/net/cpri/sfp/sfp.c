@@ -29,7 +29,6 @@
 #include <linux/interrupt.h>
 
 #include <linux/cpri.h>
-#include <mach/simreset.h>
 
 #define MAX_SFPS	4
 #define SFP_DEVICE_NAME "sfp"
