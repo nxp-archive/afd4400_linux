@@ -14,6 +14,10 @@
 #include <uapi/linux/tbgen.h>
 #define TBGEN_DRIVER_NAME "tbgen"
 
+#define TBGEN_MOD_NAME "tbgen"
+#define TBGEN_MOD_VERSION "0.5"
+#define TBGEN_MAJOR 0
+
 /* a total of 10 timers are supported now */
 #define MAX_TX_ALIGNMENT_TIMERS	10
 #define MAX_AXRF_ALIGNMENT_TIMERS 10
@@ -85,7 +89,22 @@ struct tbgen_dev {
 	spinlock_t lock;
 	u32 ien;
 	u8 mon_rfg_isr;
+
+	/* Sysfs interface */
+	u32 debug;
+	s32 tbgen_major;
+	s32 tbgen_minor;
+	struct class *dev_class;
+	struct cdev dev_cdev;
 };
+
+/* tbgen_dev->debug */
+#define DEBUG_TBGEN_MESSAGES		(1<<0)
+#define DEBUG_TBGEN_PLL			(1<<1)
+#define DEBUG_TBGEN_TIMERS		(1<<2)
+#define DEBUG_TBGEN_STATES		(1<<3)
+#define DEBUG_TBGEN_IRQ			(1<<4)
+#define DEBUG_TBGEN_RESET		(1<<5)
 
 /* tbgen_dev->flags */
 #define FLG_NO_INTERRUPTS	(1 << 0)
