@@ -33,7 +33,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-//TODO - review error return codes
 //TODO - Add CMD_ERR event
 //TODO - SPM error handing
 
@@ -94,6 +93,7 @@ static s32 vspa_minor = 0;
 static struct class *vspa_class = NULL;
 
 #define VSPA_HALT_TIMEOUT (100000)
+#define VSPA_STARTUP_TIMEOUT (100000)
 
 /* Debug and error reporting macros */
 #define IF_DEBUG(x)	if (vspadev->debug & (x))
@@ -130,6 +130,7 @@ static void dma_reset_queue(struct vspa_device *vspadev)
 	vspadev->dma_queue.idx_queue = 0;
 	vspadev->dma_queue.idx_chk = 0;
 	vspadev->dma_queue.chan = 0;
+	vspadev->cmd_dma_chan   = 0;
 	spin_unlock(&vspadev->dma_enqueue_lock);
 }
 
@@ -145,9 +146,9 @@ static int dma_transmit(struct vspa_device *vspadev)
 	spin_lock_irqsave(&vspadev->dma_tx_queue_lock, irqflags);
 	dr = &(dq->entry[dq->idx_dma]);
 	if (dq->idx_dma == dq->idx_queue) /* Queue is empty */
-		ret = -1;
+		ret = -ENOMSG;
 	else if (dq->idx_dma != dq->idx_chk) /* DMA is in process */
-		ret = -2;
+		ret = -EBUSY;
 	else {
 		/* Program the DMA transfer */
 		vspa_reg_write(regs + DMA_DMEM_ADDR_REG_OFFSET, dr->dmem_addr);
@@ -174,7 +175,7 @@ static int dma_enqueue(struct vspa_device *vspadev, struct vspa_dma_req *req)
 	next_slot = dma_next_index(dq->idx_queue);
 
 	if (next_slot == dq->idx_chk) /* Queue is full */
-		ret = -1;
+		ret = -ENOMEM;
 	else {
 //pr_info("DMA Enqueue(%d)\n", dq->idx_queue);
 		dr->control   = req->control;
@@ -238,14 +239,14 @@ static int cbuffer_add(struct circular_buffer *cbuf, uint32_t size)
 			cbuf->read_idx = 0;
 			index = 0;
 		} else
-			return -1;
+			return -ENOBUFS;
 	}
 
 	new_idx = index + size;
 	if (new_idx == cbuf->size)
 		new_idx = 0;
 	if (new_idx == cbuf->read_idx)
-		return -1;
+		return -ENOBUFS;
 
 	cbuf->write_idx = new_idx;
 	return index;
@@ -312,7 +313,7 @@ static void pool_init(struct memory_pool *pool, uint32_t size,
 /**
  * @brief : This gets the free command descriptor
  * for placing the command of requested size
- * @return : valid BD index else -1
+ * @return : valid BD index else negative
  */
 
 static int8_t pool_get_bd(struct memory_pool *pool, uint32_t size)
@@ -320,14 +321,14 @@ static int8_t pool_get_bd(struct memory_pool *pool, uint32_t size)
 	int i = -1, j = -1, k = -1;
 
 	if (size == 0)
-		return -1;
+		return -EINVAL;
 
 //pr_info("Pool_get_bd: size = %d\n", size);
 	/* Find next buffer descriptor that has enough free space */
 	for (i = pool->tail; pool->bd[i].free < size; i = pool->bd[i].next) {
 		/* Did we wrap around and no large block found? */
 		if (pool->bd[i].next == pool->tail)
-			return -1;
+			return -ENOSPC;
 	}
 
 	/* We found a bigger block ? */
@@ -335,7 +336,7 @@ static int8_t pool_get_bd(struct memory_pool *pool, uint32_t size)
 		/* We need to break it up*/
 		GET_FREE_BD(j);
 		if (j == -1)
-			return -1;
+			return -ENOSPC;
 		pool->tail = j;
 		k = pool->bd[i].next;
 		pool->bd[j].next = k;
@@ -416,7 +417,7 @@ static int seqid_get_next(struct vspa_device *vspadev)
 	ids = ids >> (vspadev->last_seqid + 1);
 	next = ffz(ids);
 	if (next > MAX_SEQIDS)
-		return -1;
+		return -ENOSR;
 	next += (vspadev->last_seqid + 1);
 	next &= MAX_SEQIDS - 1;
 
@@ -648,6 +649,9 @@ static int read_event(struct vspa_device *vspadev,
 	size_t len;
 	int reply_bd_idx, start;
 
+	if (vspadev->state == VSPA_STATE_UNKNOWN)
+		return -ENODATA;
+
 	start_time = jiffies;
 
 	event_list_update(vspadev);
@@ -666,7 +670,7 @@ static int read_event(struct vspa_device *vspadev,
 		/* nothing to read */
 		spin_unlock(&vspadev->event_list_lock);
 		if (vspadev->state <= VSPA_STATE_POWER_DOWN)
-			return 0;
+			return -ENODATA;
 		if (timeout == 0) /* non-blocking */
 			return -EAGAIN;
 //pr_err("vspa%d sleep: mask %04X, elm %04X, ep %04X, st %d\n", vspadev->id, mask, vspadev->event_list_mask, events_present(vspadev), vspadev->state);
@@ -706,7 +710,8 @@ static int read_event(struct vspa_device *vspadev,
 	}
 	if (!type) {
 		spin_unlock(&vspadev->event_list_lock);
-		return (vspadev->state <= VSPA_STATE_POWER_DOWN) ? 0 : -EAGAIN;
+		return (vspadev->state <= VSPA_STATE_POWER_DOWN) ? -ENODATA :
+								   -EAGAIN;
 	}
 	src_len = 0;
 	src_ptr = NULL;
@@ -942,9 +947,9 @@ static int mb32_transmit(struct vspa_device *vspadev)
 
 	spin_lock_irqsave(&vspadev->mb32_lock, irqflags);
 	if (mq->idx_dequeue == mq->idx_enqueue) /* Queue is empty */
-		ret = -1;
+		ret = -ENOMSG;
 	else if (mq->idx_dequeue != mq->idx_complete) /* MBOX is in process */
-		ret = -2;
+		ret = -EBUSY;
 	else {
 		me = &(vspadev->mb32[mq->idx_dequeue]);
 		vspa_reg_write(regs + HOST_OUT_32_REG_OFFSET, me->data);
@@ -968,9 +973,9 @@ static int mb64_transmit(struct vspa_device *vspadev)
 
 	spin_lock_irqsave(&vspadev->mb64_lock, irqflags);
 	if (mq->idx_dequeue == mq->idx_enqueue) /* Queue is empty */
-		ret = -1;
+		ret = -ENOMSG;
 	else if (mq->idx_dequeue != mq->idx_complete) /* MBOX is in process */
-		ret = -2;
+		ret = -EBUSY;
 	else {
 		me = &(vspadev->mb64[mq->idx_dequeue]);
 		vspa_reg_write(regs + HOST_OUT_64_MSB_REG_OFFSET, me->data_msb);
@@ -1414,7 +1419,7 @@ static int powerdown(struct vspa_device *vspadev)
 		if (!(ret)) {
 			ERR("%d: powerdown() timeout waiting for halt\n",
 								 vspadev->id);
-			ret = -1;
+			ret = -ETIME;
 		} else {
 			ret = d4400_gpc_vspa_full_pow_gate(vspadev->id);
 		}
@@ -1444,7 +1449,6 @@ static int powerup(struct vspa_device *vspadev)
 		event_reset_queue(vspadev);
 		mbox_reset(vspadev);
 		cmd_reset(vspadev);
-		vspadev->dma_queue.chan = 0;
 	}
 	vspadev->state = ret ? VSPA_STATE_UNKNOWN :
 					VSPA_STATE_UNPROGRAMMED_IDLE;
@@ -1478,7 +1482,7 @@ static int startup(struct vspa_device *vspadev)
 	vspa_reg_write(regs + CONTROL_REG_OFFSET, val);
 
 	/* Wait for the 64 bit mailbox bit to be set */
-	for (ctr = VSPA_HALT_TIMEOUT; ctr; ctr--) {
+	for (ctr = VSPA_STARTUP_TIMEOUT; ctr; ctr--) {
 		if (vspa_reg_read(regs + HOST_MBOX_STATUS_REG_OFFSET) &
 							MBOX_STATUS_IN_64_BIT)
 			break;
@@ -1508,7 +1512,7 @@ static int startup(struct vspa_device *vspadev)
 	vspa_reg_write(regs + HOST_OUT_64_MSB_REG_OFFSET, msb);
 	vspa_reg_write(regs + HOST_OUT_64_LSB_REG_OFFSET, lsb);
 	/* Wait for the 64 bit mailbox bit to be set */
-	for (ctr = VSPA_HALT_TIMEOUT; ctr; ctr--) {
+	for (ctr = VSPA_STARTUP_TIMEOUT; ctr; ctr--) {
 		if (vspa_reg_read(regs + HOST_MBOX_STATUS_REG_OFFSET) &
 							MBOX_STATUS_IN_64_BIT)
 			break;
@@ -1585,14 +1589,8 @@ static int vspa_open(struct inode *inode, struct file *fp)
 
 	vspadev = container_of(inode->i_cdev, struct vspa_device, cdev);
 	if (vspadev != NULL) {
-		if (vspadev->driver_state < VSPA_OPENED) {
-			vspadev->driver_state = VSPA_OPENED;
-			fp->private_data = vspadev;
-		} else if (vspadev->driver_state >= VSPA_OPENED) {
-			fp->private_data = vspadev;
-		}
+		fp->private_data = vspadev;
 		event_list_update(vspadev);
-
 	} else {
 		dev_err(vspadev->dev, "No device context found for %s %d\n",
 					VSPA_DEVICE_NAME, iminor(inode));
@@ -1606,19 +1604,18 @@ static int vspa_open(struct inode *inode, struct file *fp)
 static int vspa_release(struct inode *inode, struct file *fp)
 {
 	struct vspa_device *vspadev = (struct vspa_device *)fp->private_data;
+	int rc = 0;
 
-	if (!vspadev) {
+	if (vspadev != NULL) {
+		event_list_update(vspadev);
+	} else {
 		dev_err(vspadev->dev, "No device context found for %s %d\n",
 					VSPA_DEVICE_NAME, iminor(inode));
-		return -ENODEV;
+		rc = -ENODEV;
 	}
-	vspadev->driver_state = VSPA_CLOSED;
-
-	event_list_update(vspadev);
 
 	return 0;
 }
-
 
 static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 {
@@ -1670,7 +1667,7 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		rc = copy_from_user(&reg, (struct vspa_reg*)arg, sizeof(reg));
 		if (rc)
 			rc = -EFAULT;
-		else if (reg.reg >= 0x1000)
+		else if (reg.reg >= 0x400)
 			rc = -EINVAL;
 		else {
 			uint32_t r = reg.reg;
@@ -1689,7 +1686,7 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		rc = copy_from_user(&reg, (struct vspa_reg*)arg, sizeof(reg));
 		if (rc)
 			rc = -EFAULT;
-		else if (reg.reg >= 0x1000)
+		else if (reg.reg >= 0x400)
 			rc = -EINVAL;
 		else {
 			uint32_t r = reg.reg;
@@ -1727,7 +1724,7 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			vspadev->state = VSPA_STATE_LOADING;
 			/* Enable DMA error and DMA complete interrupts */
 			vspa_enable_dma_irqs(vspadev);
-		} else if (vspadev->state != VSPA_STATE_LOADING)
+		} else if (vspadev->state < VSPA_STATE_LOADING)
 			return -EPERM;
 
 		rc = copy_from_user(&dma_req, (struct vspa_dma_req*)arg,
@@ -1740,6 +1737,8 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 				rc = -EINVAL;
 			} else {
 				dma_req.type = VSPA_EVENT_DMA;
+				dma_req.xfr_ctrl = (dma_req.xfr_ctrl & ~0x1F) |
+						   vspadev->cmd_dma_chan;
 				rc = dma_enqueue(vspadev, &dma_req);
 			}
 		}
@@ -1764,55 +1763,49 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			 (startup_desc.spm_buf_size & (align_bytes - 1)) ||
 			 (startup_desc.spm_buf_addr & (align_bytes - 1))))
 			rc = -EINVAL;
-		else {
-			spin_lock(&vspadev->control_lock);
-			IF_DEBUG(DEBUG_IOCTL)
-				pr_info("vspa%d: cmd_addr %08x, cmd_size %08x,"
-					" cmd_dma_chan %d, file '%s'\n",
-					vspadev->id, startup_desc.cmd_buf_addr,
-					startup_desc.cmd_buf_size,
-					startup_desc.cmd_dma_chan,
-					startup_desc.filename);
+		if (rc)
+			 break;
 
-			vspadev->legacy_cmd_dma_chan=startup_desc.cmd_dma_chan;
-			vspadev->cmdbuf_addr = startup_desc.cmd_buf_addr;
-			vspadev->cmd_pool.size = startup_desc.cmd_buf_size / 4;
-			if (vspadev->spm_user_buf) {
-				vspadev->spm_user_buf = 0;
-				iounmap(vspadev->spm_buf_vaddr);
-			}
-			if (startup_desc.spm_buf_size) {
-				vspadev->spm_user_buf = 1;
-				vspadev->spm_buf_bytes =
-						startup_desc.spm_buf_size;
-				vspadev->spm_buf_paddr =
+		spin_lock(&vspadev->control_lock);
+		IF_DEBUG(DEBUG_IOCTL)
+			pr_info("vspa%d: cmd_addr %08x, cmd_size %08x,"
+				" cmd_dma_chan %d, file '%s'\n",
+				vspadev->id, startup_desc.cmd_buf_addr,
+				startup_desc.cmd_buf_size,
+				startup_desc.cmd_dma_chan,
+				startup_desc.filename);
+
+		vspadev->legacy_cmd_dma_chan=startup_desc.cmd_dma_chan;
+		vspadev->cmdbuf_addr = startup_desc.cmd_buf_addr;
+		vspadev->cmd_pool.size = startup_desc.cmd_buf_size / 4;
+		if (vspadev->spm_user_buf) {
+			vspadev->spm_user_buf = 0;
+			iounmap(vspadev->spm_buf_vaddr);
+		}
+		if (startup_desc.spm_buf_size) {
+			vspadev->spm_user_buf = 1;
+			vspadev->spm_buf_bytes = startup_desc.spm_buf_size;
+			vspadev->spm_buf_paddr =
 					(uint32_t*)startup_desc.spm_buf_addr;
-				vspadev->spm_buf_vaddr = ioremap(
+			vspadev->spm_buf_vaddr = ioremap(
 						(int)vspadev->spm_buf_paddr,
 						vspadev->spm_buf_bytes);
-			} else {
-				vspadev->spm_buf_bytes =
-						vspadev->spm_buffer_bytes;
-				vspadev->spm_buf_paddr =
-						vspadev->spm_buffer_paddr;
-				vspadev->spm_buf_vaddr =
-						vspadev->spm_buffer_vaddr;
-			}
-			vspadev->spm_addr = (vspadev->spm_buf_bytes - 4) >> 2;
-			memset(vspadev->spm_buf_vaddr, 0,
-						vspadev->spm_buf_bytes);
-
-			if (startup_desc.watchdog_interval_msecs <
-						VSPA_WATCHDOG_INTERVAL_MAX)
-			vspadev->watchdog_interval_msecs =
-					startup_desc.watchdog_interval_msecs;
-			strncpy(vspadev->eld_filename, startup_desc.filename,
-							VSPA_MAX_ELD_FILENAME);
-			vspadev->eld_filename[VSPA_MAX_ELD_FILENAME-1] = '\0';
-			pool_reset(&vspadev->cmd_pool);
-			rc = startup(vspadev);
-			spin_unlock(&vspadev->control_lock);
+		} else {
+			vspadev->spm_buf_bytes = vspadev->spm_buffer_bytes;
+			vspadev->spm_buf_paddr = vspadev->spm_buffer_paddr;
+			vspadev->spm_buf_vaddr = vspadev->spm_buffer_vaddr;
 		}
+		vspadev->spm_addr = (vspadev->spm_buf_bytes - 4) >> 2;
+		memset(vspadev->spm_buf_vaddr, 0, vspadev->spm_buf_bytes);
+
+		vspadev->watchdog_interval_msecs =
+						VSPA_WATCHDOG_INTERVAL_DEFAULT;
+		strncpy(vspadev->eld_filename, startup_desc.filename,
+							VSPA_MAX_ELD_FILENAME);
+		vspadev->eld_filename[VSPA_MAX_ELD_FILENAME-1] = '\0';
+		pool_reset(&vspadev->cmd_pool);
+		rc = startup(vspadev);
+		spin_unlock(&vspadev->control_lock);
 		break;
 
 	case VSPA_IOC_MB32_WRITE:
@@ -1872,10 +1865,13 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case VSPA_IOC_WATCHDOG_INT:
-//TODO - value to disable (0 might be accidental in startup desc?)
 		if (arg > VSPA_WATCHDOG_INTERVAL_MAX)
 			rc = -EINVAL;
 		else {
+			if (arg >= 0)
+				arg = VSPA_WATCHDOG_INTERVAL_DEFAULT;
+			else if (arg < VSPA_WATCHDOG_INTERVAL_MIN)
+				arg = VSPA_WATCHDOG_INTERVAL_MIN;
 			vspadev->watchdog_interval_msecs = arg;
 			if (vspadev->state == VSPA_STATE_RUNNING_IDLE) {
 				mod_timer(&vspadev->watchdog_timer,
@@ -1897,8 +1893,7 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		else {
 			rc = read_event(vspadev, &evt_rd);
 //pr_err("read_event mask %04X, rc %d\n", evt_rd.event_mask, rc);
-			if (rc == 0) rc = -EAGAIN;
-			else if (rc > 0) rc = 0;
+			if (rc > 0) rc = 0;
 		}
 		break;
 
@@ -1947,13 +1942,15 @@ static ssize_t vspa_read(struct file *fp, char __user *buf,
 {
 	struct vspa_device *vspadev = (struct vspa_device *)fp->private_data;
 	struct vspa_event_read evt_rd;
+	int ret;
 
 	evt_rd.event_mask = (uint32_t)off;
 	evt_rd.timeout = (fp->f_flags & O_NONBLOCK) ? 0 : -1;
 	evt_rd.buf_len = len;
 	evt_rd.buf_ptr = (struct vspa_event*)buf;
 
-	return read_event(vspadev, &evt_rd);
+	ret = read_event(vspadev, &evt_rd);
+	return (ret == -ENODATA) ? 0 : ret;
 }
 
 static ssize_t vspa_write(struct file *fp, const char __user *buf,
@@ -1985,8 +1982,15 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 	if (vspadev->state != VSPA_STATE_RUNNING_IDLE)
 		return -EPERM;
 
+	if (len > CMD_MAX_SZ_BYTES) {
+		ERR("%d: command exceeds %d bytes\n", vspadev->id,
+							CMD_MAX_SZ_BYTES);
+		return -EMSGSIZE;
+	}
+
 	if ((len & 3) != 0 || len == 0) {
-		ERR("%d: writes must be multiple of 4 bytes\n", vspadev->id);
+		ERR("%d: command must be multiple of 4 bytes and non zero\n",
+							 vspadev->id);
 		return -EINVAL;
 	}
 
@@ -1994,7 +1998,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 	seqid = seqid_get_next(vspadev);
 	if (seqid < 0) {
 		ERR("%d: no sequence id available\n", vspadev->id);
-		err = -ENOMEM;
+		err = -ENOSR;
 		goto seqid_fail;
 	}
 
@@ -2009,7 +2013,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 		pool_print(&vspadev->cmd_pool);
 	if (index < 0) {
 		ERR("%d: no cmd pool bd available\n", vspadev->id);
-		err = -ENOMEM;
+		err = -ENOSPC;
 		goto seqid_release;
 	}
 
@@ -2017,7 +2021,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 	cb_idx = cbuffer_add(&vspadev->cmd_buffer, cb_size);
 	if (cb_idx < 0) {
 		ERR("%d: no cmd buffer space available\n", vspadev->id);
-		err = -ENOMEM;
+		err = -ENOBUFS;
 		goto pool_free;
 	}
 
@@ -2035,7 +2039,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 		    (dmabuf[3] & (align_bytes - 1)) ||
 		    (dmabuf[5] & (align_bytes - 1))) {
 			ERR("%d: buffers must be AXI aligned\n", vspadev->id);
-			err = -EINVAL; // TODO value
+			err = -EINVAL;
 			goto pool_free;
 		}
 		if (dmabuf[4] > 0) {
@@ -2051,7 +2055,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 				if (reply_idx < 0) {
 					ERR("%d: no reply pool bd available\n",
 						vspadev->id);
-					err = -ENOMEM;
+					err = -ENOSPC;
 					goto pool_free;
 				}
 				dmabuf[5] = (unsigned int)
@@ -2132,7 +2136,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 	}
 	spin_unlock(&vspadev->control_lock);
 
-	return err ? -EFAULT : len;
+	return err ? err : len;
 
 pool_free:
 	pool_free_bd(&vspadev->cmd_pool, index);
@@ -2207,7 +2211,6 @@ static int vspa_mmap(struct file *fp, struct vm_area_struct *vma)
 	if (rc < 0)
 		return -EAGAIN;
 
-	vspadev->driver_state = VSPA_MMAPED;
 	return 0;
 }
 
@@ -2244,6 +2247,13 @@ static ssize_t set_debug(struct device *dev, struct device_attribute *devattr,
 
 	vspadev->debug = val;
 	return count;
+}
+
+static ssize_t show_debug(struct device *dev,
+                        struct device_attribute *devattr, char *buf)
+{
+        struct vspa_device *vspadev = dev_get_drvdata(dev);
+        return sprintf(buf, "0x%08X\n", vspadev->debug);
 }
 
 static ssize_t show_versions(struct device *dev,
@@ -2320,7 +2330,7 @@ static ssize_t show_seqids(struct device *dev,
 	return total_len;
 }
 
-static DEVICE_ATTR(debug,  S_IWUSR | S_IRUGO, show_stat,     set_debug);
+static DEVICE_ATTR(debug,  S_IWUSR | S_IRUGO, show_debug,    set_debug);
 static DEVICE_ATTR(eld_filename,     S_IRUGO, show_text,     NULL);
 static DEVICE_ATTR(events,           S_IRUGO, show_events,   NULL);
 static DEVICE_ATTR(seqids,           S_IRUGO, show_seqids,   NULL);
@@ -2348,8 +2358,7 @@ static ssize_t show_stat(struct device *dev,
 {
 	unsigned int val;
 	struct vspa_device *vspadev = dev_get_drvdata(dev);
-	if (devattr == &dev_attr_debug)		val = vspadev->debug;
-	else if (devattr == &dev_attr_state)	val = full_state(vspadev);
+	if (devattr == &dev_attr_state)	val = full_state(vspadev);
 	else val = 0;
 	return sprintf(buf, "%d\n", val);
 }
@@ -2583,14 +2592,12 @@ static int vspa_probe(struct platform_device *pdev)
 	vspadev->poll_mask = VSPA_MSG_ALL;
 //	spin_lock_init(&vspadev->irq_lock);
 	init_waitqueue_head(&(vspadev->event_wait_q));
-	vspadev->driver_state = VSPA_PROBED;
 //TODO power cycle ?
 	event_reset_queue(vspadev);
 	dma_reset_queue(vspadev);
 	mbox_reset(vspadev);
 	cmd_reset(vspadev);
 
-//TODO		INIT_WORK(&vspadev->workqueue, (
 	err = request_irq(vspadev->flags1_irq_no, vspa_flags1_irq_handler,
 				0, device_name, vspadev);
 	if (err < 0) {
@@ -2706,9 +2713,6 @@ static int vspa_remove(struct platform_device *ofpdev)
 
 	iounmap(vspadev->regs);
 	iounmap(vspadev->dbg_regs);
-
-	if (vspadev->mem_context != NULL)
-		kfree(vspadev->mem_context);
 
 	sysfs_remove_group(&dev->kobj, &attr_group);
 	device_destroy(vspa_class, MKDEV(vspa_major, vspa_minor + vspadev->id));

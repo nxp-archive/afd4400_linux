@@ -35,13 +35,16 @@
 
 #define VSPA_MAGIC_NUM 'V'
 
+/* Maximum allowed size for any individual command */
+#define CMD_MAX_SZ_BYTES	(128)
+
 enum vspa_state {
 	VSPA_STATE_UNKNOWN = 0,
 	VSPA_STATE_POWER_DOWN,
+	VSPA_STATE_STARTUP_ERR,
 	VSPA_STATE_UNPROGRAMMED_IDLE,
 	VSPA_STATE_UNPROGRAMMED_BUSY,
 	VSPA_STATE_LOADING,
-	VSPA_STATE_STARTUP_ERR,
 	VSPA_STATE_RUNNING_IDLE,
 	VSPA_STATE_RUNNING_BUSY
 };
@@ -127,7 +130,6 @@ struct vspa_startup {
 	uint32_t	cmd_buf_addr;
 	uint32_t	spm_buf_size;
 	uint32_t	spm_buf_addr;
-	uint32_t	watchdog_interval_msecs;
 	uint8_t		cmd_dma_chan;
 	char		filename[VSPA_MAX_ELD_FILENAME];
 };
@@ -186,7 +188,7 @@ struct vspa_mb64 {
 
 struct vspa_event_read {
 	uint32_t	event_mask; // bit field of events to match
-	int		timeout; // delay in mSecs (0 = noblock, -1 = forever)	
+	int		timeout; // delay in mSecs (0 = noblock, -1 = forever)
 	size_t		buf_len; // max reply length in bytes
 	struct vspa_event *buf_ptr;
 };
@@ -220,7 +222,8 @@ struct vspa_event_read {
 
 /* Set Watchdog interval */
 #define VSPA_IOC_WATCHDOG_INT	_IO(VSPA_MAGIC_NUM, 10)
-#define VSPA_WATCHDOG_INTERVAL_DEFAULT	(1000)
+#define VSPA_WATCHDOG_INTERVAL_DEFAULT	 (1000)
+#define VSPA_WATCHDOG_INTERVAL_MIN	  (100)
 #define VSPA_WATCHDOG_INTERVAL_MAX	(60000)
 
 /* Set the event mask used for poll checks */

@@ -42,13 +42,27 @@
 #include <linux/completion.h>
 #include <uapi/linux/vspa.h>
 
-#define VSPA_DMA_CHANNELS		(32)
-
-/* mmap offset argument for vspa regsiters */
-#define VSPA_REG_OFFSET			(0)
-
-/* mmap offset argument for dbg regsiter */
-#define VSPA_DBG_OFFSET			(4096)
+// Debug bit assignments
+#define DEBUG_MESSAGES			(1<<0)
+#define DEBUG_STARTUP			(1<<1)
+#define DEBUG_CMD			(1<<2)
+#define DEBUG_REPLY			(1<<3)
+#define DEBUG_SPM			(1<<4)
+#define DEBUG_DMA			(1<<5)
+#define DEBUG_EVENT			(1<<6)
+#define DEBUG_WATCHDOG			(1<<7)
+#define DEBUG_MBOX64_OUT		(1<<8)
+#define DEBUG_MBOX32_OUT		(1<<9)
+#define DEBUG_MBOX64_IN			(1<<10)
+#define DEBUG_MBOX32_IN			(1<<11)
+#define DEBUG_DMA_IRQ			(1<<12)
+#define DEBUG_FLAGS0_IRQ		(1<<13)
+#define DEBUG_FLAGS1_IRQ		(1<<14)
+#define DEBUG_IOCTL			(1<<15)
+#define DEBUG_SEQID			(1<<16)
+#define DEBUG_CMD_BD			(1<<17)
+#define DEBUG_REPLY_BD			(1<<18)
+#define DEBUG_TEST_SPM			(1<<24)
 
 /* IP register offset for the registers used by the driver */
 #define HWVERSION_REG_OFFSET		(0x0000>>2)
@@ -115,30 +129,18 @@
 #define MBOX_STATUS_OUT_64_BIT		(0x00000002)
 #define MBOX_STATUS_OUT_32_BIT		(0x00000001)
 
+#define VSPA_DMA_CHANNELS		(32)
+
+/* mmap offset argument for vspa regsiters */
+#define VSPA_REG_OFFSET			(0)
+
+/* mmap offset argument for dbg regsiter */
+#define VSPA_DBG_OFFSET			(4096)
+
 #define DMA_FLAG_COMPLETE		(1<<0)
 #define DMA_FLAG_XFRERR			(1<<1)
 #define DMA_FLAG_CFGERR			(1<<2)
 
-#define DEBUG_MESSAGES			(1<<0)
-#define DEBUG_STARTUP			(1<<1)
-#define DEBUG_DMA			(1<<2)
-#define DEBUG_CMD			(1<<3)
-#define DEBUG_REPLY			(1<<4)
-#define DEBUG_SPM			(1<<5)
-#define DEBUG_EVENT			(1<<6)
-#define DEBUG_WATCHDOG			(1<<7)
-#define DEBUG_MBOX64_OUT		(1<<8)
-#define DEBUG_MBOX32_OUT		(1<<9)
-#define DEBUG_MBOX64_IN			(1<<10)
-#define DEBUG_MBOX32_IN			(1<<11)
-#define DEBUG_DMA_IRQ			(1<<12)
-#define DEBUG_FLAGS0_IRQ		(1<<13)
-#define DEBUG_FLAGS1_IRQ		(1<<14)
-#define DEBUG_IOCTL			(1<<15)
-#define DEBUG_SEQID			(1<<16)
-#define DEBUG_CMD_BD			(1<<17)
-#define DEBUG_REPLY_BD			(1<<18)
-#define DEBUG_TEST_SPM			(1<<24)
 
 #define MBOX_QUEUE_ENTRIES		(16)
 struct mbox_queue {
@@ -161,13 +163,6 @@ struct event_list {
 	uint32_t	data0;
 	uint32_t	data1;
 };
-/*
-          DMA       CMD       REPLY     SPM       MB64IN MB32IN MB64O MB32O ERR
-uint8_t   dma_id    cmd_id    cmd_id    0         0      0      mb_id mb_id err
-uint8_t   dma_flags cmd_flags cmd_flags spm_flags 0      0      flags flags
-uint32_t  dma_info  payload0  payload0  word0     msb    data   msb   data  val
-uint32_t  dma_info  size/0    size/idx  ptr       lsb    0      lsb   0     ctr
-*/
 
 struct event_entry {
 	union {
@@ -241,22 +236,6 @@ struct seqid {
 	uint32_t	payload1;
 };
 
-/* These state are only for debug purpose only */
-enum vspa_driver_state {
-
-	/* Initial state when the device identified*/
-	VSPA_PROBED,
-
-	/* State when the device is closed by user space*/
-	VSPA_CLOSED,
-
-	/* State when the device is opened by user space*/
-	VSPA_OPENED,
-
-	/* State when the device is mmaped by user space*/
-	VSPA_MMAPED
-};
-
 /* The below structure contains all the information for the
 * vspa device required by the kernel driver
 */
@@ -271,7 +250,11 @@ struct vspa_device {
 	struct cdev	cdev;
 
 	/* Major minor information */
-	dev_t dev_t;
+	dev_t		dev_t;
+
+	/* Current state of the device */
+	enum vspa_state	state;
+	uint32_t	debug;
 
 	/* IRQ numbers */
 	uint32_t	flags1_irq_no;
@@ -288,8 +271,6 @@ struct vspa_device {
 	resource_size_t	dbg_size; /* size */
 	u32 __iomem	*dbg_addr;    /* physical address */
 	u32 __iomem	*dbg_regs;    /* virtual address */
-
-	uint32_t	debug;
 
 	/* Buffer sizes */
 	uint32_t	spm_buffer_bytes;
@@ -364,26 +345,11 @@ struct vspa_device {
 
 	spinlock_t	control_lock;
 
-	/* Current state of the device */
-	enum vspa_state	state;
-
-	/* Current state of the driver */
-	enum vspa_driver_state driver_state;
-
-	/* Physical address of the device context memory */
-	u32 __iomem	*mem_context;
-
-	/* Status register content of IP register set*/
-	uint32_t	status_reg;
-
 	/* Wait queue for event notifications*/
 	wait_queue_head_t event_wait_q;
 	uint32_t	event_list_mask;
 	uint32_t	event_queue_mask;
 	uint32_t	poll_mask;
-
-//TODO	struct work_struct workqueue;
-
 };
 
 #endif /* _VSPA_H */
