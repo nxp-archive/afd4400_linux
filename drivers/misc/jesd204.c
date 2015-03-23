@@ -1,5 +1,5 @@
 /*
- * drivers/jesd/jesd204.c
+ * drivers/misc/jesd204.c
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as
@@ -39,7 +39,7 @@
 #include <linux/workqueue.h>
 #include <linux/tbgen.h>
 #include <linux/jesd204.h>
-#include <linux/phygasket.h>
+#include <linux/jesd_phygasket.h>
 #include <mach/serdes-d4400.h>
 
 #define TRANS_TX_NAME "jesd_tx"

@@ -57,3 +57,4 @@ obj-$(CONFIG_AD9368)		+= ad9368.o
 obj-$(CONFIG_AD9525)		+= ad9525.o
 obj-y				+= qixis.o
 obj-$(CONFIG_TBGEN)		+= tbgen.o
+obj-$(CONFIG_DFE_JESD204)	+= jesd_phygasket.o jesd204.o

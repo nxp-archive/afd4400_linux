@@ -578,6 +578,25 @@ config TBGEN
           For tbgen ip to get enable we need this for the configuration of
           jesd204, and align the timers in reference to 10ms radio frame.
 
+menuconfig JESD
+	bool "Jesd drivers"
+	depends on HAS_IOMEM
+	help
+	  DFE configuration for jesd drivers. For now only jesd204 driver
+	  is supported. Any further jesd defined protocol drivers shall be
+	  appened in here.
+if JESD
+
+config DFE_JESD204
+	bool "Jesd204"
+	help
+	  For jesd204 ip to be enabled, we need this for the configuration
+	  upon this includes the phygasket. Each of the two transport can
+	  can accommodate a maximum of 2 lanes in the following combinations:
+	  Transport 1 --> 2 lanes max
+	  Transport 2 --> 1 lane max
+
+endif #jesd
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

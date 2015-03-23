@@ -1,5 +1,5 @@
 /*
- * drivers/jesd/phygasket.c
+ * drivers/misc/jesd_phygasket.c
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as
@@ -39,7 +39,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/jesd204.h>
-#include <linux/phygasket.h>
+#include <linux/jesd_phygasket.h>
 
 struct phygasket_private *phypriv;
 /**@brief inline for set, clear and test bits for 32 bit
