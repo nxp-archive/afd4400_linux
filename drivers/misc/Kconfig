@@ -569,6 +569,15 @@ config XCVR
 	Support for AD9368-1 (RF reciever) AD9368-2 (RF tranceiver),
 	 AD9525 (Clock Gen) RFICs from Analog devices.
 
+config TBGEN
+        bool "Tbgen"
+        help
+          TBGEN DD4400 configuration, shall be the main clock configuration
+          for jesd204 from the 10ms framer clock. This shall be base for the
+          clock generation for the jesd204 and vsp ip's.
+          For tbgen ip to get enable we need this for the configuration of
+          jesd204, and align the timers in reference to 10ms radio frame.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

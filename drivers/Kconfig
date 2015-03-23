@@ -158,8 +158,6 @@ source "drivers/irqchip/Kconfig"
 
 source "drivers/ipack/Kconfig"
 
-source "drivers/tbgen/Kconfig"
-
 source "drivers/jesd/Kconfig"
 
 endmenu
