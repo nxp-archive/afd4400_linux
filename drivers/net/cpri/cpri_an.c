@@ -26,7 +26,6 @@
 #include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
-
 #include <linux/cpri.h>
 #include <linux/qixis.h>
 #include <mach/serdes-d4400.h>
@@ -518,7 +517,7 @@ static int cpri_cm_autoneg(struct cpri_framer *framer)
 		&framer->timer_expiry_events);
 
 	/* Setup eth rate expiry timer */
-	eth_setup_timer.expires = jiffies + (param->ethptr_neg_timeout) * HZ;
+	eth_setup_timer.expires = jiffies + (param->ethptr_neg_timeout) * HZ / 1000;
 	add_timer(&eth_setup_timer);
 
 	tx_eth_rate = param->eth_ptr;
@@ -583,7 +582,7 @@ static int cpri_proto_autoneg(struct cpri_framer *framer)
 	/* Setup protocol ver expiry timer */
 	init_timer(&proto_setup_timer);
 	proto_setup_timer.function = proto_setup_timer_expiry_hndlr;
-	timer_dur = jiffies + param->ethptr_neg_timeout * HZ;
+	timer_dur = jiffies + param->ethptr_neg_timeout * HZ / 1000;
 	proto_setup_timer.expires = timer_dur;
 	proto_setup_timer.data = (unsigned long) framer;
 	clear_bit(PROTVER_TIMEREXP_BITPOS,
@@ -649,8 +648,7 @@ static int check_linesync(struct cpri_framer *framer,
 	struct cpri_autoneg_output *result = &(framer->autoneg_output);
 	int err = 0;
 	u32 mask;
-	u32 line_sync_acheived;
-	u8 cw_buf[16];
+	u32 line_sync_acheived = 0;
 	const char *rate_name[] = {"1228.8", "2457.6",
 				"3072.0", "4915.2",
 				"6144.0", "9830.4"};
@@ -658,32 +656,45 @@ static int check_linesync(struct cpri_framer *framer,
 	cpri_reg_set(&regs->cpri_config,
 			(CONF_RX_EN_MASK | CONF_TX_EN_MASK));
 
-	sfp_set_tx_enable(framer->sfp_dev, 1);
-
 	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK |
 		RX_LOS_MASK | RX_STATE_MASK);
-	/* Wait for RAI to be cleared */
+
+	sfp_set_tx_enable(framer->sfp_dev, 1);
+
 	while (!test_bit(RATE_TIMEREXP_BITPOS, &framer->timer_expiry_events)) {
 		line_sync_acheived = cpri_reg_get_val(
 					&regs->cpri_status, mask);
+
+		#if 0 // DJH - Might need this later for different BBUs.  
 		if (line_sync_acheived == 0xE) {
 			spin_lock(&framer->rx_cw_lock);
 			read_rx_cw(framer, 130, cw_buf);
 			spin_unlock(&framer->rx_cw_lock);
-			if (!(cw_buf[0] & CW130_RAI))
+			if (!(cw_buf[0] & CW130_RAI)) {
+				printk("Passed CW130_RAI test.\n");
 				break;
+			}
 		}
+		#else
+		if (line_sync_acheived == 0xE)
+				break;
+		#endif
 		schedule_timeout_interruptible(msecs_to_jiffies(2));
 	}
-	if (test_bit(RATE_TIMEREXP_BITPOS, &framer->timer_expiry_events))
-		err = -ETIME;
+	
+
+	if (line_sync_acheived != 0xE) 
+		if (test_bit(RATE_TIMEREXP_BITPOS, &framer->timer_expiry_events)) {
+			err = -ETIME;
+			printk("line_sync = %02X\n", line_sync_acheived);
+		}
+
 	if (!err) {
 		result->common_rate = rate;
 		pr_info("cp%d_frmr%d rate autoneg success, %s Mbps",
 				framer->cpri_dev->dev_id,
 				framer->id, rate_name[rate - 1]);
 	}
-
 	return err;
 }
 
@@ -749,7 +760,7 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 
 		cpri_init_framer(framer, rate);
 		/* Start timer */
-		timer_dur = jiffies + (param->rate_neg_timeout) * HZ;
+		timer_dur = jiffies + (param->rate_neg_timeout) * HZ / 1000;
 		linerate_timer.expires = timer_dur;
 		add_timer(&linerate_timer);
 		/* check for sync acheived */

@@ -316,19 +316,19 @@ struct cpri_autoneg_params {
 #define	REC_MODE (1 << 2)
 /**
  * if (STICK_TO_RATE is set and rate_preferred has value in enum cpri_link_rate)
- * stick to rate_preferred in autoneg until @rate_neg_timeout seconds.
+ * stick to rate_preferred in autoneg until @rate_neg_timeout milliseconds.
  *
  * if (STIRKC_TO_RATE is not set and rate_prefered has value
  * in enum_cpri_link_rate) rate autoneg starts from rate_preferred,
  * if not successful after @rate_neg_timeout
  * seconds, change to rate_high and goes down one level
- * till (includes) rate_low. Each rate try @rate_neg_timeout seconds
+ * till (includes) rate_low. Each rate try @rate_neg_timeout milliseconds
  * to see if it's synced.
  *
  * if (STICK_TO_RATE is not set and rate_preferred is 0)
  * rate autoneg starts from rate_high and goes down one level
  * till (includes) rate_low.
- * Each rate try @rate_neg_timeout seconds to see if it's synced.
+ * Each rate try @rate_neg_timeout millseconds to see if it's synced.
  *
  * Generally speaking, if you know the rate you are going to use, you can use
  * that rate for rate_preferred. You should set
@@ -342,13 +342,13 @@ struct cpri_autoneg_params {
 #define STICK_TO_RATE (1 << 3)
 /**
  * Stick to @tx_prot_ver till @proto_neg_timeout
- * seconds if this flag is set, otherwise adapt
+ * milliseconds if this flag is set, otherwise adapt
  * to the protocal version it received from the framer
  */
 #define STICK_TO_PROTO (1 << 4)
 /**
  * Stick to @eth_ptr till @ethptr_neg_timeout
- * seconds if this flag is set, otherwise adapt
+ * millseconds if this flag is set, otherwise adapt
  * to the ethernet pointer value from the framer.
  */
 #define STICK_TO_ETHPTR (1 << 5)
@@ -384,11 +384,11 @@ struct cpri_autoneg_params {
 #define PROTO_AUTONEG (1 << 1)
 #define ETHPTR_AUTONEG (1 << 2)
 /**
- * Timeout value for three autoneg steps
+ * Timeout value for three autoneg steps in ms
  */
-	unsigned int rate_neg_timeout;
+	unsigned int rate_neg_timeout; /*!< per rate */
 	unsigned int proto_neg_timeout;
-	unsigned int ethptr_neg_timeout;
+	unsigned int ethptr_neg_timeout; 
 /**
  * Refer to flag STICK_TO_RATE for detail
  */
