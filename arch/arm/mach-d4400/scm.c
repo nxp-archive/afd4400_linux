@@ -626,11 +626,11 @@ static inline int ivsp_gcr_reg_cfg(unsigned int reg_val,
 			enum vsp_id_t vsp1, enum vsp_id_t vsp2)
 {
 	if ((vsp1 % 2) == 0)
-		return ((reg_val&(~(GCR_MSK3 << (chan * 4)))) | ((vsp2 - 1) <<
-					(chan*4)));
+		return ((reg_val&(~(GCR_MSK3 << (chan * 4)))) |
+				(vsp2 << (chan * 4)));
 	else
 		return ((reg_val&(~(GCR_MSK3 << ((chan-4) * 4))))|
-				((vsp2 - 1) << ((chan - 4) * 4)));
+				(vsp2 << ((chan - 4) * 4)));
 }
 
 static inline int ivsp_parm_validate(enum vsp_id_t vsp1, enum vsp_id_t vsp2,

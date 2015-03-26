@@ -604,12 +604,5 @@ config TILE_SROM
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
 
-config GCR_DEV
-        tristate "GCR Configuration support "
-        help
-          GCR are genral purpose control registers used to
-          configure dma channels for data transfer to and
-          from VSP with CPRI/JESD.
-
 endmenu
 

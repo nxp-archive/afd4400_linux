@@ -309,3 +309,7 @@ static void __exit exit_landshark(void)
 
 module_init(init_landshark);
 module_exit(exit_landshark);
+
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Freescale Semiconductor, Inc.");
+MODULE_DESCRIPTION("Freescale Landshark Driver");

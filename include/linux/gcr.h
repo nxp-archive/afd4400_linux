@@ -26,6 +26,13 @@
 #include <uapi/linux/cpri.h>
 #include <uapi/linux/gcr.h>
 
+// Debug bit assignments
+#define DEBUG_MESSAGES			(1<<0)
+#define DEBUG_CPRI_MUX_CFG		(1<<1)
+#define DEBUG_VSPA_2_IF_CFG		(1<<2)
+#define DEBUG_VSPA_2_VSPA_CFG		(1<<3)
+#define DEBUG_JESD_PTR_RESET		(1<<4)
+
 #define MOD_INC_USE_COUNT
 #define MOD_DEC_USE_COUNT
 
