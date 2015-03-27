@@ -686,7 +686,6 @@ static int check_linesync(struct cpri_framer *framer,
 	if (line_sync_acheived != 0xE) 
 		if (test_bit(RATE_TIMEREXP_BITPOS, &framer->timer_expiry_events)) {
 			err = -ETIME;
-			printk("line_sync = %02X\n", line_sync_acheived);
 		}
 
 	if (!err) {
