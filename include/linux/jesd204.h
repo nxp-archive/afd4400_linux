@@ -368,6 +368,7 @@ struct jesd_transport_dev {
 	struct tasklet_struct tx_tasklet;
 	struct tasklet_struct rx_tasklet;
 	spinlock_t lock;
+	spinlock_t state_lock;
 
 	u8 delay;
 	u8 ilas_len;
@@ -445,6 +446,7 @@ struct jesd204_dev {
 #define DEBUG_JESD_CLOCKS		(1<<4)
 #define DEBUG_JESD_STATES		(1<<5)
 #define DEBUG_JESD_IRQ			(1<<6)
+#define DEBUG_JESD_SYNC			(1<<7)
 
 struct jesd204_private {
 	struct list_head list;

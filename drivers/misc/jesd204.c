@@ -48,7 +48,13 @@
 /* Debug and error reporting macros */
 #define IF_DEBUG(x)	if ((get_debug_flags(tdev)) & (x))
 #define ERR(...)	{if (get_debug_flags(tdev) & DEBUG_JESD_MESSAGES) \
-				pr_err(JESD_MOD_NAME __VA_ARGS__); }
+				pr_err(JESD_MOD_NAME " " __VA_ARGS__); }
+
+#define jesd_change_state_nolock(tdev, state) \
+		jesd_change_state_int_nolock(tdev, state, __func__, __LINE__)
+
+#define jesd_change_state(tdev, state) \
+		jesd_change_state_int(tdev, state, __func__, __LINE__)
 
 static struct class *jesd204_class;
 static struct jesd204_private *pri;
@@ -63,8 +69,10 @@ static int get_device_name(struct jesd_transport_dev *tdev);
 
 static int jesd_setclkdiv(struct jesd_transport_dev *tdev);
 
-static int jesd_change_state(struct jesd_transport_dev *tdev,
-	enum jesd_state new_state);
+static int jesd_change_state_int_nolock(struct jesd_transport_dev *tdev,
+	enum jesd_state new_state, const char* func, int line);
+static int jesd_change_state_int(struct jesd_transport_dev *tdev,
+	enum jesd_state new_state, const char* func, int line);
 
 static void jesd_marks_syref_capture_ready(struct jesd_transport_dev *tdev,
 	int enable);
@@ -195,7 +203,7 @@ static int jesd_config_phygasket(struct jesd_transport_dev *tdev)
 					swap_enable, tdev->type);
 		rc = phy_gasket_lane_ctrl(tdev->phy, phy_data_src, lane->id);
 		if (rc) {
-			ERR(" %s: Phy init failed, lane=%d\n",
+			ERR("%s: Phy init failed, lane=%d\n",
 				tdev->name, lane->id);
 			goto out;
 		}
@@ -235,7 +243,7 @@ static int jesd_setclkdiv(struct jesd_transport_dev *tdev)
 		clkdiv -= 1;
 		break;
 	default:
-		ERR(" %s: Data rate %d KHz is invalid, refclk=%d KHz\n",
+		ERR("%s: Data rate %d KHz is invalid, refclk=%d KHz\n",
 			tdev->name, tdev->data_rate, refclk);
 		rc = -EINVAL;
 		goto out;
@@ -266,7 +274,7 @@ int jesd_reg_write_from_user(struct jesd_transport_dev *tdev,
 	size = count * sizeof(struct jesd_reg_val);
 	reg_buf = kzalloc(size, GFP_KERNEL);
 	if (!reg_buf) {
-		ERR(" %s: Failed to allocate register buffer, size=%d\n",
+		ERR("%s: Failed to allocate register buffer, size=%d\n",
 			tdev->name, size);
 		rc = -ENOMEM;
 		goto out;
@@ -286,7 +294,7 @@ int jesd_reg_write_from_user(struct jesd_transport_dev *tdev,
 
 	for (i = 0; i < count; i++) {
 		if (reg_buf[i].offset > size) {
-			ERR(" %s: Invalid register offset 0x%x\n",
+			ERR("%s: Invalid register offset 0x%x\n",
 				tdev->name, reg_buf[i].offset);
 			continue;
 		}
@@ -611,7 +619,7 @@ static int jesd_serdes_lane_stop(struct jesd_transport_dev *tdev,
 
 	rc = serdes_lane_power_down(tdev->serdes_handle, lane->serdes_lane_id);
 	if (rc) {
-		ERR(" %s: Failed to power down jesd lane %d\n",
+		ERR("%s: Failed to power down jesd lane %d\n",
 			tdev->name, lane->serdes_lane_id);
 	}
 
@@ -656,7 +664,7 @@ static int jesd_serdes_lane_init(struct jesd_transport_dev *tdev,
 
 	rc = serdes_lane_power_up(tdev->serdes_handle, lane_param.lane_id);
 	if (rc) {
-		ERR(" %s: Failed to power up lane id=%d\n",
+		ERR("%s: Failed to power up lane id=%d\n",
 			tdev->name, lane_param.lane_id);
 		goto out;
 	}
@@ -721,41 +729,41 @@ int jesd_start_transport(struct jesd_transport_dev *tdev)
 
 	rc = jesd_change_state(tdev, JESD_STATE_ENABLED);
 	if (rc) {
-		ERR(" %s: Cannot be enabled in current state %d\n",
+		ERR("%s: Cannot be enabled in current state %d\n",
 			tdev->name, tdev->old_state);
 		goto out;
 	}
 
 	rc = jesd_config_phygasket(tdev);
 	if (rc) {
-		ERR(" %s: Failed to configure phygasket\n", tdev->name);
+		ERR("%s: Failed to configure phygasket\n", tdev->name);
 		goto out;
 	}
 	rc = jesd_setclkdiv(tdev);
 	if (rc) {
-		ERR(" %s: Failed to set clkdiv\n", tdev->name);
+		ERR("%s: Failed to set clkdiv\n", tdev->name);
 		goto out;
 	}
 
 	rc = jesd_set_delays(tdev);
 	if (rc) {
-		ERR(" %s: Failed to set delays\n", tdev->name);
+		ERR("%s: Failed to set delays\n", tdev->name);
 		goto out;
 	}
 
 	rc = jesd_init_serdes_lanes(tdev);
 	if (rc) {
-		ERR(" %s: Failed to initialize serdes lanes\n", tdev->name);
+		ERR("%s: Failed to initialize serdes lanes\n", tdev->name);
 		goto out;
 	}
 
 	rc = jesd_setup_transport(tdev);
 	if (rc) {
-		ERR(" %s: Failed to enable transport\n", tdev->name);
+		ERR("%s: Failed to enable transport\n", tdev->name);
 		goto out;
 	}
 
-	/* Makrk jesd link ready for sysref capture*/
+	/* Mark jesd link ready for sysref capture*/
 	jesd_marks_syref_capture_ready(tdev, 1);
 
 	return rc;
@@ -797,7 +805,7 @@ static int jesd_set_ilas_len(struct jesd_transport_dev *tdev, int ilas_len)
 	val = (ilas_len / 4);
 
 	if (val & ~MAX_ILAS_LEN_MASK) {
-		ERR(" %s: Invalid ILAS length %d\n", tdev->name, ilas_len);
+		ERR("%s: Invalid ILAS length %d\n", tdev->name, ilas_len);
 		rc = -EINVAL;
 		goto out;
 	}
@@ -931,7 +939,7 @@ static int __jesd_attach_timer(struct jesd_transport_dev *tdev,
 			tdev->timer_id);
 
 	if (!timer_handle) {
-		ERR(" %s: Failed to get timer type=%d id=%d\n",
+		ERR("%s: Failed to get timer type=%d id=%d\n",
 			tdev->name, timer_type, tdev->timer_id);
 		rc = -ENODEV;
 		goto out;
@@ -939,7 +947,7 @@ static int __jesd_attach_timer(struct jesd_transport_dev *tdev,
 
 	rc = tbgen_attach_timer(timer_handle, tdev);
 	if (rc) {
-		ERR(" %s: Failed to attach timer type=%d id=%d\n",
+		ERR("%s: Failed to attach timer type=%d id=%d\n",
 			tdev->name, timer_type, tdev->timer_id);
 		goto out;
 	}
@@ -966,7 +974,7 @@ static int jesd_attach_tbgen_timer(struct jesd_transport_dev *tdev)
 	tdev->tbgen_dev_handle = get_tbgen_device();
 
 	if (!tdev->tbgen_dev_handle) {
-		ERR(" %s: Failed to get tbgen device\n", tdev->name);
+		ERR("%s: Failed to get tbgen device\n", tdev->name);
 		rc = -ENODEV;
 		goto out;
 	}
@@ -1021,6 +1029,11 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 	struct lane_device *lane;
 	struct jesd204_dev *jdev = tdev->parent;
 
+	if (tdev->state != JESD_STATE_STANDBY &&
+	    tdev->state != JESD_STATE_CONFIGURED &&
+	    tdev->state != JESD_STATE_STOPPED)
+		jesd_dev_stop(tdev);
+
 	if (tdev->active_lanes > 0) {
 		jdev->used_lanes = 0;
 		for (i = 0; i < tdev->active_lanes; i++)
@@ -1028,14 +1041,14 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 	}
 
 	if (trans_p->lanes > tdev->max_lanes) {
-		ERR(" %s: Invalid lanes %d max=%d\n",
+		ERR("%s: Invalid lanes %d max=%d\n",
 			tdev->name, trans_p->lanes, tdev->max_lanes);
 		rc = -EINVAL;
 		return rc;
 	}
 
 	if (jdev->used_lanes >= jdev->max_lanes) {
-		ERR(" %s: All lanes are used (%d). Used lanes %d\n",
+		ERR("%s: All lanes are used (%d). Used lanes %d\n",
 			tdev->name, jdev->max_lanes, jdev->used_lanes);
 		rc = -EBUSY;
 		return rc;
@@ -1045,7 +1058,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 
 		lane = kzalloc(sizeof(struct lane_device), GFP_KERNEL);
 		if (!lane) {
-			ERR(" %s: Lane %d memory allocation failed\n",
+			ERR("%s: Lane %d memory allocation failed\n",
 				tdev->name, i);
 			rc = -ENOMEM;
 			return rc;
@@ -1053,7 +1066,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 
 		rc = jesd_attach_serdes_lanes(tdev, lane, i);
 		if (rc) {
-			ERR(" %s: Failed to attach to serdes lanes %i\n",
+			ERR("%s: Failed to attach to serdes lanes %i\n",
 				tdev->name, i);
 			goto out;
 		}
@@ -1095,7 +1108,7 @@ static int jesd_init_transport(struct jesd_transport_dev *tdev,
 
 	rc = jesd_attach_tbgen_timer(tdev);
 	if (rc) {
-		ERR(" %s: Failed to attach to tbgen timer\n", tdev->name);
+		ERR("%s: Failed to attach to tbgen timer\n", tdev->name);
 		goto out;
 	}
 
@@ -1214,7 +1227,7 @@ static int config_l(struct jesd_transport_dev *tdev)
 	u32 val, *reg = NULL;
 
 	if (!tdev->ils.lanes_per_converter_l) {
-		ERR(" %s: Invalid lanes/converter %d\n",
+		ERR("%s: Invalid lanes/converter %d\n",
 			tdev->name, tdev->ils.lanes_per_converter_l);
 		rc = -EINVAL;
 		goto out;
@@ -1312,7 +1325,7 @@ static int jesd_init_serdes_lanes(struct jesd_transport_dev *tdev)
 	for (i = 0; i < tdev->active_lanes; i++) {
 		rc = jesd_serdes_lane_init(tdev, tdev->lane_devs[i]);
 		if (rc) {
-			ERR(" %s: Failed to initialize serdes lane %d\n",
+			ERR("%s: Failed to initialize serdes lane %d\n",
 				tdev->name, i);
 			goto out;
 		}
@@ -1329,7 +1342,7 @@ static int jesd_stop_serdes_lanes(struct jesd_transport_dev *tdev)
 	for (i = 0; i < tdev->active_lanes; i++) {
 		rc = jesd_serdes_lane_stop(tdev, tdev->lane_devs[i]);
 		if (rc) {
-			ERR(" %s: Failed to stop active serdes lanes %d\n",
+			ERR("%s: Failed to stop active serdes lanes %d\n",
 				tdev->name, i);
 			goto out;
 		}
@@ -1363,7 +1376,7 @@ static int jesd_set_ils_pram(struct jesd_transport_dev *tdev)
 
 	rc = jesd_init_serdes_pll(tdev);
 	if (rc != 0 && rc != -EINVAL) {
-		ERR(" %s: Failed to initialize serdes pll\n", tdev->name);
+		ERR("%s: Failed to initialize serdes pll\n", tdev->name);
 		goto out;
 	}
 
@@ -1494,7 +1507,7 @@ static int jesd_dev_stop(struct jesd_transport_dev *tdev)
 
 	rc = jesd_change_state(tdev, JESD_STATE_STOPPED);
 	if (rc) {
-		ERR(" %s: Jesd device cannot be stopped in state %d\n",
+		ERR("%s: Jesd device cannot be stopped in state %d\n",
 			tdev->name, tdev->state);
 		return rc;
 	}
@@ -1514,78 +1527,101 @@ static void jesd_restore_state(struct jesd_transport_dev *tdev)
 	tdev->state = tdev->old_state;
 }
 
-static int jesd_change_state(struct jesd_transport_dev *tdev,
-	enum jesd_state new_state)
+/* matrix of permissible state transitions: from -> to */
+static int allowed_states[] = {
+ /* from JESD_STATE_STANDBY to ... */
+	1 << JESD_STATE_STANDBY |
+	1 << JESD_STATE_CONFIGURED
+,/* from JESD_STATE_CONFIGURED to ... */
+	1 << JESD_STATE_CONFIGURED |
+	1 << JESD_STATE_ENABLED |
+	1 << JESD_STATE_STOPPED
+,/* from JESD_STATE_ENABLED to ... */
+	1 << JESD_STATE_ENABLED |
+	1 << JESD_STATE_CODE_GRP_SYNC |
+	1 << JESD_STATE_ILAS |
+	1 << JESD_STATE_READY |
+	1 << JESD_STATE_SYNC_FAILED |
+	1 << JESD_STATE_STOPPED
+,/* from JESD_STATE_CODE_GRP_SYNC to ... */
+	1 << JESD_STATE_CODE_GRP_SYNC |
+	1 << JESD_STATE_ILAS |
+	1 << JESD_STATE_READY |
+	1 << JESD_STATE_SYNC_FAILED |
+	1 << JESD_STATE_STOPPED
+,/* from JESD_STATE_ILAS to ... */
+	1 << JESD_STATE_ILAS |
+	1 << JESD_STATE_READY |
+	1 << JESD_STATE_SYNC_FAILED |
+	1 << JESD_STATE_STOPPED
+,/* from JESD_STATE_READY to ... */
+	1 << JESD_STATE_READY |
+	1 << JESD_STATE_LINK_ERROR |
+	1 << JESD_STATE_STOPPED
+,/* from JESD_STATE_SYNC_FAILED to ... */
+	1 << JESD_STATE_SYNC_FAILED |
+	1 << JESD_STATE_STOPPED
+,/* from JESD_STATE_LINK_ERROR to ... */
+	1 << JESD_STATE_LINK_ERROR |
+	1 << JESD_STATE_STOPPED
+,/* from JESD_STATE_STOPPED to ... */
+	1 << JESD_STATE_CONFIGURED |
+	1 << JESD_STATE_ENABLED |
+	1 << JESD_STATE_STOPPED
+};
+
+static int jesd_change_state_int(struct jesd_transport_dev *tdev,
+	enum jesd_state new_state, const char* func, int line)
+{
+	int ret;
+
+	spin_lock(&tdev->state_lock);
+	ret = jesd_change_state_int_nolock(tdev, new_state, func, line);
+	spin_unlock(&tdev->state_lock);
+	return ret;
+}
+
+static int jesd_change_state_int_nolock(struct jesd_transport_dev *tdev,
+	enum jesd_state new_state, const char* func, int line)
 {
 	enum jesd_state old_state = tdev->state;
 	int rc = -EINVAL;
 
-	if (new_state == old_state) {
+	if (old_state == new_state) return 0;
+
+	if (new_state >= sizeof(allowed_states)/sizeof(int)) {
+		ERR("%s: Invalid new state %d in %s(), line %d\n",
+			tdev->name, new_state, func, line);
 		goto out;
 	}
 
-	if (new_state == JESD_STATE_STOPPED) {
-		rc = 0;
-		goto change_state;
-	}
-
-	switch (old_state) {
-
-	case JESD_STATE_STANDBY:
-		if (new_state == JESD_STATE_CONFIGURED)
-			if (JESD_CHCK_CONFIG_MASK(tdev, JESD_CONFIGURED_MASK))
-				rc = 0;
-		break;
-	case JESD_STATE_CONFIGURED:
-		if (new_state == JESD_STATE_ENABLED)
-			rc = 0;
-		break;
-	case JESD_STATE_ENABLED:
-		if (new_state == JESD_STATE_CODE_GRP_SYNC)
-			rc = 0;
-		if (new_state == JESD_STATE_ILAS)
-			rc = 0;
-		if (new_state == JESD_STATE_READY)
-			rc = 0;
-		if (new_state == JESD_STATE_SYNC_FAILED)
-			rc = 0;
-		if (new_state == JESD_STATE_STOPPED)
-			rc = 0;
-		break;
-	case JESD_STATE_SYNC_FAILED:
-		if (new_state == JESD_STATE_CONFIGURED)
-			rc = 0;
-		if (new_state == JESD_STATE_ENABLED)
-			rc = 0;
-		if (new_state == JESD_STATE_STOPPED)
-			rc = 0;
-		break;
-	case JESD_STATE_READY:
-		if (new_state == JESD_STATE_STOPPED)
-			rc = 0;
-		if (new_state == JESD_STATE_LINK_ERROR)
-			rc = 0;
-	case JESD_STATE_STOPPED:
-	case JESD_STATE_LINK_ERROR:
-		if (new_state == JESD_STATE_CONFIGURED)
-			rc = 0;
-		if (new_state == JESD_STATE_ENABLED)
-			rc = 0;
-		break;
-	default:
-		ERR(" %s: Invalid state transition %d -> %d\n",
-			tdev->name, old_state, new_state);
+	if (old_state >= sizeof(allowed_states)/sizeof(int)) {
+		ERR("%s: Invalid old state %d in %s(), line %d\n",
+			tdev->name, old_state, func, line);
 		goto out;
 	}
 
-change_state:
-	if (!rc) {
-		IF_DEBUG(DEBUG_JESD_STATES)
-			pr_info("%s: Transitioning state %d -> %d\n",
-				tdev->name, old_state, new_state);
-		tdev->state = new_state;
-		tdev->old_state = old_state;
+	if (old_state == JESD_STATE_CONFIGURED) {
+		if (JESD_CHCK_CONFIG_MASK(tdev, JESD_CONFIGURED_MASK) !=
+			JESD_CONFIGURED_MASK) {
+			ERR("%s not fully configured (%d) in %s(), line %d\n",
+				tdev->name, tdev->config_bitmap, func, line);
+			goto out;
+		}
 	}
+
+	if (!(allowed_states[old_state] & (1 << new_state))) {
+		ERR("%s: Invalid state transition %d -> %d in %s(), line %d\n",
+			tdev->name, old_state, new_state, func, line);
+		goto out;
+	}
+
+	IF_DEBUG(DEBUG_JESD_STATES)
+		pr_info("%s: Transitioning state %d -> %d in %s(), line %d\n",
+			tdev->name, old_state, new_state, func, line);
+	tdev->state = new_state;
+	tdev->old_state = old_state;
+	rc = 0;
 out:
 	return rc;
 }
@@ -1618,6 +1654,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 
 		rc = jesd_init_transport(tdev, &dev_params);
 		if (!rc) {
+			JESD_CLR_CONFIG_MASK(tdev, JESD_CONFIGURED_MASK);
 			JESD_SET_CONFIG_MASK(tdev, JESD_CONF_DEV_INIT);
 			jesd_change_state(tdev, JESD_STATE_CONFIGURED);
 		}
@@ -1676,7 +1713,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		break;
 	case JESD_GET_STATS:
 		/* TODO: Implement stats */
-		ERR(" %s: IOCTL Jesd statistics not implemented\n",
+		ERR("%s: IOCTL Jesd statistics not implemented\n",
 			tdev->name);
 		rc = -ENOSYS;
 		break;
@@ -1722,7 +1759,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		}
 
 		if (((regcnf.len * 4) + regcnf.offset > size)) {
-			ERR(" %s: Invalid phygasket reg len/offset (%d/0x%x)\n",
+			ERR("%s: Invalid phygasket reg len/offset (%d/0x%x)\n",
 				tdev->name, regcnf.len, regcnf.offset);
 			rc = -EINVAL;
 			break;
@@ -1754,7 +1791,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 		break;
 	case JESD_GET_LANE_RX_RECEIVED_PARAMS:
 		/* TODO: Implement command */
-		ERR(" %s: IOCTL Jesd get rx lane params not implemented\n",
+		ERR("%s: IOCTL Jesd get rx lane params not implemented\n",
 			tdev->name);
 		rc = -ENOSYS;
 		break;
@@ -1829,7 +1866,7 @@ static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
 	for_each_child_of_node(tdev->parent->node, child) {
 		of_property_read_u32(child, "transport-id", &transport_id);
 		if (transport_id < 0) {
-			ERR(" %s: Failed to get transport id\n", tdev->name);
+			ERR("%s: Failed to get transport id\n", tdev->name);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -1839,13 +1876,13 @@ static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
 
 	if (of_get_named_serdes(child, &serdesspec,
 		"serdes-lanes", idx)) {
-		ERR(" %s: Failed to get serdes lane handle\n", tdev->name);
+		ERR("%s: Failed to get serdes lane handle\n", tdev->name);
 		rc = -ENODEV;
 		goto out;
 	}
 	of_property_read_u32(child, "pll-id", &pll_id);
 	if (lane->pll_id < 0) {
-		ERR(" %s: Failed to get pll id\n", tdev->name);
+		ERR("%s: Failed to get pll id\n", tdev->name);
 		rc = -ENODEV;
 		goto out;
 	}
@@ -1858,7 +1895,7 @@ static int jesd_attach_serdes_lanes(struct jesd_transport_dev *tdev,
 	if (!tdev->serdes_handle) {
 		tdev->serdes_handle = get_attached_serdes_dev(serdesspec.np);
 		if (tdev->serdes_handle == NULL) {
-			ERR(" %s: Failed to get serdes handle\n", tdev->name);
+			ERR("%s: Failed to get serdes handle\n", tdev->name);
 			rc = -ENODEV;
 			goto out;
 		}
@@ -1944,6 +1981,16 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 	u32 *transport_ctrl_reg, val, mask;
 	int requeue = 1;
 	int synced = 0;
+
+	spin_lock(&tdev->state_lock);
+	if (tdev->state != JESD_STATE_ENABLED &&
+	    tdev->state != JESD_STATE_CODE_GRP_SYNC &&
+	    tdev->state != JESD_STATE_ILAS) {
+		IF_DEBUG(DEBUG_JESD_STATES)
+			pr_info("%s: link mon in wrong state %d\n",
+				tdev->name, tdev->state);
+		goto unlock;
+	}
 	if (tdev->type == JESD_DEV_TX) {
 		diag_sel_reg = &tdev->tx_regs->tx_diag_sel;
 		diag_data_reg = &tdev->tx_regs->tx_diag_data;
@@ -1960,13 +2007,11 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 	val3 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
 	val4 = (ioread32(diag_data_reg)) & FRAME_STATE_MASK;
 
-
 	/* Diagnostic registers in JESD Rx are not consistent in D4400, thus
 	 * check status flag to determine if link is ready
 	 */
 	if (tdev->type != JESD_DEV_TX)
 		val1 = val2 = val3 = val4 = jesd_get_dframer_state(tdev);
-
 
 	/* RM recommends to use value only when two consecutive reads
 	 * return same value
@@ -1980,13 +2025,13 @@ static void jesd_link_monitor(struct jesd_transport_dev *tdev)
 
 	switch (val1) {
 	case FRAMER_STATE_CODE_GRP_SYNC:
-		jesd_change_state(tdev, JESD_STATE_CODE_GRP_SYNC);
+		jesd_change_state_nolock(tdev, JESD_STATE_CODE_GRP_SYNC);
 		break;
 	case FRAMER_STATE_ILAS:
-		jesd_change_state(tdev, JESD_STATE_ILAS);
+		jesd_change_state_nolock(tdev, JESD_STATE_ILAS);
 		break;
 	case FRAMER_STATE_USER_DATA:
-		jesd_change_state(tdev, JESD_STATE_READY);
+		jesd_change_state_nolock(tdev, JESD_STATE_READY);
 		if (tdev->type != JESD_DEV_TX) {
 			val = SW_DMA_ENABLE;
 			mask = SW_DMA_ENABLE;
@@ -2008,13 +2053,16 @@ out:
 			schedule_work(&tdev->link_monitor);
 		} else {
 			if (!synced) {
-				ERR(" %s: Failed to synchronize link\n",
+				IF_DEBUG(DEBUG_JESD_SYNC)
+					pr_info(" %s: Failed to synchronize link\n",
 					tdev->name);
-				jesd_change_state(tdev,
+				jesd_change_state_nolock(tdev,
 					JESD_STATE_SYNC_FAILED);
 			}
 		}
 	}
+unlock:
+	spin_unlock(&tdev->state_lock);
 }
 
 void jesd_link_monitor_worker(struct work_struct *work)
@@ -2229,7 +2277,7 @@ static int transport_register_irq(struct jesd_transport_dev *tdev)
 		}
 
 		if (rc) {
-			ERR(" %s: Failed to register irq\n", tdev->name);
+			ERR("%s: Failed to register irq\n", tdev->name);
 			goto out;
 		}
 
@@ -2306,7 +2354,7 @@ static ssize_t show_debug(struct device *dev,
 			struct device_attribute *devattr, char *buf)
 {
 	struct jesd204_dev *jdev = dev_get_drvdata(dev);
-	return sprintf(buf, "%d / 0x%x\n", jdev->debug, jdev->debug);
+	return sprintf(buf, "0x%02x\n", jdev->debug);
 }
 
 static int create_c_dev(struct jesd_transport_dev *tdev,
@@ -2565,6 +2613,7 @@ static int jesd204_of_probe(struct platform_device *pdev)
 		init_waitqueue_head(&tdev->to_wait);
 
 		spin_lock_init(&tdev->lock);
+		spin_lock_init(&tdev->state_lock);
 		device_create(jesd204_class, tdev->dev, tdev->devt,
 			NULL, tdev->name);
 
