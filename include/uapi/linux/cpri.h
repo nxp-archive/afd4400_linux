@@ -388,7 +388,7 @@ struct cpri_autoneg_params {
  */
 	unsigned int rate_neg_timeout; /*!< per rate */
 	unsigned int proto_neg_timeout;
-	unsigned int ethptr_neg_timeout; 
+	unsigned int ethptr_neg_timeout;
 /**
  * Refer to flag STICK_TO_RATE for detail
  */
@@ -443,9 +443,9 @@ struct axc_info {
  */
 #define AXC_INTERLEAVING_EN	(1 << 30)
 /**
- * If set, enable 9E2 format
+ * If set, enable test mode
  */
-#define AXC_9E2_EN	(1 << 13)
+#define AXC_RSV1_EN	(1 << 13)
 /**
  * If set, enable CPRInT/RACPRMSB bit 31
  */

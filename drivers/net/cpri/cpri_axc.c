@@ -213,17 +213,17 @@ static void program_axc_conf_reg(struct cpri_framer *framer,
 	else
 		cpri_reg_clear(reg_acprmsb, AXC_INTERLEAVING_EN);
 
-	/* TX rounding and 9E2 format */
+	/* TX rounding and test mode */
 	if (axc->flags & AXC_DIR_TX) {
 		if (axc->flags & AXC_TX_ROUNDING_EN)
 			cpri_reg_set(reg_acprmsb, AXC_TX_ROUNDING_EN);
 		else
 			cpri_reg_clear(reg_acprmsb, AXC_TX_ROUNDING_EN);
 	} else {
-		if (axc->flags & AXC_9E2_EN)
-			cpri_reg_set(reg_acprmsb, AXC_9E2_EN);
+		if (axc->flags & AXC_RSV1_EN)
+			cpri_reg_set(reg_acprmsb, AXC_RSV1_EN);
 		else
-			cpri_reg_clear(reg_acprmsb, AXC_9E2_EN);
+			cpri_reg_clear(reg_acprmsb, AXC_RSV1_EN);
 	}
 
 	/* Config the oversampling */
