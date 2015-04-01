@@ -456,7 +456,7 @@ static int check_revision(struct rf_phy_dev *phy_dev)
 	if (phy_info->device_id == DEVICE_ID_AD93681) {
 		ad9368_read(phy_dev, PRODUCT_CODE_AD93681_REG, 1, &val);
 		rev = (u8) val & REV_MASK;
-		if (rev != 1) {
+		if (rev != 1 && rev != 3) {
 			dev_err(dev,
 				"Unsupported AD9368-1 revision 0x%x\n", rev);
 			rc = -ENODEV;
@@ -466,7 +466,7 @@ static int check_revision(struct rf_phy_dev *phy_dev)
 	} else if (phy_info->device_id == DEVICE_ID_AD93682) {
 		ad9368_read(phy_dev, PRODUCT_CODE_AD93682_REG, 1, &val);
 		rev = (u8) val & REV_MASK;
-		if (rev != 1) {
+		if (rev != 1 && rev != 3) {
 			dev_err(dev,
 				"Unsupported AD9368-2 revision 0x%x\n", rev);
 			rc = -ENODEV;
