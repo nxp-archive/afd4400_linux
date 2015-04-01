@@ -1145,10 +1145,13 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 			spin_unlock(&timer->lock);
 			goto out;
 		}
-		val = start_time & 0xffffffff;
-		tbgen_write_reg(osetlo_reg, val);
+
 		val = (start_time >> 32) & 0xffffffff;
 		tbgen_write_reg(osethi_reg, val);
+		wmb();
+		val = start_time & 0xffffffff;
+		tbgen_write_reg(osetlo_reg, val);
+		wmb();
 
 		/*Enable Timer*/
 		val = TMRCTRL_EN;
