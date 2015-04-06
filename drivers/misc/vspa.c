@@ -67,6 +67,11 @@
 #include <uapi/linux/vspa.h>
 #include "vspa.h"
 
+/* Additional options for checking if Mailbox write to VSP completed */
+//#define MB_CHECK_ON_WRITE	/* Check when queuing a new mailbox write */
+//#define MB_CHECK_IN_IRQ	/* Check during Mailbox IRQ processing    */
+//#define MB_CHECK_TIMER	/* Use timer to keep checking after MB OUT*/
+
 #define MAX_VSPA 11
 
 #define VSPA_DEVICE_NAME "vspa"
@@ -953,6 +958,9 @@ static int mb32_transmit(struct vspa_device *vspadev)
 	else {
 		me = &(vspadev->mb32[mq->idx_dequeue]);
 		vspa_reg_write(regs + HOST_OUT_32_REG_OFFSET, me->data);
+		IF_DEBUG(DEBUG_MBOX32_OUT)
+			pr_info("vspa%d: wrote 0x%08X to mbox32\n", vspadev->id,
+				me->data);
 		next_slot = mq->idx_dequeue + 1;
 		if (next_slot == MBOX_QUEUE_ENTRIES)
 			next_slot = 0;
@@ -980,6 +988,9 @@ static int mb64_transmit(struct vspa_device *vspadev)
 		me = &(vspadev->mb64[mq->idx_dequeue]);
 		vspa_reg_write(regs + HOST_OUT_64_MSB_REG_OFFSET, me->data_msb);
 		vspa_reg_write(regs + HOST_OUT_64_LSB_REG_OFFSET, me->data_lsb);
+		IF_DEBUG(DEBUG_MBOX64_OUT)
+			pr_info("vspa%d: wrote 0x%08X 0x%08X to mbox64\n",
+				vspadev->id, me->data_msb, me->data_lsb);
 		next_slot = mq->idx_dequeue + 1;
 		if (next_slot == MBOX_QUEUE_ENTRIES)
 			next_slot = 0;
@@ -987,6 +998,66 @@ static int mb64_transmit(struct vspa_device *vspadev)
 	}
 	spin_unlock_irqrestore(&vspadev->mb64_lock, irqflags);
 	return ret;
+}
+
+static int mb_transmit_check(struct vspa_device *vspadev)
+{
+	int idx;
+	u32 __iomem *regs = vspadev->regs;
+	uint32_t status = vspa_reg_read(regs + HOST_MBOX_STATUS_REG_OFFSET);
+	unsigned long irqflags;
+	int requeue = 0;
+
+	spin_lock_irqsave(&vspadev->mbchk_lock, irqflags);
+	if (vspadev->mb64_queue.idx_dequeue !=
+	    vspadev->mb64_queue.idx_complete) {	/* MBOX is in process */
+		requeue = 1;
+		if (!(status & MBOX_STATUS_OUT_64_BIT)) {
+			idx = vspadev->mb64_queue.idx_dequeue;
+			IF_DEBUG(DEBUG_MBOX64_OUT)
+				pr_info("vspa%d: mbox64 out idx %d consumed\n",
+					vspadev->id, idx);
+			if (vspadev->mb64[idx].flags &
+						VSPA_FLAG_REPORT_MB_COMPLETE)
+				event_enqueue(vspadev, VSPA_EVENT_MB64_OUT,
+						vspadev->mb64[idx].id, 0,
+						vspadev->mb64[idx].data_msb,
+						vspadev->mb64[idx].data_lsb);
+			vspadev->mb64_queue.idx_complete = idx;
+			mb64_transmit(vspadev);
+		}
+	}
+	if (vspadev->mb32_queue.idx_dequeue !=
+	    vspadev->mb32_queue.idx_complete) {	/* MBOX is in process */
+		requeue = 1;
+		if (!(status & MBOX_STATUS_OUT_32_BIT)) {
+			idx = vspadev->mb32_queue.idx_dequeue;
+			IF_DEBUG(DEBUG_MBOX32_OUT)
+				pr_info("vspa%d: mbox32 out idx %d consumed\n",
+					vspadev->id, idx);
+			if (vspadev->mb32[idx].flags &
+						VSPA_FLAG_REPORT_MB_COMPLETE)
+				event_enqueue(vspadev, VSPA_EVENT_MB32_OUT,
+						vspadev->mb32[idx].id, 0,
+						vspadev->mb32[idx].data, 0);
+			vspadev->mb32_queue.idx_complete = idx;
+			mb32_transmit(vspadev);
+		}
+	}
+	spin_unlock_irqrestore(&vspadev->mbchk_lock, irqflags);
+	return requeue;
+}
+
+static void mbchk_callback(unsigned long data)
+{
+	struct vspa_device *vspadev = (struct vspa_device*)data;
+
+#ifdef MB_CHECK_TIMER
+	if (mb_transmit_check(vspadev))
+		mod_timer(&vspadev->mbchk_timer, jiffies + 1);
+	else
+#endif
+		complete(&vspadev->mbchk_complete);
 }
 
 /*************************** Watchdog ******************************/
@@ -1067,8 +1138,8 @@ static irqreturn_t vspa_flags1_irq_handler(int irq, void *dev)
 	vspa_reg_write(regs + HOST_FLAGS1_REG_OFFSET, flags1);
 
 //	spin_lock(&vspadev->irq_lock);
-	if (vspadev->irq_bits) { pr_err("VSPA%d flg1 irqs = %d\n",
-			vspadev->id, vspadev->irq_bits);
+	if (vspadev->irq_bits) { pr_err("vspa%d flg1 irqs = %d\n",
+		vspadev->id, vspadev->irq_bits);
 	}
 	vspadev->irq_bits |= 1;
 
@@ -1076,21 +1147,28 @@ static irqreturn_t vspa_flags1_irq_handler(int irq, void *dev)
 		pr_info("vspa%d: flags1 = %08x, flags0 = %08x\n",
 				 vspadev->id, flags1, flags0);
 
-	/* Mailbox complete is monitored directly on MBOX interrupt */
+	/* Mailbox consumed handshake (per AVI) */
 	if (flags1 & (1<<31)) {
 		flags1 &= ~(1<<31);
-		clr_flags0 = 1 << 31;
-		IF_DEBUG(DEBUG_SPM) {
-			pr_info("vspa%d: SPM Flags1 IRQ\n", vspadev->id);
-		}
-		spm_update(vspadev, 0);
-//TODO - handle SPM if no SPM DMA ?
+		/* Check if any queued mailbox transactions completed */
+		IF_DEBUG(DEBUG_MBOX32_OUT | DEBUG_MBOX64_OUT)
+			pr_info("vspa%d: flags1[31] mailbox consumed handshake\n",
+				vspadev->id);
+		mb_transmit_check(vspadev);
 	}
 
 	while (flags1) {
 		seqid = ffs(flags1) - 1;
 //pr_info("flags1 = %08X, flags0 = %08X, seqid = %d\n", flags1, flags0, seqid);
 		flags1 &= ~(1 << seqid);
+		if (vspadev->seqid[seqid].cmd_id < 0) {
+			ERR("%d: unmatched seqid %d - flag ignored\n",
+				vspadev->id, seqid);
+			if (flags0 & (1 << seqid))
+				clr_flags0 |= 1 << seqid;
+//TODO - report error event
+			continue;
+		}
 		if (flags0 & (1 << seqid)) {
 			clr_flags0 |= 1 << seqid;
 			if (vspadev->seqid[seqid].flags &
@@ -1122,7 +1200,6 @@ static irqreturn_t vspa_flags1_irq_handler(int irq, void *dev)
 static irqreturn_t vspa_flags0_irq_handler(int irq, void *dev)
 {
 	int seqid;
-	int idx;
 	uint32_t msb, lsb;
 	struct vspa_device *vspadev = (struct vspa_device *)dev;
 	u32 __iomem *regs = vspadev->regs;
@@ -1139,7 +1216,10 @@ static irqreturn_t vspa_flags0_irq_handler(int irq, void *dev)
 	IF_DEBUG(DEBUG_FLAGS0_IRQ)
 		pr_info("vspa%d: flags0 = %08x, status = %08x\n",
 			vspadev->id, flags0, status);
-
+#ifdef MB_CHECK_IN_IRQ
+	/* Check if any queued mailbox transactions completed */
+	mb_transmit_check(vspadev);
+#endif
 	/* Handle Mailbox interrupts */
 	if (status & STATUS_REG_IRQ_VCPU_MSG) {
 		status = vspa_reg_read(regs + HOST_MBOX_STATUS_REG_OFFSET);
@@ -1149,7 +1229,7 @@ static irqreturn_t vspa_flags0_irq_handler(int irq, void *dev)
 			msb = vspa_reg_read(regs + HOST_IN_64_MSB_REG_OFFSET);
 			lsb = vspa_reg_read(regs + HOST_IN_64_LSB_REG_OFFSET);
 			IF_DEBUG(DEBUG_MBOX64_IN)
-				pr_info("vspa%d: mbox64 in %08X %08X/n",
+				pr_info("vspa%d: mbox64 in %08X %08X\n",
 					vspadev->id, msb, lsb);
 			event_enqueue(vspadev, VSPA_EVENT_MB64_IN, 0, 0,
 								msb, lsb);
@@ -1157,37 +1237,10 @@ static irqreturn_t vspa_flags0_irq_handler(int irq, void *dev)
 		if (status & MBOX_STATUS_IN_32_BIT) {
 			msb = vspa_reg_read(regs + HOST_IN_32_REG_OFFSET);
 			IF_DEBUG(DEBUG_MBOX32_IN)
-				pr_info("vspa%d: mbox32 in %08X/n",
+				pr_info("vspa%d: mbox32 in %08X\n",
 					vspadev->id, msb);
 			event_enqueue(vspadev, VSPA_EVENT_MB32_IN, 0, 0,
 								msb, 0);
-		}
-		if (status & MBOX_STATUS_OUT_64_BIT) {
-			idx = vspadev->mb64_queue.idx_dequeue;
-			IF_DEBUG(DEBUG_MBOX64_OUT)
-				pr_info("vspa%d: mbox64 out idx %d consumed/n",
-					vspadev->id, idx);
-			if (vspadev->mb64[idx].flags &
-						VSPA_FLAG_REPORT_MB_COMPLETE)
-				event_enqueue(vspadev, VSPA_EVENT_MB64_OUT,
-						 vspadev->mb64[idx].id, 0,
-						 vspadev->mb64[idx].data_msb,
-						 vspadev->mb64[idx].data_lsb);
-			vspadev->mb64_queue.idx_complete = idx;
-			mb64_transmit(vspadev);
-		}
-		if (status & MBOX_STATUS_OUT_32_BIT) {
-			idx = vspadev->mb32_queue.idx_dequeue;
-			IF_DEBUG(DEBUG_MBOX32_OUT)
-				pr_info("vspa%d: mbox32 out idx %d consumed/n",
-					vspadev->id, idx);
-			if (vspadev->mb32[idx].flags &
-						VSPA_FLAG_REPORT_MB_COMPLETE)
-				event_enqueue(vspadev, VSPA_EVENT_MB32_OUT,
-						 vspadev->mb32[idx].id, 0,
-						 vspadev->mb32[idx].data, 0);
-			vspadev->mb32_queue.idx_complete = idx;
-			mb32_transmit(vspadev);
 		}
 		vspa_reg_write(regs + STATUS_REG_OFFSET,
 						STATUS_REG_IRQ_VCPU_MSG);
@@ -1198,6 +1251,12 @@ static irqreturn_t vspa_flags0_irq_handler(int irq, void *dev)
 		seqid = ffs(flags0) - 1;
 //pr_info("flags0 = %08X, seqid = %d\n", flags0, seqid);
 		flags0 &= ~(1 << seqid);
+		if (vspadev->seqid[seqid].cmd_id < 0) {
+			ERR("%d: unmatched seqid %d - flag ignored\n",
+				vspadev->id, seqid);
+//TODO - report error event
+			continue;
+		}
 		/* Optionally send CMD consumed event message */
 		if (vspadev->seqid[seqid].flags & VSPA_FLAG_REPORT_CMD_CONSUMED)
 			event_enqueue(vspadev, VSPA_EVENT_CMD,
@@ -1817,6 +1876,10 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			rc = -EFAULT;
 		else {
 			int next_slot;
+#ifdef MB_CHECK_ON_WRITE
+			/* Check if any queued mailbox transactions completed */
+			mb_transmit_check(vspadev);
+#endif
 			spin_lock(&vspadev->control_lock);
 			next_slot = mbox_next_slot(&vspadev->mb32_queue);
 			if (next_slot < 0) {
@@ -1827,10 +1890,13 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 				vspadev->mb32_queue.idx_enqueue = next_slot;
 				IF_DEBUG(DEBUG_MBOX32_OUT)
 					pr_info("vspa%d: mbox32 out idx %d: "
-						"%08x queued/n",
+						"%08x queued\n",
 						vspadev->id, next_slot,
 						mb32.data);
 				mb32_transmit(vspadev);
+#ifdef MB_CHECK_TIMER
+				mod_timer(&vspadev->mbchk_timer, jiffies + 1);
+#endif
 			}
 			spin_unlock(&vspadev->control_lock);
 		}
@@ -1845,6 +1911,10 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			rc = -EFAULT;
 		else {
 			int next_slot;
+#ifdef MB_CHECK_ON_WRITE
+			/* Check if any queued mailbox transactions completed */
+			mb_transmit_check(vspadev);
+#endif
 			spin_lock(&vspadev->control_lock);
 			next_slot = mbox_next_slot(&vspadev->mb64_queue);
 			if (next_slot < 0) {
@@ -1855,10 +1925,13 @@ static long vspa_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 				vspadev->mb64_queue.idx_enqueue = next_slot;
 				IF_DEBUG(DEBUG_MBOX64_OUT)
 					pr_info("vspa%d: mbox64 out idx %d: "
-						"%08x %08x queued/n",
+						"%08x %08x queued\n",
 						vspadev->id, next_slot,
 						mb64.data_msb, mb64.data_lsb);
 				mb64_transmit(vspadev);
+#ifdef MB_CHECK_TIMER
+				mod_timer(&vspadev->mbchk_timer, jiffies + 1);
+#endif
 			}
 			spin_unlock(&vspadev->control_lock);
 		}
@@ -2581,6 +2654,8 @@ static int vspa_probe(struct platform_device *pdev)
 	init_completion(&vspadev->watchdog_complete);
 	setup_timer(&vspadev->watchdog_timer, watchdog_callback,
 						(unsigned long)vspadev);
+	init_completion(&vspadev->mbchk_complete);
+	setup_timer(&vspadev->mbchk_timer, mbchk_callback, (unsigned long)vspadev);
 
 	spin_lock_init(&vspadev->dma_tx_queue_lock);
 	spin_lock_init(&vspadev->dma_enqueue_lock);
@@ -2588,6 +2663,7 @@ static int vspa_probe(struct platform_device *pdev)
 	spin_lock_init(&vspadev->event_queue_lock);
 	spin_lock_init(&vspadev->mb32_lock);
 	spin_lock_init(&vspadev->mb64_lock);
+	spin_lock_init(&vspadev->mbchk_lock);
 	spin_lock_init(&vspadev->control_lock);
 	vspadev->poll_mask = VSPA_MSG_ALL;
 //	spin_lock_init(&vspadev->irq_lock);
@@ -2691,9 +2767,13 @@ static int vspa_remove(struct platform_device *ofpdev)
 
 	/* shutdown timer cleanly */
 	vspadev->watchdog_interval_msecs = 0;
+	init_completion(&vspadev->mbchk_complete);
 	init_completion(&vspadev->watchdog_complete);
+	mod_timer(&vspadev->mbchk_timer, jiffies);
 	mod_timer(&vspadev->watchdog_timer, jiffies);
+	wait_for_completion(&vspadev->mbchk_complete);
 	wait_for_completion(&vspadev->watchdog_complete);
+	del_timer_sync(&vspadev->mbchk_timer);
 	del_timer_sync(&vspadev->watchdog_timer);
 
 	/* Disbale all irqs of VSPA */

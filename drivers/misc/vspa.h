@@ -321,6 +321,9 @@ struct vspa_device {
 	struct vspa_mb64 mb64[MBOX_QUEUE_ENTRIES];
 	spinlock_t	mb32_lock; /* called from irq handler */
 	spinlock_t	mb64_lock; /* called from irq handler */
+	spinlock_t	mbchk_lock; /* called from irq handler */
+	struct timer_list mbchk_timer;
+	struct completion mbchk_complete;
 
 	/* DMA channel usage */
 	uint8_t		spm_dma_chan;
