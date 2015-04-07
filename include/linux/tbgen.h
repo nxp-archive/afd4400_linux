@@ -11,6 +11,7 @@
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
  */
+#include <linux/cdev.h>
 #include <uapi/linux/tbgen.h>
 #define TBGEN_DRIVER_NAME "tbgen"
 
@@ -268,6 +269,9 @@ struct tbg_regs {
 
 struct tbgen_dev *get_tbgen_device(void);
 u32 get_ref_clock(struct tbgen_dev *tbg);
+u64 tbgen_get_master_counter(struct tbgen_dev *tbg);
+u64 tbgen_get_l10_mcntr(struct tbgen_dev *tbg);
+
 struct tbgen_timer *tbgen_get_timer(struct tbgen_dev *tbg, enum timer_type type,
 	int timer_id);
 

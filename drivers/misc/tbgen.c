@@ -60,7 +60,6 @@ static int tbgen_change_state(struct tbgen_dev *tbg,
 
 static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 	int timer_id, int enable);
-static u64 tbgen_get_l10_mcntr(struct tbgen_dev *tbg);
 static irqreturn_t tbgen_isr(int irq, void *dev);
 static int tbgen_reset(struct tbgen_dev *tbg);
 static void tbgen_tasklet(unsigned long data);
@@ -548,32 +547,41 @@ int tbgen_restart_radio_frame_generation(struct tbgen_dev *tbg)
 	return retcode;
 }
 
-static u64 tbgen_get_master_counter(struct tbgen_dev *tbg)
+u64 tbgen_get_master_counter(struct tbgen_dev *tbg)
 {
-	u64 master_counter = 0, tmp;
+	u64 master_counter;
+	u32 tmph1, tmph2, tmpl;
 
-	tmp = tbgen_read_reg(&tbg->tbgregs->mstr_cnt_hi);
-	master_counter |= tmp << 32;
+	tmph2 = tbgen_read_reg(&tbg->tbgregs->mstr_cnt_hi);
+	do {
+		tmph1 = tmph2;
+		tmpl  = tbgen_read_reg(&tbg->tbgregs->mstr_cnt_lo);
+		tmph2 = tbgen_read_reg(&tbg->tbgregs->mstr_cnt_hi);
+	} while (tmph1 != tmph2);
 
-	tmp = tbgen_read_reg(&tbg->tbgregs->mstr_cnt_lo);
-	master_counter |= (tmp & 0xffffffff);
+	master_counter = (((u64)tmph1) << 32) | tmpl;
 
 	return master_counter;
 }
+EXPORT_SYMBOL(tbgen_get_master_counter);
 
-
-static u64 tbgen_get_l10_mcntr(struct tbgen_dev *tbg)
+u64 tbgen_get_l10_mcntr(struct tbgen_dev *tbg)
 {
-	u64 ts_10ms_cnt = 0, tmp;
+	u64 ts_10ms_cnt;
+	u32 tmph1, tmph2, tmpl;
 
-	tmp = tbgen_read_reg(&tbg->tbgregs->ts_10_ms_hi);
-	ts_10ms_cnt |= tmp << 32;
+	tmph2 = tbgen_read_reg(&tbg->tbgregs->ts_10_ms_hi);
+	do {
+		tmph1 = tmph2;
+		tmpl  = tbgen_read_reg(&tbg->tbgregs->ts_10_ms_lo);
+		tmph2 = tbgen_read_reg(&tbg->tbgregs->ts_10_ms_hi);
+	} while (tmph1 != tmph2);
 
-	tmp = tbgen_read_reg(&tbg->tbgregs->ts_10_ms_lo);
-	ts_10ms_cnt |= (tmp & 0xffffffff);
+	ts_10ms_cnt = (((u64)tmph1) << 32) | tmpl;
 
 	return ts_10ms_cnt;
 }
+EXPORT_SYMBOL(tbgen_get_l10_mcntr);
 
 static void tbgen_tasklet(unsigned long data)
 {
@@ -758,7 +766,7 @@ static int tbgen_config_generic_timer_regs(struct tbgen_timer *timer,
 	struct timer_param *timer_param, struct gen_timer_regs *timer_regs)
 {
 	int retcode = 0;
-	u32 *reg, val = 0, tmp;
+	u32 val = 0, tmp;
 
 	IF_DEBUG(DEBUG_TBGEN_TIMERS) {
 		pr_info("Generic timer config flags=0x%x strobe=%d interval=0x%x\n",
@@ -800,10 +808,9 @@ static int tbgen_config_generic_timer_regs(struct tbgen_timer *timer,
 				GEN_CTRL_PULSE_WIDTH_SHIFT);
 		val |= (tmp << GEN_CTRL_PULSE_WIDTH_SHIFT);
 	}
-	reg = &timer_regs->ctrl;
 
 	spin_lock(&timer->lock);
-	tbgen_write_reg(reg, val);
+	tbgen_write_reg(&timer_regs->ctrl, val);
 	tbgen_write_reg(&timer_regs->interval, timer_param->interval);
 	memcpy(&timer->timer_param, timer_param, sizeof(struct timer_param));
 	SET_STATUS_FLAG(timer, STATUS_FLG_CONFIGURED);
@@ -1031,8 +1038,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		timer = &tbg->tbg_txtmr[timer_id];
 		tx_timer_regs = &tbg->tbgregs->tx_tmr[timer_id];
 		ctrl_reg = &tx_timer_regs->ctrl;
-		osetlo_reg = &tx_timer_regs->osetlo;
 		osethi_reg = &tx_timer_regs->osethi;
+		osetlo_reg = &tx_timer_regs->osetlo;
 		break;
 	case JESD_TX_AXRF:
 		if (timer_id > MAX_AXRF_ALIGNMENT_TIMERS) {
@@ -1043,8 +1050,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		timer = &tbg->tbg_tx_axrf[timer_id];
 		tx_timer_regs = &tbg->tbgregs->axrf_tmr[timer_id];
 		ctrl_reg = &tx_timer_regs->ctrl;
-		osetlo_reg = &tx_timer_regs->osetlo;
 		osethi_reg = &tx_timer_regs->osethi;
+		osetlo_reg = &tx_timer_regs->osetlo;
 		break;
 	case JESD_RX_ALIGNMENT:
 		if (timer_id < MAX_RX_ALIGNMENT_TIMERS) {
@@ -1056,8 +1063,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 			goto out;
 		}
 		ctrl_reg = &generic_timer_regs->ctrl;
-		osetlo_reg = &generic_timer_regs->osetlo;
 		osethi_reg = &generic_timer_regs->osethi;
+		osetlo_reg = &generic_timer_regs->osetlo;
 		break;
 	case JESD_GP_EVENT:
 		if (timer_id < 16) {
@@ -1070,8 +1077,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 			goto out;
 		}
 		ctrl_reg = &generic_timer_regs->ctrl;
-		osetlo_reg = &generic_timer_regs->osetlo;
 		osethi_reg = &generic_timer_regs->osethi;
+		osetlo_reg = &generic_timer_regs->osetlo;
 		break;
 	case JESD_SRX_ALIGNMENT:
 		if (timer_id > MAX_SRX_ALIGNMENT_TIMERS) {
@@ -1082,8 +1089,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		timer = &tbg->tbg_srxtmr[timer_id];
 		generic_timer_regs = &tbg->tbgregs->srx_tmr[timer_id];
 		ctrl_reg = &generic_timer_regs->ctrl;
-		osetlo_reg = &generic_timer_regs->osetlo;
 		osethi_reg = &generic_timer_regs->osethi;
+		osetlo_reg = &generic_timer_regs->osetlo;
 		break;
 	case JESD_TITC_ALIGNMENT:
 		if (timer_id > MAX_TIMED_INTERRUPT_TIMER_CTRLS) {
@@ -1094,8 +1101,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		timer = &tbg->tbg_titc_tmr[timer_id];
 		generic_timer_regs = &tbg->tbgregs->titc_tmr[timer_id];
 		ctrl_reg = &generic_timer_regs->ctrl;
-		osetlo_reg = &generic_timer_regs->osetlo;
 		osethi_reg = &generic_timer_regs->osethi;
+		osetlo_reg = &generic_timer_regs->osetlo;
 		break;
 	default:
 		ERR(" %d: Invalid timer type\n", type);
@@ -1132,8 +1139,8 @@ static int tbgen_timer_ctrl(struct tbgen_dev *tbg, enum timer_type type,
 		}
 
 		/*Program Timer fire time */
-		start_time = tbg->last_10ms_counter;
-		start_time += timer->timer_param.offset;
+		start_time = timer->timer_param.offset;
+		start_time += tbg->last_10ms_counter;
 		current_time = tbgen_get_l10_mcntr(tbg);
 		if (current_time > start_time) {
 			IF_DEBUG(DEBUG_TBGEN_TIMERS) {
@@ -1180,9 +1187,9 @@ EXPORT_SYMBOL(tbgen_timer_ctrl);
 void write_multiple_regs(struct tbgen_dev *tbg,
 			u32 offset,
 			u32 len,
-			u32 value)
+			u32 *value)
 {
-	write_reg(&tbg->tbgregs->rfg_cr, offset, len, &value);
+	write_reg(&tbg->tbgregs->rfg_cr, offset, len, value);
 }
 
 int config_alignment_timers(struct tbgen_dev *tbg,
@@ -1284,11 +1291,10 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 	struct tbgen_reg_read_buf regcnf;
 	struct tbgen_device_info dev_info;
 	struct timer_ctrl tmr_ctrl;
-	struct tbgen_reg_write_buf *wreg_buf;
+	struct tbgen_wreg *wreg_buf;
 	struct tbgen_reg_write_buf write_reg;
 	struct tbg_pll pll_params;
 	struct tbg_rfg rfg_params;
-	void __user *argp = (void __user *)arg;
 
 	tbg = pfile->private_data;
 
@@ -1374,30 +1380,32 @@ long tbgen_ioctl(struct file *pfile, unsigned int cmd, unsigned long arg)
 				tmr_ctrl.enable);
 		break;
 	case TBGEN_WRITE_REG:
-		wreg_buf = (struct tbgen_reg_write_buf *) arg;
-		count = wreg_buf->count;
-
-		write_reg.regs =
-			kzalloc((sizeof(struct tbgen_wreg) * count),
-				GFP_KERNEL);
-
 		if (copy_from_user(&write_reg,
-			(struct tbgen_reg_write_buf *)argp,
-			sizeof(struct tbgen_reg_write_buf)*count)) {
+			(struct tbgen_reg_write_buf *)arg,
+			sizeof(struct tbgen_reg_write_buf))) {
+			retcode = -EFAULT;
+			break;
+		}
+		count = write_reg.count;
+		wreg_buf = kzalloc((sizeof(struct tbgen_wreg) * count),
+				GFP_KERNEL);
+		if (copy_from_user(wreg_buf, write_reg.regs,
+			sizeof(struct tbgen_wreg) * count)) {
 				retcode = -EFAULT;
 				break;
 		}
 
 		while (count) {
 			write_multiple_regs(tbg,
-					write_reg.regs->offset,
+					wreg_buf->offset,
 					1,
-					write_reg.regs->value);
-			write_reg.regs++;
+					&wreg_buf->value);
+			wreg_buf++;
 			count--;
 		}
+		wreg_buf -= write_reg.count;
 		retcode = 0;
-		kfree(write_reg.regs);
+		kfree(wreg_buf);
 		break;
 	case TBGEN_READ_REG:
 
