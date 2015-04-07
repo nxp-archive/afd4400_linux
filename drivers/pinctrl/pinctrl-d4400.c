@@ -3823,6 +3823,16 @@ int d4400_pinctrl_remove(struct platform_device *pdev)
 	return 0;
 }
 
+void d4400_pinmux_hack(int pinnum)
+{
+	struct d4400_pin_reg pin_reg = d4400_pin_regs[pinnum];
+
+	struct d4400_pinctrl *ipctl = dev_get_drvdata(d4400_pinctrl_info.dev);
+	writeb(pin_reg.mux_mode & D4400_MUX_MASK,
+		ipctl->main_base + pin_reg.mux_reg);
+}
+EXPORT_SYMBOL(d4400_pinmux_hack);
+
 static struct of_device_id d4400_pinctrl_of_match[] = {
 	{ .compatible = "fsl,d4400-iomuxc", },
 	{ }

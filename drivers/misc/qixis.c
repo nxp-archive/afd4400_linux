@@ -831,6 +831,14 @@ static int __init d4400_fpga_probe(struct platform_device *pdev)
 			qixis_read(QIXIS_FPGA_MINOR_VER));
 	}
 
+	if (qixis_board_info.board_type == QIXIS_BOARD_TYPE_D4400EVB ||
+		qixis_board_info.board_type == QIXIS_BOARD_TYPE_D4400RDB) {
+		err = gcr_jesd_init();
+		if (err == -EPROBE_DEFER)
+			goto defer;
+		gcr_jesd_en_termination();
+	}
+
 	if (qixis_board_info.board_type == QIXIS_BOARD_TYPE_D4400RDB) {
 		jcpll_node = of_parse_phandle(pdev->dev.of_node,
 						"jcpll-handle", 0);

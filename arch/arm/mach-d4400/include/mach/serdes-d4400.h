@@ -294,6 +294,8 @@ struct lane_gen_conf {
 #define SERDES_RPLL_LES		(1 << 2)
 #define SERDES_FIRST_LANE	(1 << 3)
 #define SERDES_LOOPBACK_EN	(1 << 4)
+#define	SERDES_JESD_TX		(1 << 5)
+#define SERDES_JESD_RX		(1 << 6)
 /*
  *	BIT definition for cflag
  *	BIT0:	1: 20Bit Enable
@@ -310,6 +312,12 @@ struct lane_gen_conf {
  *
  *	BIT4:	1: LPBK_EN: To enable loopback mode
  *		0: LPBK_EN: To disable loopback / enable Application mode
+ *
+ *	BIT5:	1: Config reqest from jesd tx block
+ *		0: Config request not from jesd tx block
+ *
+ *	BIT6:	1: Config request from jesd rx block
+ *		0: Config request not from jesd rx block
  */
 	u32 cflag;
 };

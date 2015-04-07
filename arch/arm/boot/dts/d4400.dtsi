@@ -157,7 +157,7 @@
 				status = "disabled";
 			};
 
-			ecspi2: ecspi@0A8000 {
+			ecspi2: ecspi@A8000 {
 				#address-cells = <1>;
 				#size-cells = <0>;
 				compatible = "fsl,d4400-ecspi";
@@ -212,7 +212,7 @@
 				status = "disabled";
 			};
 
-			ecspi7: ecspi@0BC000 {
+			ecspi7: ecspi@BC000 {
 				#address-cells = <1>;
 				#size-cells = <0>;
 				compatible = "fsl,d4400-ecspi";
@@ -1101,7 +1101,6 @@
 							250 0x80000000	/* D4400_PAD_SPI5_MISO_ECSPI_5_MISO */
 							253 0x80000000	/* D4400_PAD_SPI5_CLK_ECSPI_5_CLK */
 							256 0x80000000	/* D4400_PAD_SPI5_SS0_ECSPI_5_SS_0 */
-							259 0x80000000	/* D4400_PAD_SPI5_SS1_ECSPI_5_SS_1 */
 						>;
 					};
 				};
@@ -1114,6 +1113,10 @@
 							271 0x80000000	/* D4400_PAD_SPI6_CLK_ECSPI_6_CLK */
 							275 0x80000000	/* D4400_PAD_SPI6_SS0_ECSPI_6_SS_0 */
 							279 0x80000000	/* D4400_PAD_SPI6_SS1_ECSPI_6_SS_1 */
+							603 0x80000000  /*D4400_PAD_GPIOA26_ECSPI6_SS2*/
+
+							607 0x80000000  /*D4400_PAD_GPIOA27_ECSPI6_SS3*/
+
 						>;
 					};
 				};
@@ -1138,6 +1141,7 @@
 							311 0x80000000	/* D4400_PAD_SPI8_CLK_ECSPI_8_CLK */
 							316 0x80000000	/* D4400_PAD_SPI8_SS0_ECSPI_8_SS_0 */
 							321 0x80000000	/* D4400_PAD_SPI8_SS1_ECSPI_8_SS_1 */
+							496 0x80000000  /* D4400_PAD_GPIOA2_ECSPI8_SS2 */
 						>;
 					};
 				};

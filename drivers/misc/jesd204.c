@@ -645,6 +645,11 @@ static int jesd_serdes_lane_init(struct jesd_transport_dev *tdev,
 		lane_param.gen_conf.cflag = SERDES_20BIT_EN;
 	}
 
+	if (tdev->type == JESD_DEV_TX)
+		lane_param.gen_conf.cflag |= SERDES_JESD_TX;
+	else
+		lane_param.gen_conf.cflag |= SERDES_JESD_RX;
+
 	if (lane->flags & LANE_FLAGS_FIRST_LANE)
 		lane_param.gen_conf.cflag |= SERDES_FIRST_LANE;
 
@@ -918,9 +923,9 @@ static int init_rx_transport(struct jesd_transport_dev *tdev)
 		val &= ~PHYPACK_MS_OCTECT_FIRST;
 
 	if (config_flags & CONF_STRICT_CGS)
-		val |= CONF_STRICT_CGS;
+		val |= STRICT_CGS;
 	else
-		val &= ~CONF_STRICT_CGS;
+		val &= ~STRICT_CGS;
 
 	mask = STRICT_CGS | PHYORDER_MS_BIT_FIRST |
 		PHYPACK_MS_OCTECT_FIRST | SWAP_IQ;
@@ -1370,9 +1375,6 @@ static int jesd_set_ils_pram(struct jesd_transport_dev *tdev)
 	rc = config_frames_per_mf(tdev);
 	if (rc < 0)
 		goto out;
-
-	if (tdev->type == JESD_DEV_TX)
-		gcr_jesd_init();
 
 	rc = jesd_init_serdes_pll(tdev);
 	if (rc != 0 && rc != -EINVAL) {

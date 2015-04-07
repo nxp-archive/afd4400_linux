@@ -21,6 +21,9 @@
 
 #include <uapi/linux/qixis.h>
 
+extern int gcr_jesd_init(void);
+extern int gcr_jesd_en_termination(void);
+
 int qixis_jcpll_write_reg(u8 val, u16 offset);
 int qixis_jcpll_read_reg(u16 offset);
 int qixis_jcpll_freq_fixed(void);

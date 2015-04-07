@@ -288,6 +288,16 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 		(tpll_id << SRDS_LN_GCR_TPLL_LES) |
 		(tpll_id << SRDS_LN_GCR_RPLL_LES));
 
+	/* It's possible that jesd tx/rx is
+	 * running at different rate
+	 */
+	if (cflag & SERDES_JESD_TX)
+		mask = SRDS_LN_GCR_TRAT_SEL_MASK;
+	else if (cflag & SERDES_JESD_RX)
+		mask = SRDS_LN_GCR_RRAT_SEL_MASK;
+	else
+		mask = SRDS_LN_GCR_TRAT_SEL_MASK | SRDS_LN_GCR_RRAT_SEL_MASK;
+
 	/* 20 bit enable flag */
 	val |= (cflag & 0x1) << SRDS_LN_GCR_IF20BIT_EN;
 	/* First lane enable flag */
@@ -301,9 +311,7 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 		return -EINVAL;
 
 	val |= lane_param->gen_conf.lane_prot << SRDS_LN_GCR_PROTS_SEL;
-	mask = 0;
-	mask = SRDS_LN_GCR_TRAT_SEL_MASK | SRDS_LN_GCR_RRAT_SEL_MASK |
-		SRDS_LN_GCR_TPLL_LES | SRDS_LN_GCR_RPLL_LES |
+	mask |= SRDS_LN_GCR_TPLL_LES_MASK | SRDS_LN_GCR_RPLL_LES_MASK |
 		SRDS_LN_GCR_IF20BIT_EN_MASK | SRDS_LN_GCR_FIRST_LN_MASK |
 		SRDS_LN_GCR_PROTS_SEL_MASK;
 	srds_update_reg(reg, val, mask);

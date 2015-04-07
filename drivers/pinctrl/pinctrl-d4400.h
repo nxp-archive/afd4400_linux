@@ -94,4 +94,6 @@ struct d4400_pinctrl_soc_info {
 #define D4400_PAD_DDR_MASK 0x1FF
 
 int d4400_pinctrl_remove(struct platform_device *pdev);
+void d4400_pinmux_hack(int pinnum);
+
 #endif /* __DRIVERS_PINCTRL_D4400_H */

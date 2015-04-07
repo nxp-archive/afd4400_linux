@@ -92,17 +92,17 @@ static ssize_t tbgen_read(struct file *filep, char __user *buf, size_t size,
 	return rc;
 }
 
-static void tbgen_write_reg(u32 *reg, u32 val)
+static inline void tbgen_write_reg(u32 *reg, u32 val)
 {
 	iowrite32(val, reg);
 }
 
-static u32 tbgen_read_reg(u32 *reg)
+static inline u32 tbgen_read_reg(u32 *reg)
 {
 	return ioread32(reg);
 }
 
-static void tbgen_update_reg(u32 *reg, u32 val, u32 mask)
+static inline void tbgen_update_reg(u32 *reg, u32 val, u32 mask)
 {
 	u32 reg_val;
 
@@ -265,7 +265,8 @@ int validate_refclk(struct tbgen_dev *tbg, u32 ref_clk)
 int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 {
 	u32 *reg, reg_base, val, multiplier, mask;
-	unsigned long timeout;
+
+	int timeout = 0;
 	int rc = 0;
 
 	reg_base = (u32) ioremap_nocache(CCM_BASE, CCM_SIZE);
@@ -289,6 +290,7 @@ int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 	/*Reset PLL */
 	IF_DEBUG(DEBUG_TBGEN_PLL)
 		pr_info("Resetting tbgen pll\n");
+
 	timeout = jiffies + msecs_to_jiffies(PLL_TIMEOUT_MS);
 	reg = (u32 *) (reg_base + CCMCR2);
 	val = TPLL_HRESET;
@@ -301,7 +303,8 @@ int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 			ERR(" Timed out waiting for tbgen pll to reset\n");
 			rc  = -EBUSY;
 			goto out;
-		}
+		} else
+			schedule_timeout_interruptible(1);
 	}
 	/* Reconfig */
 	IF_DEBUG(DEBUG_TBGEN_PLL)
@@ -329,20 +332,27 @@ int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 	tbgen_update_reg(reg, val, mask);
 
 	reg = (u32 *) (reg_base + TPLLLKSR);
-	timeout = jiffies + msecs_to_jiffies(PLL_TIMEOUT_MS);
-	val = ioread32(reg);
-	while (!(val & TPLL_LOCKED)) {
+
+	timeout = 0;
+	while (1) {
 		val = ioread32(reg);
-		if (jiffies > timeout) {
-			ERR(" Timed out waiting for tbgen pll to lock\n");
-			rc  = -EBUSY;
-			goto out;
+		if (val & TPLL_LOCKED)
+			break;
+		else {
+			schedule_timeout_interruptible(1);
+			if (timeout++ > PLL_TIMEOUT_MS) {
+				ERR("TPLL fail to lock\n");
+				rc = -EBUSY;
+				goto out;
+			}
 		}
 	}
+
 	IF_DEBUG(DEBUG_TBGEN_PLL)
 		pr_info("Tbgen pll is locked at %d KHz  LKSR=0x%x\n",
 			pll_params->refclk_khz, val);
 out:
+	iounmap((__iomem void *)reg_base);
 	return rc;
 }
 

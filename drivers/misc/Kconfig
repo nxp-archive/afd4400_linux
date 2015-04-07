@@ -549,13 +549,6 @@ config VSPA
 	 The VSPA kernel driver is the part of user space library providing
 	 primitives for the VSPA driver in user space
 
-config AD9368
-	tristate "AD9368 RFIC driver"
-	depends on SPI
-	help
-	 Support for AD9368-1 (RF reciever) AD9368-2 (RF tranceiver) RFICs
-	 from Analog devices.
-
 config AD9525
 	tristate "AD9525 PLL driver"
 	depends on SPI
@@ -567,7 +560,8 @@ config XCVR
 	depends on SPI
 	help
 	Support for AD9368-1 (RF reciever) AD9368-2 (RF tranceiver),
-	 AD9525 (Clock Gen) RFICs from Analog devices.
+	 AD9525 (Clock Gen) RFICs from Analog devices (ROC card) and
+	 the wideband card from FSL.
 
 config GCR_DEV
 	tristate "GCR Configuration support "

@@ -180,18 +180,30 @@ void gcr_sync_update(u32 mask, u32 val)
 EXPORT_SYMBOL_GPL(gcr_sync_update);
 
 
-void gcr_jesd_init(void)
+int gcr_jesd_init(void)
 {
 	u32 val;
+
+	if (!priv)
+		return -EPROBE_DEFER;
 
 	val = TPD_BGR_EN;
 	scm_reg_write(val, 72);
 	val = TBGEN_E0_E1_EN;
 	scm_reg_write(val, 7);
-
-	return;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(gcr_jesd_init);
+
+int gcr_jesd_en_termination(void)
+{
+	if (!priv)
+		return -EPROBE_DEFER;
+
+	scm_reg_write(0xFFFFFFFF, 75);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(gcr_jesd_en_termination);
 
 static u32 cpri_conf_val(enum dma_channel_id_t chan_id, u8 cpri_chan,
 			enum cpri_core_info cpri_framert_id,
