@@ -25,8 +25,9 @@
 #error "Do not include directly."
 #endif
 
-#define D4400_CHIP_REVISION_1_0		0x10
-#define D4400_CHIP_REVISION_UNKNOWN	0xff
+#define D4400_SILICON_REVISION_1_0		0x10
+#define D4400_SILICON_REVISION_1_1		0x11
+#define D4400_SILICON_REVISION_UNKNOWN		0xff
 
 #ifndef __ASSEMBLY__
 extern unsigned int __d4400_cpu_type;

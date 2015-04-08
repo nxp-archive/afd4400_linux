@@ -47,7 +47,7 @@ void d4400_set_reboot_method(int method)
 	reboot_method = method;
 }
 
-static int d4400_revision(void)
+int d4400_silicon_revision(void)
 {
 	struct device_node *np;
 	void __iomem *base;
@@ -56,11 +56,11 @@ static int d4400_revision(void)
 	if (!rev) {
 		np = of_find_compatible_node(NULL, NULL, "fsl,d4400-iim");
 		if (!np)
-			return D4400_CHIP_REVISION_UNKNOWN;
+			return D4400_SILICON_REVISION_UNKNOWN;
 		base = of_iomap(np, 0);
 		if (!base) {
 			of_node_put(np);
-			return D4400_CHIP_REVISION_UNKNOWN;
+			return D4400_SILICON_REVISION_UNKNOWN;
 		}
 		rev =  readl_relaxed(base + D4400_SILICON_REVISION_REG);
 		iounmap(base);
@@ -69,9 +69,11 @@ static int d4400_revision(void)
 
 	switch (rev & 0xff) {
 	case 0x10:
-		return D4400_CHIP_REVISION_1_0;
+		return D4400_SILICON_REVISION_1_0;
+	case 0x11:
+		return D4400_SILICON_REVISION_1_1;
 	default:
-		return D4400_CHIP_REVISION_UNKNOWN;
+		return D4400_SILICON_REVISION_UNKNOWN;
 	}
 }
 
@@ -156,10 +158,10 @@ static const struct of_device_id d4400_irq_match[] __initconst = {
 
 static void __init d4400_init_irq(void)
 {
-	/*
-	 * Reducing cache ways to 8
-	 */
-	l2x0_of_init(0, 0xFFFEFFFF);
+	if (D4400_SILICON_REVISION_1_0 == d4400_silicon_revision())
+		l2x0_of_init(0, 0xFFFEFFFFUL); /* only use half L2 cache */
+	else
+		l2x0_of_init(0, ~0UL);
 	of_irq_init(d4400_irq_match);
 	d4400_clock_map_io();
 }
@@ -168,7 +170,7 @@ static void __init d4400_timer_init(void)
 {
 	d4400_scm_init();
 	d4400_clocks_init();
-	d4400_print_silicon_rev("D4400", d4400_revision());
+	d4400_print_silicon_rev("D4400", d4400_silicon_revision());
 }
 static void __init d4400_init_machine(void)
 {

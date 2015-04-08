@@ -9,7 +9,10 @@
 #ifndef __ASM_ARCH_D4400_MACH_D4400_H__
 #define __ASM_ARCH_D4400_MACH_D4400_H__
 
+#include "../../hardware.h"
+
 extern void d4400_set_reboot_method(int method);
 extern int d4400_query_reboot_method(void);
+extern int d4400_silicon_revision(void);
 
 #endif
