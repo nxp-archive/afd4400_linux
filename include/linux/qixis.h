@@ -24,6 +24,10 @@
 extern int gcr_jesd_init(void);
 extern int gcr_jesd_en_termination(void);
 
+int qixis_board_type(void);
+const char *qixis_board_type_name(void);
+int qixis_board_rev(void);
+char qixis_board_rev_letter(void);
 int qixis_jcpll_write_reg(u8 val, u16 offset);
 int qixis_jcpll_read_reg(u16 offset);
 int qixis_jcpll_freq_fixed(void);

@@ -261,6 +261,33 @@ static int qixis_jcpll_init(void)
 	return 0;
 }
 
+int qixis_board_type(void)
+{
+	return qixis_board_info.board_type;
+}
+
+const char *qixis_board_type_name(void)
+{
+	int brd = qixis_board_info.board_type + 1;
+	if (brd > (sizeof(board_names)/sizeof(char *)))
+		brd = 0;
+	return board_names[brd];
+}
+
+int qixis_board_rev(void)
+{
+	return qixis_board_info.board_rev;
+}
+
+char qixis_board_rev_letter(void)
+{
+	char rev = qixis_board_info.board_rev < 0 ? '?' :
+		(qixis_board_info.board_type == QIXIS_BOARD_TYPE_D4400RDB ?
+			rdb_rev_letter[qixis_board_info.board_rev] :
+			qixis_board_info.board_rev + 'A');
+	return rev;
+}
+
 int qixis_xcvr_present(int xcvr_id)
 {
 	int mask;
@@ -522,30 +549,25 @@ EXPORT_SYMBOL(qixis_jcpll_use_refc);
 static ssize_t show_board_type(struct device *dev,
 			struct device_attribute *devattr, char *buf)
 {
-	return sprintf(buf, "%d\n", qixis_board_info.board_type);
+	return sprintf(buf, "%d\n", qixis_board_type());
 }
 
 static ssize_t show_board_rev(struct device *dev,
 			struct device_attribute *devattr, char *buf)
 {
-	return sprintf(buf, "%d\n", qixis_board_info.board_rev);
+	return sprintf(buf, "%d\n", qixis_board_rev());
 }
 
 static ssize_t show_board_type_name(struct device *dev,
 			struct device_attribute *devattr, char *buf)
 {
-	int brd = qixis_board_info.board_type + 1;
-	if (brd > (sizeof(board_names)/sizeof(char *)))
-		brd = 0;
-	return sprintf(buf, "%s\n", board_names[brd]);
+	return sprintf(buf, "%s\n", qixis_board_type_name());
 }
 
 static ssize_t show_board_rev_name(struct device *dev,
 			struct device_attribute *devattr, char *buf)
 {
-	char rev = qixis_board_info.board_rev < 0 ? '?' :
-					qixis_board_info.board_rev + 'A';
-	return sprintf(buf, "Rev %c\n", rev);
+	return sprintf(buf, "Rev %c\n", qixis_board_rev_letter());
 }
 
 static ssize_t show_leds(struct device *dev,
@@ -724,8 +746,6 @@ static int __init d4400_fpga_probe(struct platform_device *pdev)
 	int err = 0;
 	struct device *device = NULL;
 	u8 reg0, reg1;
-	int brd;
-	char rev;
 
 	mutex_init(&qixis_lock);
 
@@ -812,15 +832,8 @@ static int __init d4400_fpga_probe(struct platform_device *pdev)
 		}
 	}
 
-	brd = qixis_board_info.board_type + 1;
-	if (brd > (sizeof(board_names)/sizeof(char *)))
-		brd = 0;
-	rev = qixis_board_info.board_rev < 0 ? '?' :
-		(qixis_board_info.board_type == QIXIS_BOARD_TYPE_D4400RDB ?
-			rdb_rev_letter[qixis_board_info.board_rev] :
-			qixis_board_info.board_rev + 'A');
-	dev_info(&pdev->dev,
-		"QIXIS board type: %s, rev %c\n", board_names[brd], rev);
+	dev_info(&pdev->dev, "QIXIS board type: %s, rev %c\n",
+		 qixis_board_type_name(), qixis_board_rev_letter());
 
 	if (qixis_board_info.board_type == QIXIS_BOARD_TYPE_D4400EVB) {
 		dev_info(&pdev->dev,
