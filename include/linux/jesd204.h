@@ -235,6 +235,7 @@ struct config_registers_rx {
 #define PHYPACK_MS_OCTECT_FIRST	(1 << 9)
 #define PHYORDER_MS_BIT_FIRST	(1 << 8)
 #define STRICT_CGS		(1 << 19)
+#define RCBUF_UNDERFLOW_PROTECT	(1 << 18)
 
 /* Tn_Lane_enable */
 #define LANE_EN_MASK		0xff

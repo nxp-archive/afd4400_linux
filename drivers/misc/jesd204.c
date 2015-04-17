@@ -927,10 +927,17 @@ static int init_rx_transport(struct jesd_transport_dev *tdev)
 	else
 		val &= ~STRICT_CGS;
 
-	mask = STRICT_CGS | PHYORDER_MS_BIT_FIRST |
-		PHYPACK_MS_OCTECT_FIRST | SWAP_IQ;
-	jesd_update_reg(reg, val, mask);
+	/* This flag needed for rx rate > 307msps */
+	if (config_flags & CONF_RCBUF_UNDERFLOW_PROTECT)
+		val |= RCBUF_UNDERFLOW_PROTECT;
+	else
+		val &= ~RCBUF_UNDERFLOW_PROTECT;
 
+	mask = STRICT_CGS | PHYORDER_MS_BIT_FIRST |
+		PHYPACK_MS_OCTECT_FIRST | SWAP_IQ |
+		RCBUF_UNDERFLOW_PROTECT;
+
+	jesd_update_reg(reg, val, mask);
 	return rc;
 }
 

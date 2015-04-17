@@ -291,20 +291,25 @@ int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 	IF_DEBUG(DEBUG_TBGEN_PLL)
 		pr_info("Resetting tbgen pll\n");
 
-	timeout = jiffies + msecs_to_jiffies(PLL_TIMEOUT_MS);
 	reg = (u32 *) (reg_base + CCMCR2);
 	val = TPLL_HRESET;
 	mask = TPLL_HRESET;
 	tbgen_update_reg(reg, val, mask);
-	val = ioread32(reg);
-	while (!(val & TPLL_HRESET_STAT)) {
-		val = ioread32(reg);
-		if (jiffies > timeout) {
-			ERR(" Timed out waiting for tbgen pll to reset\n");
-			rc  = -EBUSY;
-			goto out;
-		} else
+
+	timeout = 0;
+	while (1) {
+		if (ioread32(reg) & TPLL_HRESET_STAT)
+			break;
+		else {
+
 			schedule_timeout_interruptible(1);
+			if (timeout++ > PLL_TIMEOUT_MS) {
+				ERR("tbgen pll reset timeout\n");
+				rc  = -EBUSY;
+				goto out;
+			}
+		}
+
 	}
 	/* Reconfig */
 	IF_DEBUG(DEBUG_TBGEN_PLL)
@@ -335,8 +340,7 @@ int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 
 	timeout = 0;
 	while (1) {
-		val = ioread32(reg);
-		if (val & TPLL_LOCKED)
+		if (ioread32(reg) & TPLL_LOCKED)
 			break;
 		else {
 			schedule_timeout_interruptible(1);

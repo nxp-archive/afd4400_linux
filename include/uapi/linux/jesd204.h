@@ -80,6 +80,7 @@ struct jesd_dev_params {
 #define CONF_PHY_MS_OCTET_FIRST_EN	(1 << 6)
 #define CONF_PHY_ORDER_MS_BIT_FIRST_EN	(1 << 7)
 #define CONF_STRICT_CGS			(1 << 8)
+#define CONF_RCBUF_UNDERFLOW_PROTECT	(1 << 9)
 #define CONF_PHYGASKET_LOOPBACK_EN	(1 << 16)
 #define CONF_SERDES_LOOPBACK_EN		(1 << 17)
 /** @brief \struct ils params
