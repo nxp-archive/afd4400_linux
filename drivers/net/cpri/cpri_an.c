@@ -173,7 +173,6 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 	else {
 		serdes_jcpll_enable(framer->serdes_handle, &lane_param,
 			&pll_param);
-		gcr_sync_update(BGR_EN_TX10_SYNC, BGR_EN_TX10_SYNC);
 		d4400_rev_clk_select(SERDES_PLL_1, REV_CLK_DIV_1);
 		qixis_jcpll_freq_track();
 

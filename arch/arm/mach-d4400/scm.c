@@ -164,22 +164,6 @@ void gcr_linkrate_autoneg_reset(unsigned char cpri_id)
 }
 EXPORT_SYMBOL_GPL(gcr_linkrate_autoneg_reset);
 
-void gcr_sync_update(u32 mask, u32 val)
-{
-	struct gcr_reg_map *gcr;
-	u32 value = 0;
-	unsigned char gcr_id;
-
-	gcr_id = GCR72_SYNC_CTRL;
-	gcr = priv->gcr_reg;
-	value = scm_reg_read(gcr_id);
-	value &= ~mask;
-	value |= val;
-	scm_reg_write(value, gcr_id);
-}
-EXPORT_SYMBOL_GPL(gcr_sync_update);
-
-
 int gcr_jesd_init(void)
 {
 	u32 val;
@@ -187,8 +171,6 @@ int gcr_jesd_init(void)
 	if (!priv)
 		return -EPROBE_DEFER;
 
-	val = TPD_BGR_EN;
-	scm_reg_write(val, 72);
 	val = TBGEN_E0_E1_EN;
 	scm_reg_write(val, 7);
 	return 0;
