@@ -43,6 +43,7 @@
 #include <mach/src.h>
 #include <linux/of_i2c.h>
 #include <linux/xcvr_if.h>
+#include <linux/qixis.h>
 
 /* Debug and error reporting macros */
 #define IF_DEBUG(x) if (xcvrif_dev_data->debug & (x))
@@ -56,6 +57,26 @@ static struct of_device_id xcvrif_match[] = {
 };
 
 struct xcvrif_dev *xcvrif_dev_data;
+
+static int xcvrif_ipmi_str_copy(struct platform_device *pdev,
+	char *node_str, char **ipmi_str)
+{
+	int ret = 0;
+	const char *str;
+
+	if (of_property_read_string_index(pdev->dev.of_node, node_str,
+		0, &str))
+		return -ENODEV;
+
+	*ipmi_str = kzalloc(strlen(str), GFP_KERNEL);
+
+	if (!*ipmi_str)
+		return -ENOMEM;
+	strcpy(*ipmi_str, str);
+
+	return ret;
+}
+
 static int xcvrif_ipmi_match_str(struct platform_device *pdev,
 	char *node_str, char *ipmi_str)
 {
@@ -165,6 +186,50 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 out:
 	ipmi_free(ipmi);
 	kfree(ipmi);
+	return NULL;
+}
+
+static struct ipmi_info *xcvrif_manual_detect(int id,
+	struct platform_device *pdev)
+{
+	int ret;
+	u32 fmc_conn;
+	struct ipmi_info *ipmi = NULL;
+
+	if (of_property_read_u32(pdev->dev.of_node, "connector-fmc",
+		&fmc_conn)) {
+		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: connector-fmc property not found\n",
+			id);
+		goto out0;
+	}
+
+	/* FMC connector number starts at 1, do -1 for zero based numbering.
+	 * Possible values for presents detect is 0 (fmc1) or 1 (fmc2).
+	 * For wideband board which uses two fmc connectors and have fmc value
+	 * of 3, presents detect will fail.  This is OK because EVB revA does
+	 * not support wideband board.
+	 */
+	if (!qixis_xcvr_present(fmc_conn-1))
+		goto out0;
+
+	/* A card is present in connector, manually filled IPMI info */
+	ipmi = kzalloc(sizeof(struct ipmi_info), GFP_KERNEL);
+	if (!ipmi) {
+		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: Failed to allocate %d bytes for IPMI info\n",
+			id, sizeof(struct ipmi_info));
+		goto out0;
+	}
+	ret = xcvrif_ipmi_str_copy(pdev, "ipmi-mfg-str", &ipmi->board.mfg_str);
+	ret |= xcvrif_ipmi_str_copy(pdev, "ipmi-name-str", &ipmi->board.name_str);
+
+	if (ret)
+		goto out1;
+
+	return ipmi;
+out1:
+	ipmi_free(ipmi);
+	kfree(ipmi);
+out0:
 	return NULL;
 }
 
@@ -321,9 +386,10 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 	struct device_node *child)
 {
 	int ret = 0;
+	int use_ipmi = 0;
 	struct platform_device *pxcvr_dev = NULL;
 	struct xcvr_obj *xcvr_new;
-	struct ipmi_info *ipmi;
+	struct ipmi_info *ipmi = NULL;
 
 	/* platform_drv_name must contain a string that matches with
 	 * the driver's platform_driver.driver.name property.  The
@@ -332,7 +398,20 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 	pxcvr_dev = platform_device_alloc(platform_drv_name, id);
 	if (pxcvr_dev) {
 		pxcvr_dev->dev.of_node = child;
-		ipmi = xcvrif_verify_ipmi_info(id, pxcvr_dev);
+
+		/* Verify IPMI info only if xcvr eeprom is powered which is
+		 * dependent on board rev.
+		 */
+		if (qixis_xcvr_eeprom_power()) {
+			ipmi = xcvrif_verify_ipmi_info(id, pxcvr_dev);
+		} else {
+			/* Using fallback method to detect xcvr card by
+			 * gpio signal detection.
+			 */
+			ipmi = xcvrif_manual_detect(id, pxcvr_dev);
+			use_ipmi = 1;
+		}
+
 		if (!ipmi) {
 			/* Do not print error mesg because the xcvr card may not be
 			 * installed and thus eeprom read failed.  This is not an
@@ -353,8 +432,12 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 			xcvr_new->drv_name = platform_drv_name;
 			list_add_tail(&xcvr_new->list,
 				&xcvrif_dev_data->headlist);
-			pr_info(XCVRIF_MOD_NAME ": Xcvr%i IPMI data matched, driver loaded\n",
-				id);
+			if (!use_ipmi)
+				pr_info(XCVRIF_MOD_NAME ": Xcvr%i IPMI data matched, driver loaded\n",
+					id);
+			else
+				pr_info(XCVRIF_MOD_NAME ": Xcvr%i card detected, driver loaded\n",
+					id);
 		}
 	} else {
 		ret = -ENOMEM;

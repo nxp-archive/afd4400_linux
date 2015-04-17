@@ -339,6 +339,17 @@ static u8 reverse_byte(u8 byte)
 	return tmp;
 }
 
+int qixis_xcvr_eeprom_power(void)
+{
+	/* EVB revA board does not route power to eeprom on transceiver
+	 * board.
+	 */
+	if ((qixis_board_type()== QIXIS_BOARD_TYPE_D4400EVB) &&
+		(qixis_board_rev() == QIXIS_BOARD_REV_A))
+		return 0;
+	return 1;
+}
+
 int qixis_leds_set_clear(unsigned int set, unsigned int clear)
 {
 	u8 leds;
