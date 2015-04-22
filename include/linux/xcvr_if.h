@@ -39,6 +39,15 @@ struct xcvrif_dev {
 	u32			debug;
 };
 
+struct xcvr_i2c_eeprom {
+	u8			addr;
+	int			pagesize;
+	int			bytesize;
+	/* Number of bytes for mem address */
+	int			addrlen;
+	struct i2c_client	*client;
+};
+
 struct xcvr_obj {
 	int			index;
 	const char		*drv_name;
@@ -50,6 +59,7 @@ struct xcvr_obj {
 	struct device_node	*node;
 	struct list_head	list;
 	struct ipmi_info	*ipmi;
+	struct xcvr_i2c_eeprom	*eeprom;
 };
 
 #endif /* __LINUX_XCVR_IF_H */

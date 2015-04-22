@@ -104,16 +104,16 @@ static int xcvrif_ipmi_match_str(struct platform_device *pdev,
 	return matched;
 }
 
-static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
-	struct platform_device *pdev)
+static struct xcvr_i2c_eeprom *xcvrif_get_eeprom_info(
+	int id, struct platform_device *pdev)
 {
-	int ret = 0, i;
 	struct device_node *eeprom_node;
 	struct i2c_client *eeprom_client;
-	u32 eeprom_addr;
-	u8 ipmi_rawbuf[IPMI_EEPROM_DATA_SIZE];
-	int matched;
-	struct ipmi_info *ipmi = NULL;
+	struct xcvr_i2c_eeprom *eeprom;
+	u32 addr;
+	u32 pagesize;
+	u32 bytesize;
+	u32 addrlen;
 
 	eeprom_node = of_parse_phandle(pdev->dev.of_node, "eeprom-handle", 0);
 	if (!eeprom_node) {
@@ -130,29 +130,131 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 	}
 
 	if (of_property_read_u32(pdev->dev.of_node, "eeprom-addr",
-		&eeprom_addr)) {
+		&addr)) {
 		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: eeprom-addr property not found\n",
 			id);
 		goto out;
 	}
-	eeprom_client->addr = eeprom_addr;
 
-	/* Read IPMI raw data */
-	memset(ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
-	for (i = 0; i < IPMI_EEPROM_DATA_SIZE; i += I2C_SMBUS_BLOCK_MAX) {
-		int rd;
-		rd = i2c_smbus_read_i2c_block_data(eeprom_client, i,
-			I2C_SMBUS_BLOCK_MAX, &ipmi_rawbuf[i]);
-		if (rd != I2C_SMBUS_BLOCK_MAX) {
-			/* pr_err("%i IPMI: Failed to read xcvr eeprom\n", id); */
-			goto out;
-		}
+	if (of_property_read_u32(pdev->dev.of_node, "eeprom-bytesize",
+		&bytesize)) {
+		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: eeprom-bytesize property not found\n",
+			id);
+		goto out;
 	}
+
+	if (of_property_read_u32(pdev->dev.of_node, "eeprom-pagesize",
+		&pagesize)) {
+		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: eeprom-bytesize property not found\n",
+			id);
+		goto out;
+	}
+
+	/* Determine how many address bytes are needed: 1 or 2 bytes.
+	 * Note that large eeproms that need more than 16 address bits
+	 * use bits in the control byte (i2c slave address byte) to extend
+	 * the address bits.  For example, 128K byte eeprom (17 addr bits
+	 * needed) uses 2 byte address plus 1 bit in the control reg.
+         */
+	if (bytesize > 256)
+		/* Two addr bytes needed */
+		addrlen = 2;
+	else
+		addrlen = 1;
+
+	eeprom = kzalloc(sizeof(struct xcvr_i2c_eeprom), GFP_KERNEL);
+	if (!eeprom) {
+		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: Failed to allocate %d bytes for eeprom info\n",
+			id, sizeof(struct xcvr_i2c_eeprom));
+		goto out;
+	}
+	eeprom->client = eeprom_client;
+	eeprom->addr = addr;
+	eeprom->pagesize = pagesize;
+	eeprom->bytesize = bytesize;
+	eeprom->addrlen = addrlen;
+
+	return eeprom;
+out:
+	return NULL;
+}
+
+static int eeprom_read(struct xcvr_i2c_eeprom *eeprom,
+	u8 *buf, int start_addr, int num)
+{
+	int ret = 0;
+	struct i2c_msg msgs[2];
+	int addr;
+	int eeprom_addr = eeprom->addr;
+
+	/* TODO: Add ability to do page boundary crossing such as
+	 * r/w from one 64K page that extends to the next 64K page.
+	 */
+
+	if ((!eeprom) || (!buf))
+		return ret;
+
+	if (eeprom->addrlen > 1) {
+		/* Major mfg of eeproms expect MSB of 16-bit address first
+		 * followed by LSB.  Any address bits beyond 16-bit is put
+		 * in the slave address byte (bits b[1:0] location).
+		 */
+		addr  = (start_addr & 0xff00) >> 8;
+		addr |= (start_addr & 0x00ff) << 8;
+
+		if (eeprom->bytesize > (64 * 1024)) {
+			/* Slave addr b[0] is addr bit A17 */
+			eeprom_addr &= ~0x01;
+			eeprom_addr |= ((start_addr & 0x10000) >> 16);
+		}
+		if (eeprom->bytesize > (256 * 1024)) {
+			/* Slave addr b[1] is addr bit A18 */
+			eeprom_addr &= ~0x02;
+			eeprom_addr |= ((start_addr & 0x20000) >> 16);
+		}
+	} else
+		addr = start_addr & 0x00ff;
+
+	/* Write the address to read */
+	msgs[0].addr = eeprom_addr;
+	msgs[0].flags = 0;
+	msgs[0].len = eeprom->addrlen;
+	msgs[0].buf = (u8 *)&addr;
+
+	/* Read the entire IPMI info */
+	msgs[1].addr = eeprom_addr;
+	msgs[1].flags = I2C_M_RD,
+	msgs[1].len = IPMI_EEPROM_DATA_SIZE,
+	msgs[1].buf = buf,
+
+	/* Number of msgs processed is returned, neg if error */
+	ret = i2c_transfer(eeprom->client->adapter, msgs, 2);
+	if (ret != 2)
+		ret = -ENODEV;
+	else
+		ret = 0;
+	return ret;
+}
+
+static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
+	struct platform_device *pdev,
+	struct xcvr_i2c_eeprom *eeprom)
+{
+	int ret = 0;
+	int matched;
+	u8 ipmi_rawbuf[IPMI_EEPROM_DATA_SIZE];
+	struct ipmi_info *ipmi = NULL;
+
+	memset(ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
+	ret = eeprom_read(eeprom, ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
+	if (ret)
+		goto out0;
+
 	ipmi = kzalloc(sizeof(struct ipmi_info), GFP_KERNEL);
 	if (!ipmi) {
 		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: Failed to allocate %d bytes for IPMI info\n",
 			id, sizeof(struct ipmi_info));
-		goto out;
+		goto out0;
 	}
 
 	/* Create IPMI info */
@@ -160,7 +262,7 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 	if (ret) {
 		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: Failed to find valid IPMI information\n",
 			id);
-		goto out;
+		goto out1;
 	}
 	pr_info("IPMI Xcvr%i board mfg   :  %s\n",
 		id, ipmi->board.mfg_str);
@@ -172,20 +274,21 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 	if (!matched) {
 		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: Info valid but no mfg name match found in dts\n",
 			id);
-		goto out;
+		goto out1;
 	}
 	matched = xcvrif_ipmi_match_str(pdev, "ipmi-name-str",
 		ipmi->board.name_str);
 	if (!matched) {
 		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: Info valid but no board name match found in dts\n",
 			id);
-		goto out;
+		goto out1;
 	}
 	return ipmi;
 
-out:
+out1:
 	ipmi_free(ipmi);
 	kfree(ipmi);
+out0:
 	return NULL;
 }
 
@@ -193,7 +296,7 @@ static struct ipmi_info *xcvrif_manual_detect(int id,
 	struct platform_device *pdev)
 {
 	int ret;
-	u32 fmc_conn;
+	u32 fmc_conn, fmc_occupied;
 	struct ipmi_info *ipmi = NULL;
 
 	if (of_property_read_u32(pdev->dev.of_node, "connector-fmc",
@@ -205,11 +308,20 @@ static struct ipmi_info *xcvrif_manual_detect(int id,
 
 	/* FMC connector number starts at 1, do -1 for zero based numbering.
 	 * Possible values for presents detect is 0 (fmc1) or 1 (fmc2).
-	 * For wideband board which uses two fmc connectors and have fmc value
-	 * of 3, presents detect will fail.  This is OK because EVB revA does
-	 * not support wideband board.
 	 */
-	if (!qixis_xcvr_present(fmc_conn-1))
+	fmc_occupied =  (qixis_xcvr_present(0) << 0);
+	fmc_occupied |= (qixis_xcvr_present(1) << 1);
+
+	/* Possible values for connector-fmc is: 1-fmc1, 2-fmc2,
+	 * 3-fmc1 and fmc2. If card requires both connectors, then skip since
+	 * revA does not support anything that occupies two connectors at the
+	 * same time.  This implies two ADI cards are not supported.  Jesd
+	 * loopback board occupies two fmc also but no driver is needed.
+	 */
+	if ((fmc_conn >= 3) || (fmc_occupied == 3))
+		goto out0;
+
+	if (!(fmc_conn & fmc_occupied))
 		goto out0;
 
 	/* A card is present in connector, manually filled IPMI info */
@@ -220,7 +332,8 @@ static struct ipmi_info *xcvrif_manual_detect(int id,
 		goto out0;
 	}
 	ret = xcvrif_ipmi_str_copy(pdev, "ipmi-mfg-str", &ipmi->board.mfg_str);
-	ret |= xcvrif_ipmi_str_copy(pdev, "ipmi-name-str", &ipmi->board.name_str);
+	ret |= xcvrif_ipmi_str_copy(pdev, "ipmi-name-str",
+		&ipmi->board.name_str);
 
 	if (ret)
 		goto out1;
@@ -245,9 +358,12 @@ static void xcvrif_list_remove(struct list_head *headlist)
 	}
 }
 
-struct xcvr_obj *xcvrif_add_dev(struct platform_device *pxcvr_dev,
-	struct device_node *xcvr_node, struct xcvrif_dev *parent,
-	struct ipmi_info *ipmi, int index)
+struct xcvr_obj *xcvrif_add_dev(int index,
+	struct platform_device *pxcvr_dev,
+	struct device_node *xcvr_node,
+	struct xcvrif_dev *parent,
+	struct ipmi_info *ipmi,
+	struct xcvr_i2c_eeprom *eeprom)
 {
 	struct xcvr_obj *xcvr = NULL;
 
@@ -267,6 +383,7 @@ struct xcvr_obj *xcvrif_add_dev(struct platform_device *pxcvr_dev,
 		xcvr->pdev = pxcvr_dev;
 		xcvr->parent = parent;
 		xcvr->ipmi = ipmi;
+		xcvr->eeprom = eeprom;
 	}
 out1:
 	return xcvr;
@@ -390,6 +507,7 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 	struct platform_device *pxcvr_dev = NULL;
 	struct xcvr_obj *xcvr_new;
 	struct ipmi_info *ipmi = NULL;
+	struct xcvr_i2c_eeprom *eeprom = NULL;
 
 	/* platform_drv_name must contain a string that matches with
 	 * the driver's platform_driver.driver.name property.  The
@@ -403,7 +521,11 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 		 * dependent on board rev.
 		 */
 		if (qixis_xcvr_eeprom_power()) {
-			ipmi = xcvrif_verify_ipmi_info(id, pxcvr_dev);
+			/* Get properties of the eeprom */
+			eeprom = xcvrif_get_eeprom_info(id, pxcvr_dev);
+			if (!eeprom)
+				goto out_pdev;
+			ipmi = xcvrif_verify_ipmi_info(id, pxcvr_dev, eeprom);
 		} else {
 			/* Using fallback method to detect xcvr card by
 			 * gpio signal detection.
@@ -413,17 +535,17 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 		}
 
 		if (!ipmi) {
-			/* Do not print error mesg because the xcvr card may not be
-			 * installed and thus eeprom read failed.  This is not an
-			 * actual error.
+			/* Do not print error mesg because the xcvr card may
+			 * not be installed and thus eeprom read failed.  This
+			 * is not an actual error.
 			 */
 			ret = -ENODEV;
 			goto out_pdev;
 		}
 		if (!platform_device_add(pxcvr_dev)) {
 			/* Init the device data */
-			xcvr_new = xcvrif_add_dev(pxcvr_dev, child,
-				xcvrif_dev_data, ipmi, id);
+			xcvr_new = xcvrif_add_dev(id, pxcvr_dev, child,
+				xcvrif_dev_data, ipmi, eeprom);
 			if (!xcvr_new) {
 				pr_err(XCVRIF_MOD_NAME ": Error adding xcvr device\n");
 				ret = -ENODEV;
@@ -487,6 +609,10 @@ static int xcvrif_probe(struct platform_device *pdev)
 			/* Not a xcvr node, skip */
 			continue;
 		}
+
+		if (*platform_drv_name == '\0')
+			/* Platform drv name is empty, skip */
+			continue;
 
 		if (!xcvr_add_dev(cnt, platform_drv_name, child))
 			++cnt;

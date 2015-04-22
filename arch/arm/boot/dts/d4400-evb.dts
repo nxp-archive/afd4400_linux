@@ -444,6 +444,8 @@
 
 				eeprom-handle =<&xcvr_eeprom>;
 				eeprom-addr = <0x50>;
+				eeprom-pagesize = <16>;
+				eeprom-bytesize = <256>;
 				ipmi-mfg-str = "Analog Devices";
 				ipmi-name-str = "9368-2R1a,9525R0,9368-1R1a",
 					"9368-2R1a,9525,9368-1R1a";
@@ -467,6 +469,8 @@
 
 				eeprom-handle =<&xcvr_eeprom>;
 				eeprom-addr = <0x52>;
+				eeprom-pagesize = <16>;  /* One byte address */
+				eeprom-bytesize = <256>;
 				ipmi-mfg-str = "Analog Devices";
 				ipmi-name-str = "9368-2R1a,9525R0,9368-1R1a",
 					"9368-2R1a,9525,9368-1R1a";
@@ -504,6 +508,8 @@
 
 				eeprom-handle =<&xcvr_eeprom>;
 				eeprom-addr = <0x51>;
+				eeprom-pagesize = <16>;
+				eeprom-bytesize = <256>;
 				ipmi-mfg-str = "Freescale";
 				ipmi-name-str = "FSL Wideband transceiver R1.00";
 			};
