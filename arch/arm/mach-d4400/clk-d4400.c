@@ -95,6 +95,12 @@ void d4400_rev_clk_select(u8 pll_id, u8 clk_dev)
 }
 EXPORT_SYMBOL(d4400_rev_clk_select);
 
+int d4400_clk_tbgen_pll_set_rate(unsigned long rate)
+{
+	return clk_set_rate(clk[tbgen_pll], rate);
+}
+EXPORT_SYMBOL(d4400_clk_tbgen_pll_set_rate);
+
 /* vspa_id starts at 0 for first VSPA core */
 int d4400_ccm_vspa_full_pow_gate(u8 vspa_id)
 {

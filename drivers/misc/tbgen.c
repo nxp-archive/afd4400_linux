@@ -43,6 +43,7 @@
 #include <linux/delay.h>
 #include <linux/tbgen.h>
 #include <linux/jesd204.h>
+#include <mach/mach-d4400.h>
 
 /* Debug and error reporting macros */
 #define IF_DEBUG(x)	if (tbg->debug & (x))
@@ -245,121 +246,6 @@ int validate_refclk(struct tbgen_dev *tbg, u32 ref_clk)
 	return retcode;
 }
 
-/* TODO: TPLL init to be moved to ccm */
-#define PLL_TIMEOUT_MS	100
-#define CCM_BASE	0x01094000
-#define CCM_SIZE	0x4000
-#define TPLLGSR		0x1A0
-#define TPLLLKSR	0x1B0
-#define TPLLGDCR	0x2A0
-#define CCDR2		0x00C
-#define TPLLLKDCR	0x2B0
-#define CCMCR2		0x098
-
-#define OVERRIDE_EN		(1 << 0)
-#define PLL_MULTIPLIER_SHIFT	1
-#define PLL_MULTIPLIER_MASK	0xff
-#define TPLL_HRESET		(1 << 26)
-#define TPLL_HRESET_STAT	(1 << 22)
-#define TPLL_LOCKED		(1 << 22)
-int hack_tbg_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
-{
-	u32 *reg, reg_base, val, multiplier, mask;
-
-	int timeout = 0;
-	int rc = 0;
-
-	reg_base = (u32) ioremap_nocache(CCM_BASE, CCM_SIZE);
-	if (!reg_base) {
-		ERR(" Pll init IO remap failed\n");
-		goto out;
-	}
-
-	switch (pll_params->refclk_khz) {
-	case REF_CLK_614MHZ:
-		multiplier = 5;
-		break;
-	case REF_CLK_983MHZ:
-		multiplier = 8;
-		break;
-	default:
-		ERR(" %d KHz: Unsupported ref clk speed\n",
-			pll_params->refclk_khz);
-		goto out;
-	}
-	/*Reset PLL */
-	IF_DEBUG(DEBUG_TBGEN_PLL)
-		pr_info("Resetting tbgen pll\n");
-
-	reg = (u32 *) (reg_base + CCMCR2);
-	val = TPLL_HRESET;
-	mask = TPLL_HRESET;
-	tbgen_update_reg(reg, val, mask);
-
-	timeout = 0;
-	while (1) {
-		if (ioread32(reg) & TPLL_HRESET_STAT)
-			break;
-		else {
-
-			schedule_timeout_interruptible(1);
-			if (timeout++ > PLL_TIMEOUT_MS) {
-				ERR("tbgen pll reset timeout\n");
-				rc  = -EBUSY;
-				goto out;
-			}
-		}
-
-	}
-	/* Reconfig */
-	IF_DEBUG(DEBUG_TBGEN_PLL)
-		pr_info("Tbgen pll stopped, reconfiguring\n");
-	reg = (u32 *) (reg_base + TPLLGDCR);
-	val = (multiplier & PLL_MULTIPLIER_MASK) << PLL_MULTIPLIER_SHIFT;
-	val |= OVERRIDE_EN;
-	if (pll_params->refclk_khz == REF_CLK_614MHZ)
-		val |= 1 << 17;
-	iowrite32(val, reg);
-
-	if (pll_params->refclk_khz == REF_CLK_614MHZ) {
-		reg = (u32 *) (reg_base + CCDR2);
-		val = ioread32(reg);
-		val &= ~((1 << 24) | (1 << 25) | (1 << 26));
-		val |= (1 << 26);
-		iowrite32(val, reg);
-		udelay(200);
-	}
-
-	/* Pll reset down, start PLL state m/c */
-	reg = (u32 *) (reg_base + CCMCR2);
-	val = ~TPLL_HRESET;
-	mask = TPLL_HRESET;
-	tbgen_update_reg(reg, val, mask);
-
-	reg = (u32 *) (reg_base + TPLLLKSR);
-
-	timeout = 0;
-	while (1) {
-		if (ioread32(reg) & TPLL_LOCKED)
-			break;
-		else {
-			schedule_timeout_interruptible(1);
-			if (timeout++ > PLL_TIMEOUT_MS) {
-				ERR("TPLL fail to lock\n");
-				rc = -EBUSY;
-				goto out;
-			}
-		}
-	}
-
-	IF_DEBUG(DEBUG_TBGEN_PLL)
-		pr_info("Tbgen pll is locked at %d KHz  LKSR=0x%x\n",
-			pll_params->refclk_khz, val);
-out:
-	iounmap((__iomem void *)reg_base);
-	return rc;
-}
-
 int tbgen_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 {
 	int retcode = 0;
@@ -381,10 +267,7 @@ int tbgen_pll_init(struct tbgen_dev *tbg, struct tbg_pll *pll_params)
 
 	tbg->refclk_khz = pll_params->refclk_khz;
 
-	/* TODO: Enable/programe TBGEN PLL using, using clk_get/enable.
-	 * For medusa programming TBGEN PLL is not required
-	 */
-	retcode = hack_tbg_pll_init(tbg, pll_params);
+	retcode = d4400_clk_tbgen_pll_set_rate(tbg->refclk_khz * 1000UL);
 	if (retcode) {
 		ERR(" Failed to initialize tbgen pll\n");
 	} else {

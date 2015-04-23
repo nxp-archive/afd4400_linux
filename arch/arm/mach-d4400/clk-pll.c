@@ -14,7 +14,9 @@
 #include <linux/clk-provider.h>
 #include <linux/io.h>
 #include <linux/slab.h>
+#include <linux/sched.h>
 #include <linux/jiffies.h>
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/gcr.h>
 
@@ -34,6 +36,9 @@ struct d4400_hw_clk_pll {
 	spinlock_t	*lock;
 };
 
+#define PLL_TIMEOUT_MS  100
+
+#define CCDR2_REG_OFFSET    0x0C
 #define CMCR2_REG_OFFSET    0x98
 #define SPLLGSR_REG_OFFSET  0x120
 #define SPLLLKSR_REG_OFFSET 0x130
@@ -41,6 +46,10 @@ struct d4400_hw_clk_pll {
 #define DPLLLKSR_REG_OFFSET 0x170
 #define TPLLGSR_REG_OFFSET  0x1A0
 #define TPLLLKSR_REG_OFFSET 0x1B0
+#define TPLLGDCR_REG_OFFSET 0x2A0
+
+#define CCDR2_DEVCLK_DIV_OFFSET	24
+#define CCDR2_DEVCLK_DIV_MASK	(0x7 << CCDR2_DEVCLK_DIV_OFFSET)
 
 #define CMCR2_PLL_SYS_HRESET (1<<24)
 #define CMCR2_PLL_DDR_HRESET (1<<25)
@@ -81,6 +90,16 @@ struct d4400_hw_clk_pll {
 #define DPLL_ACTIVE DPLL_MASK
 #define TPLL_MASK (TPLLLKSR_PLL_LKD_MASK | TPLLLKSR_LFM_LKD_MASK)
 #define TPLL_ACTIVE TPLL_MASK
+
+#define nPLLGDCR_OCLKVCOD_OFFSET  17
+#define nPLLGDCR_OCLKVCOD_MASK   (0x3<<nPLLGDCR_OCLKVCOD_OFFSET)
+#define nPLLGDCR_OCLKVCOD_DIV2   (0<<nPLLGDCR_OCLKVCOD_OFFSET)
+#define nPLLGDCR_OCLKVCOD_DIV4   (1<<nPLLGDCR_OCLKVCOD_OFFSET)
+#define nPLLGDCR_OCLKVCOD_DIV6   (2<<nPLLGDCR_OCLKVCOD_OFFSET)
+#define nPLLGDCR_OCLKVCOD_DIV8   (3<<nPLLGDCR_OCLKVCOD_OFFSET)
+#define nPLLGDCR_CFG_OFFSET  1
+#define nPLLGDCR_CFG_MASK    (0xFF<<nPLLGDCR_CFG_OFFSET)
+#define nPLLGDCR_OVERIDE_EN  (1<<0)
 
 #define to_clk_pll(_hw) container_of(_hw, struct d4400_hw_clk_pll, hw)
 
@@ -281,6 +300,71 @@ static long clk_pll_round_rate(struct clk_hw *hw, unsigned long rate,
 	return parent_rate * div + parent_rate / mfd * mfn;
 }
 
+static int clk_pll_tbgen_set_rate(struct clk_hw *hw, unsigned long rate,
+			unsigned long parent_rate)
+{
+	struct d4400_hw_clk_pll *pll = to_clk_pll(hw);
+	u32 multiplier, val;
+	unsigned long timeout;
+	unsigned long error;
+
+	/* Parent rate should be 122.88 MHz */
+	if (parent_rate != 122880000)
+		return -EBADRQC;
+
+	multiplier = (rate + parent_rate/2) / parent_rate;
+	error = rate - multiplier * parent_rate;
+	if (multiplier < 4 || multiplier > 8 || error != 0)
+		return -EBADRQC;
+
+	/* Reset TBGEN PLL */
+	val = readl(pll->ccm_base + CMCR2_REG_OFFSET);
+	val |= CMCR2_PLL_TBGEN_HRESET;
+	writel(val, pll->ccm_base + CMCR2_REG_OFFSET);
+
+	timeout = jiffies + msecs_to_jiffies(PLL_TIMEOUT_MS);
+	val = readl(pll->ccm_base + CMCR2_REG_OFFSET);
+	while (val & CMCR2_PLL_TBGEN_HRESET_STAT) {
+		if (time_is_before_jiffies(timeout))
+			return -EBUSY;
+		else
+			schedule_timeout_interruptible(1);
+		val = readl(pll->ccm_base + CMCR2_REG_OFFSET);
+	}
+
+	/* Reconfigure */
+	val = (multiplier << nPLLGDCR_CFG_OFFSET) | nPLLGDCR_OVERIDE_EN;
+	if (rate >= 600100000UL)
+		val |= nPLLGDCR_OCLKVCOD_DIV4;
+	else
+		val |= nPLLGDCR_OCLKVCOD_DIV6;
+	writel(val, pll->ccm_base + TPLLGDCR_REG_OFFSET);
+
+	val = readl(pll->ccm_base + CCDR2_REG_OFFSET);
+	val = (val & (~CCDR2_DEVCLK_DIV_MASK)) |
+	      ((multiplier - 1) << CCDR2_DEVCLK_DIV_OFFSET);
+	writel(val, pll->ccm_base + CCDR2_REG_OFFSET);
+
+	udelay(200);
+
+	/* Restart TBGEN PLL */
+	val = readl(pll->ccm_base + CMCR2_REG_OFFSET);
+	val &= ~CMCR2_PLL_TBGEN_HRESET;
+	writel(val, pll->ccm_base + CMCR2_REG_OFFSET);
+
+	timeout = jiffies + msecs_to_jiffies(PLL_TIMEOUT_MS);
+	val = readl(pll->ccm_base + TPLLLKSR_REG_OFFSET);
+	while (!(val & TPLLLKSR_PLL_LKD_MASK)) {
+		if (time_is_before_jiffies(timeout))
+			return -EBUSY;
+		else
+			schedule_timeout_interruptible(1);
+		val = readl(pll->ccm_base + TPLLLKSR_REG_OFFSET);
+	};
+
+	return 0;
+}
+
 static const struct clk_ops clk_pll_ops = {
 	.enable		= clk_pll_enable,
 	.disable	= clk_pll_disable,
@@ -295,7 +379,9 @@ static const struct clk_ops clk_pll_tbgen_ops = {
 	.disable	= clk_pll_disable,
 	.recalc_rate	= clk_pll_recalc_rate,
 	.round_rate	= clk_pll_round_rate,
+	.set_rate	= clk_pll_tbgen_set_rate,
 };
+
 struct clk *d4400_clk_pll(enum d4400_pll_type type, const char *name,
 			 void __iomem *ccm_base,
 			  const char **parent_names, int num_parents)
@@ -329,4 +415,3 @@ struct clk *d4400_clk_pll(enum d4400_pll_type type, const char *name,
 
 	return clk;
 }
-
