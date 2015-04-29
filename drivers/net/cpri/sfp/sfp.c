@@ -29,14 +29,21 @@
 #include <linux/interrupt.h>
 
 #include <linux/cpri.h>
+#include "../cpri.h"
 
 #define MAX_SFPS	4
 #define SFP_DEVICE_NAME "sfp"
 
 /* Debug and error reporting macros */
+#ifdef IF_DEBUG
+#undef IF_DEBUG
+#endif
+#ifdef ERR
+#undef ERR
+#endif
 #define IF_DEBUG(x)     if (sfp->debug & (x))
 #define ERR(...)        {if (sfp->debug & DEBUG_MESSAGES) \
-				pr_err(SFP_DEVICE_NAME __VA_ARGS__);}
+				pr_err(SFP_DEVICE_NAME __VA_ARGS__); }
 
 #define DEBUG_MESSAGES		(1<<0)
 #define DEBUG_CHANGE		(1<<1)
@@ -673,6 +680,21 @@ static ssize_t show_info(struct device *dev,
 
 out:
 	return sprintf(buf, "\n");
+}
+
+bool sfp_is_ready(const struct sfp_dev *sfp)
+{
+	return sfp->valid ? true : false;
+}
+
+bool sfp_has_rx_signal(const struct sfp_dev *sfp)
+{
+	return (sfp->valid & !sfp->rxlos_state) ? true : false;
+}
+
+bool sfp_has_tx_fault(const struct sfp_dev *sfp)
+{
+	return (sfp->valid & sfp->txfault_state) ? true : false;
 }
 
 static int sfp_probe(struct i2c_client *client,

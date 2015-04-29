@@ -35,6 +35,7 @@
 
 #include <linux/cpri.h>
 #include <linux/cpri_axc.h>
+#include "cpri.h"
 
 static void cpri_reg_write_bulk(void *base,
 		u32 offset, unsigned int length, u32 value)
@@ -139,7 +140,6 @@ void cpri_cw130_config(struct cpri_framer *framer, u32 enable_mask)
 long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 {
 	struct cpri_framer *framer = fp->private_data;
-	struct device *dev = framer->cpri_dev->dev;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	struct cpri_common_regs __iomem *comm_regs = framer->cpri_dev->regs;
 
@@ -169,7 +169,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	int err_cnt[CPRI_ERR_CNT];
 
 	if (_IOC_TYPE(cmd) != CPRI_MAGIC) {
-		dev_err(dev, "invalid case, CMD=%d\n", cmd);
+		ERR("invalid IOCTL cmd type, CMD=0x%x\n", cmd);
 		return -EINVAL;
 	}
 
@@ -532,6 +532,6 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	return 0;
 
 out:
-	dev_err(dev, "IOCTL failure\n");
+	DEBUG(DEBUG_IOCTL, "IOCTL failure, err = %d\n", err);
 	return err;
 }

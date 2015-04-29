@@ -12,6 +12,7 @@
  */
 
 #include <linux/cpri.h>
+#include "cpri.h"
 
 static int cpri_eth_init_bd_regs(struct net_device *ndev)
 {
@@ -400,7 +401,7 @@ static int cpri_eth_open(struct net_device *ndev)
 
 	cpri_eth_tx_rx_resume(ndev);
 
-	 /* Set monitor */
+	/* Set monitor */
 	mask = framer->cpri_enabled_monitor & (RX_ETH_DMA_OVERRUN
 			| ETH_FORWARD_REM_FIFO_FULL);
 
@@ -1352,9 +1353,7 @@ int cpri_eth_init(struct platform_device *ofdev, struct cpri_framer *framer,
 	ndev->watchdog_timeo = CPRI_ETH_TX_TIMEOUT;
 	ndev->mtu = CPRI_ETH_DEF_MTU;
 	ndev->netdev_ops = &cpri_eth_netdev_ops;
-	sprintf(ndev->name, "eth_%s%d_frmr%d", DEV_NAME,
-				framer->cpri_dev->dev_id,
-				framer->id);
+	sprintf(ndev->name, "eth_%s", framer->name);
 	/* TODO: dev->ethtool_ops = &cpri_eth_ethtool_ops; */
 
 	ndev->features |= NETIF_F_HIGHDMA;

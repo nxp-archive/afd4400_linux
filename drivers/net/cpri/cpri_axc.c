@@ -37,6 +37,7 @@
 
 #include <linux/cpri.h>
 #include <linux/cpri_axc.h>
+#include "cpri.h"
 
 void clear_axc_map_tx_rx_table(struct cpri_framer *framer)
 {

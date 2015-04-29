@@ -29,6 +29,7 @@
 #include <linux/cpri.h>
 #include <linux/qixis.h>
 #include <mach/serdes-d4400.h>
+#include "cpri.h"
 
 
 signed int set_sfp_input_amp_limit(struct cpri_framer *framer,
@@ -38,13 +39,12 @@ signed int set_sfp_input_amp_limit(struct cpri_framer *framer,
 	u32 lane_id;
 	struct device_node *child = NULL;
 	unsigned int framer_id;
-	struct device *dev = framer->cpri_dev->dev;
 
 	for_each_child_of_node(framer->cpri_node, child) {
 
 		of_property_read_u32(child, "framer-id", &framer_id);
 		if (framer_id < 0) {
-			dev_err(dev, "Failed to get framer id\n");
+			ERR("Failed to get framer id\n");
 			return -EINVAL;
 		}
 		if (framer_id == framer->id)
@@ -52,12 +52,12 @@ signed int set_sfp_input_amp_limit(struct cpri_framer *framer,
 	}
 	if (of_get_named_serdes(child, &framer->serdesspec,
 			"serdes-handle", 0)) {
-			dev_err(dev, "Failed to get serdes-handle\n");
-			return -EINVAL;
+		ERR("Failed to get serdes-handle\n");
+		return -EINVAL;
 	}
 	framer->serdes_handle = get_attached_serdes_dev(framer->serdesspec.np);
 	if (framer->serdes_handle == NULL) {
-		dev_err(dev, "Failed to get serdes handle\n");
+		ERR("Failed to get serdes handle\n");
 		return -EINVAL;
 	}
 	lane_id = framer->serdesspec.args[0];
@@ -97,7 +97,7 @@ static int linkrate_autoneg_reset(struct cpri_framer *framer,
 
 	pll_param.pll_id = SERDES_PLL_1;
 	pll_param.rfclk_sel = REF_CLK_FREQ_122_88_MHZ;
-	if ((linerate ==  RATE4_3072_0M) || (linerate == RATE6_6144_0M)) {
+	if ((linerate == RATE4_3072_0M) || (linerate == RATE6_6144_0M)) {
 		pll_param.frate_sel = PLL_FREQ_3_072_GHZ;
 		pll_param.vco_type = SERDES_RING_VCO;
 	} else {
@@ -106,14 +106,10 @@ static int linkrate_autoneg_reset(struct cpri_framer *framer,
 	}
 
 	/* disable all clks */
-	cpri_reg_clear(&framer->cpri_dev->regs->cpri_ctrlclk,
-					C2_CLK_MASK);
-	cpri_reg_clear(&framer->cpri_dev->regs->cpri_ctrlclk,
-					C1_CLK_MASK);
-	cpri_reg_clear(&cpri_dev_pair->regs->cpri_ctrlclk,
-					C2_CLK_MASK);
-	cpri_reg_clear(&cpri_dev_pair->regs->cpri_ctrlclk,
-					C1_CLK_MASK);
+	cpri_reg_clear(&framer->cpri_dev->regs->cpri_ctrlclk, C2_CLK_MASK);
+	cpri_reg_clear(&framer->cpri_dev->regs->cpri_ctrlclk, C1_CLK_MASK);
+	cpri_reg_clear(&cpri_dev_pair->regs->cpri_ctrlclk, C2_CLK_MASK);
+	cpri_reg_clear(&cpri_dev_pair->regs->cpri_ctrlclk, C1_CLK_MASK);
 
 	/* gcr setting for complex1 and 2 */
 	gcr_config_cpri_line_rate(1, 0, CLEAR_LINE_RATE);
@@ -161,7 +157,7 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 		lane_param.grp_prot = SERDES_PROT_CPRI_2;
 		lane_param.lane_id = LANE_F;
 	} else {
-		dev_err(dev, "CPRI lane init - no matching lane id!");
+		ERR("CPRI lane init - no matching lane id!");
 		return -EINVAL;
 	}
 
@@ -188,14 +184,10 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 	}
 
 	/* Enable all framers clock */
-	cpri_reg_set(&framer->cpri_dev->regs->cpri_ctrlclk,
-					C2_CLK_MASK);
-	cpri_reg_set(&framer->cpri_dev->regs->cpri_ctrlclk,
-					C1_CLK_MASK);
-	cpri_reg_set(&cpri_dev_pair->regs->cpri_ctrlclk,
-					C2_CLK_MASK);
-	cpri_reg_set(&cpri_dev_pair->regs->cpri_ctrlclk,
-					C1_CLK_MASK);
+	cpri_reg_set(&framer->cpri_dev->regs->cpri_ctrlclk, C2_CLK_MASK);
+	cpri_reg_set(&framer->cpri_dev->regs->cpri_ctrlclk, C1_CLK_MASK);
+	cpri_reg_set(&cpri_dev_pair->regs->cpri_ctrlclk, C2_CLK_MASK);
+	cpri_reg_set(&cpri_dev_pair->regs->cpri_ctrlclk, C1_CLK_MASK);
 	return 0;
 }
 
@@ -218,12 +210,9 @@ static void cpri_init_framer(struct cpri_framer *framer,
 	if (framer->autoneg_params.mode & RE_MODE_MASTER) {
 		cpri_reg_set_val(&regs->cpri_timer_cfg,
 			CPRI_SYNC_ESA_MASK, CPRI_PAIRED_SYNC);
-		cpri_reg_set(&re_framer->regs->cpri_auxctrl,
-				AUX_MODE_MASK);
-		cpri_reg_set(&regs->cpri_auxctrl,
-			AUX_MODE_MASK);
-		cpri_reg_set(&re_framer->regs->cpri_cwddelay,
-				CW_DELAY_EN);
+		cpri_reg_set(&re_framer->regs->cpri_auxctrl, AUX_MODE_MASK);
+		cpri_reg_set(&regs->cpri_auxctrl, AUX_MODE_MASK);
+		cpri_reg_set(&re_framer->regs->cpri_cwddelay, CW_DELAY_EN);
 	} else if (framer->autoneg_params.mode & RE_MODE_SLAVE)
 		cpri_reg_set_val(&framer->regs->cpri_timer_cfg,
 				CPRI_SYNC_ESA_MASK, CPRI_SELF_SYNC);
@@ -235,44 +224,34 @@ static void cpri_init_framer(struct cpri_framer *framer,
 	cpri_reg_clear(&regs->cpri_config, SLAVE_MODE_MASK);
 
 	if (framer->autoneg_params.mode & REC_MODE)
-		cpri_reg_set(&regs->cpri_config,
-			CONF_SYNC_PULSE_MODE_MASK);
+		cpri_reg_set(&regs->cpri_config, CONF_SYNC_PULSE_MODE_MASK);
 	else
-		cpri_reg_clear(&regs->cpri_config,
-			CONF_SYNC_PULSE_MODE_MASK);
+		cpri_reg_clear(&regs->cpri_config, CONF_SYNC_PULSE_MODE_MASK);
 
 	cpri_reg_set(&framer->regs->cpri_timeren, CPRI_TMR_EN);
 
 	/* Disable Tx and Rx AxCs */
-	cpri_reg_set_val(&regs->cpri_raccr,
-		MASK_ALL, 0);
+	cpri_reg_set_val(&regs->cpri_raccr, MASK_ALL, 0);
+	cpri_reg_set_val(&regs->cpri_taccr, MASK_ALL, 0);
 
-	cpri_reg_set_val(&regs->cpri_taccr,
-		MASK_ALL, 0);
 	/* Use user's eth pointer as default */
 	cpri_reg_set_val(&regs->cpri_cmconfig,
 				TX_FAST_CM_PTR_MASK,
 				(u32)autoneg_params->eth_ptr);
 
 	/* Setup init proto version */
-	if ((rate < RATE5_4915_2M) ||
-		(autoneg_params->tx_prot_ver == VER_1)) {
+	if ((rate < RATE5_4915_2M) || (autoneg_params->tx_prot_ver == VER_1)) {
 		tproto_ver = VER_1;
 		tx_seed = 0;
 	} else {
 		tproto_ver = VER_2;
 		tx_seed = autoneg_params->tx_scr_seed;
 	}
-	cpri_reg_set_val(&regs->cpri_tprotver,
-				PROTO_VER_MASK, tproto_ver);
-	cpri_reg_set_val(&regs->cpri_tscrseed,
-				SCR_SEED_MASK, tx_seed);
+	cpri_reg_set_val(&regs->cpri_tprotver, PROTO_VER_MASK, tproto_ver);
+	cpri_reg_set_val(&regs->cpri_tscrseed, SCR_SEED_MASK, tx_seed);
 
-	cpri_reg_clear(&regs->cpri_rcr,
-		MASK_ALL);
-
-	cpri_reg_clear(&regs->cpri_tcr,
-		MASK_ALL);
+	cpri_reg_clear(&regs->cpri_rcr, MASK_ALL);
+	cpri_reg_clear(&regs->cpri_tcr, MASK_ALL);
 
 	/* Reset CPRIn_MAP_CONFIG and CPRIn_MAP_TBL_CONFIG */
 	cpri_reg_clear(&regs->cpri_map_config, MASK_ALL);
@@ -357,8 +336,7 @@ static void link_monitor_handler(unsigned long ptr)
 		spin_lock(&framer->rx_cw_lock);
 		read_rx_cw(framer, 2, cw_data);
 		spin_unlock(&framer->rx_cw_lock);
-		if ((cw_data[0] & CW2_MASK) !=
-				result->common_prot_ver)
+		if ((cw_data[0] & CW2_MASK) != result->common_prot_ver)
 			atomic_inc(&framer->err_cnt[PROTO_VER_MISMATCH_BITPOS]);
 	}
 
@@ -367,8 +345,7 @@ static void link_monitor_handler(unsigned long ptr)
 		spin_lock(&framer->rx_cw_lock);
 		read_rx_cw(framer, 194, cw_data);
 		spin_unlock(&framer->rx_cw_lock);
-		if ((cw_data[0] & CW194_MASK) !=
-			result->common_eth_ptr)
+		if ((cw_data[0] & CW194_MASK) != result->common_eth_ptr)
 			atomic_inc(&framer->err_cnt[ETH_PTR_MISMATCH_BITPOS]);
 	}
 
@@ -410,7 +387,7 @@ static void cpri_start_monitor(struct cpri_framer *framer,
 	add_timer(&framer->link_monitor_timer);
 }
 
-/* This function will enable the err interrupt and link mointor
+/* This function will enable the err interrupt and link monitor
  * if corresponding bits are set
  */
 void cpri_set_monitor(struct cpri_framer *framer,
@@ -512,8 +489,7 @@ static int cpri_cm_autoneg(struct cpri_framer *framer)
 	eth_setup_timer.function = eth_setup_timer_expiry_hndlr;
 	eth_setup_timer.data = (unsigned long) framer;
 
-	clear_bit(ETHPTR_TIMEREXP_BITPOS,
-		&framer->timer_expiry_events);
+	clear_bit(ETHPTR_TIMEREXP_BITPOS, &framer->timer_expiry_events);
 
 	/* Setup eth rate expiry timer */
 	eth_setup_timer.expires = jiffies + (param->ethptr_neg_timeout) * HZ / 1000;
@@ -543,17 +519,14 @@ static int cpri_cm_autoneg(struct cpri_framer *framer)
 	del_timer(&eth_setup_timer);
 	if (test_bit(ETHPTR_TIMEREXP_BITPOS,
 		&framer->timer_expiry_events)) {
-		pr_warn("cp%d_frmr%d C&M autoneg fail\n",
-				framer->cpri_dev->dev_id,
-				framer->id);
+		DEBUG(DEBUG_AUTONEG, "C&M autoneg failed\n");
 		return -ETIME;
 	} else {
 		result->common_eth_ptr = tx_eth_rate;
 		set_bit(CPRI_ETHPTR_BITPOS,
 			&framer->cpri_state);
-		pr_info("cp%d_frmr%d C&M autoneg success, eth ptr:%d\n",
-				framer->cpri_dev->dev_id,
-				framer->id, result->common_eth_ptr);
+		DEBUG(DEBUG_AUTONEG, "C&M autoneg success, eth ptr = %d\n",
+			result->common_eth_ptr);
 		return 0;
 	}
 }
@@ -621,9 +594,7 @@ static int cpri_proto_autoneg(struct cpri_framer *framer)
 	del_timer(&proto_setup_timer);
 	if (test_bit(PROTVER_TIMEREXP_BITPOS,
 		&framer->timer_expiry_events)) {
-		pr_warn("cp%d_frmr%d protocal autoneg failure!",
-				framer->cpri_dev->dev_id,
-				framer->id);
+		DEBUG(DEBUG_AUTONEG, "protocol autoneg failed");
 		return -ETIME;
 	} else {
 		result->common_prot_ver = tproto_ver;
@@ -631,10 +602,8 @@ static int cpri_proto_autoneg(struct cpri_framer *framer)
 			cpri_read(&regs->cpri_rscrseed) & SCR_SEED_MASK;
 		set_bit(CPRI_PROTVER_BITPOS,
 			&framer->cpri_state);
-		pr_info("cp%d_frmr%d protocol autoneg success, ver:%d\n",
-				framer->cpri_dev->dev_id,
-				framer->id,
-				result->common_prot_ver);
+		DEBUG(DEBUG_AUTONEG, "protocol autoneg success, ver = %d\n",
+			result->common_prot_ver);
 		return 0;
 	}
 }
@@ -664,7 +633,7 @@ static int check_linesync(struct cpri_framer *framer,
 		line_sync_acheived = cpri_reg_get_val(
 					&regs->cpri_status, mask);
 
-		#if 0 // DJH - Might need this later for different BBUs.  
+		#if 0 // DJH - Might need this later for different BBUs.
 		if (line_sync_acheived == 0xE) {
 			spin_lock(&framer->rx_cw_lock);
 			read_rx_cw(framer, 130, cw_buf);
@@ -680,18 +649,17 @@ static int check_linesync(struct cpri_framer *framer,
 		#endif
 		schedule_timeout_interruptible(msecs_to_jiffies(2));
 	}
-	
 
-	if (line_sync_acheived != 0xE) 
-		if (test_bit(RATE_TIMEREXP_BITPOS, &framer->timer_expiry_events)) {
+	if (line_sync_acheived != 0xE)
+		if (test_bit(RATE_TIMEREXP_BITPOS,
+					&framer->timer_expiry_events)) {
 			err = -ETIME;
 		}
 
 	if (!err) {
 		result->common_rate = rate;
-		pr_info("cp%d_frmr%d rate autoneg success, %s Mbps",
-				framer->cpri_dev->dev_id,
-				framer->id, rate_name[rate - 1]);
+		DEBUG(DEBUG_AUTONEG, "rate autoneg success, %s Mbps\n",
+			rate_name[rate - 1]);
 	}
 	return err;
 }
@@ -719,7 +687,7 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 
 		of_property_read_u32(child, "framer-id", &framer_id);
 		if (framer_id < 0) {
-			dev_err(dev, "Failed to get framer id\n");
+			ERR("Failed to get framer id\n");
 			return -ENODEV;
 		}
 		if (framer_id == framer->id)
@@ -728,13 +696,13 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 
 	if (of_get_named_serdes(child, &framer->serdesspec,
 			"serdes-handle", 0)) {
-			dev_err(dev, "Failed to get serdes-handle\n");
+			ERR("Failed to get serdes-handle\n");
 			return -ENODEV;
 	}
 
 	framer->serdes_handle = get_attached_serdes_dev(framer->serdesspec.np);
 	if (framer->serdes_handle == NULL) {
-		dev_err(dev, "Failed to get serdes handle\n");
+		ERR("Failed to get serdes handle\n");
 		return -ENODEV;
 	}
 
@@ -761,7 +729,7 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 		timer_dur = jiffies + (param->rate_neg_timeout) * HZ / 1000;
 		linerate_timer.expires = timer_dur;
 		add_timer(&linerate_timer);
-		/* check for sync acheived */
+		/* check for sync achieved */
 		err = check_linesync(framer, rate);
 		if (err == 0)
 			break;
@@ -782,9 +750,7 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 	}
 
 	if (err != 0) {
-		pr_warn("cp%d_frmr%d rate autoneg failed\n",
-			framer->cpri_dev->dev_id,
-			framer->id);
+		DEBUG(DEBUG_AUTONEG, "rate autoneg failed\n");
 	} else {
 		del_timer(&linerate_timer);
 		set_bit(CPRI_RATE_BITPOS,
@@ -836,7 +802,6 @@ out:
 int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 				unsigned long arg)
 {
-	struct device *dev = framer->cpri_dev->dev;
 	void __user *ioargp = (void __user *)arg;
 	int err;
 
@@ -849,9 +814,10 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 			goto out;
 		}
 		err = process_autoneg_cmd(framer);
-		if (err != 0)
+		if (err != 0) {
+			DEBUG(DEBUG_AUTONEG, "CPRI autoneg failure\n");
 			goto out;
-
+		}
 		break;
 
 	case CPRI_GET_AUTONEG_OUTPUT:
@@ -864,12 +830,11 @@ int cpri_autoneg_ioctl(struct cpri_framer *framer, unsigned int cmd,
 		break;
 
 	default:
-		dev_info(dev, "got invalid cmd: %x\n", cmd);
+		ERR("got invalid autoneg IOCTL cmd 0x%x\n", cmd);
 		return -EINVAL;
 	}
 	return 0;
 
 out:
-	dev_err(dev, "CPRI autoneg failure\n");
 	return err;
 }

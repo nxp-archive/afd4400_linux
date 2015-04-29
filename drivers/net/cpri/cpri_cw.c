@@ -12,6 +12,7 @@
  */
 
 #include <linux/cpri.h>
+#include "cpri.h"
 
 static u32 cw_read(u32 *addr, u32 mask)
 {

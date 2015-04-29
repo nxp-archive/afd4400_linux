@@ -36,17 +36,20 @@
 #include <linux/of_gpio.h>
 #include <linux/gpio.h>
 
-
-#include <linux/cpri.h>
 #include <linux/qixis.h>
+#include <linux/cpri.h>
+#include "cpri.h"
 
 static struct of_device_id cpri_match[] = {
 	{.compatible = "fsl,d4400-cpri",},
-	{.compatible = "fsl,medusa-cpri",},
 	{},
 };
 
 struct cpri_priv *priv;
+static int cpri_major = 0;
+static int cpri_minor = 0;
+static struct class *cpri_class = NULL;
+
 
 struct cpri_dev *get_pair_cpri_dev(struct cpri_dev *cpri_dev)
 {
@@ -99,10 +102,9 @@ static int cpri_open(struct inode *inode, struct file *fp)
 
 	framer = container_of(inode->i_cdev, struct cpri_framer, cdev);
 
-	if (framer != NULL) {
+	if (framer != NULL)
 		fp->private_data = framer;
-		dev_dbg(framer->cpri_dev->dev, "framer id:%d", framer->id);
-	} else
+	else
 		rc = -ENODEV;
 
 	return rc;
@@ -111,28 +113,26 @@ static int cpri_open(struct inode *inode, struct file *fp)
 void cpri_framer_handle_sfp_pin_changes(struct cpri_framer *framer,
 					unsigned changed, unsigned state)
 {
-	char name[32];
-	struct device *dev = framer->cpri_dev->dev;
 	struct sfp_dev *sfp = framer->sfp_dev;
 
-	/* printk(KERN_INFO "CPRI %d Framer %d: pins changed %d, state %d\n",
-			framer->cpri_dev->dev_id, framer->id, changed, state); */
-	sprintf(name,"cp%d_frmr%d", framer->cpri_dev->dev_id, framer->id);
 	if (changed & SFP_STATE_PRS) {
-		if (!(state & SFP_STATE_PRS))
-			dev_info(dev, "%s sfp module removed\n", name);
-		else if (sfp->valid)
-			dev_info(dev, "%s sfp module inserted\n", name);
-		else
-			dev_info(dev, "%s unknown module inserted\n", name);
+		if (!(state & SFP_STATE_PRS)) {
+			DEBUG(DEBUG_SFP, "sfp module removed\n");
+		} else if (sfp->valid) {
+			DEBUG(DEBUG_SFP, "sfp module inserted\n");
+		} else {
+			DEBUG(DEBUG_SFP, "unknown module inserted\n");
+		}
 	} else if (state & SFP_STATE_PRS) {
-		if (changed & SFP_STATE_RXLOS)
-			dev_info(dev, "%s RX signal %s\n", name,
+		if (changed & SFP_STATE_RXLOS) {
+			DEBUG(DEBUG_SFP, "RX signal %s\n",
 				(state & SFP_STATE_RXLOS) ? "lost" : "OK");
-		if (changed & SFP_STATE_TXFAULT)
-			dev_info(dev, "%s TX fault %s\n", name,
+		}
+		if (changed & SFP_STATE_TXFAULT) {
+			DEBUG(DEBUG_SFP, "TX fault %s\n",
 				(state & SFP_STATE_TXFAULT) ? "occured" :
-							     "cleared");
+								"cleared");
+		}
 	}
 
 	if (framer->cpri_enabled_monitor & SFP_MONITOR) {
@@ -319,7 +319,6 @@ static int cpri_register_framer_irqs(struct cpri_framer *framer)
 
 	return 0;
 
-
 irq_rxtiming:
 	free_irq(framer->irq_rx_t, framer);
 irq_txcontrol:
@@ -367,8 +366,6 @@ void cpri_mask_irq_events(struct cpri_framer *framer)
 
 	cpri_write(CPRI_ERR_EVT_ALL,
 		&framer->regs->cpri_errevent);
-
-
 }
 
 /* Register timing and control interrutps */
@@ -389,8 +386,6 @@ static int process_framer_irqs(struct device_node *child,
 
 	return cpri_register_framer_irqs(framer);
 }
-
-
 
 /* Stats update during error events */
 static void do_err_stats_update(struct cpri_framer *framer,
@@ -489,6 +484,43 @@ static irqreturn_t cpri_sfp_int_handler(int irq, void *cookie)
 	return IRQ_HANDLED;
 }
 
+/***************************** Sysfs *******************************/
+
+static ssize_t set_debug(struct device *dev, struct device_attribute *devattr,
+			const char *buf, size_t count)
+{
+	struct cpri_framer *framer = dev_get_drvdata(dev);
+	int err;
+	unsigned int val;
+
+	err = kstrtouint(buf, 0, &val);
+	if (err)
+		return err;
+
+	framer->debug = val;
+	return count;
+}
+
+static ssize_t show_debug(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	struct cpri_framer *framer = dev_get_drvdata(dev);
+	return sprintf(buf, "0x%08X\n", framer->debug);
+}
+
+static DEVICE_ATTR(debug,  S_IWUSR | S_IRUGO, show_debug,    set_debug);
+
+static struct attribute *attributes[] = {
+	&dev_attr_debug.attr,
+	NULL
+};
+
+static const struct attribute_group attr_group = {
+	.attrs = attributes,
+};
+
+/************************* Probe / Remove **************************/
+
 static int cpri_init_sfp_irq(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -522,8 +554,8 @@ static int cpri_init_sfp_irq(struct platform_device *pdev)
 		dev_err(dev, "request_irq fail");
 		goto out2;
 	}
-
 	return 0;
+
 out2:
 	gpio_free(priv->sfp_int);
 out1:
@@ -564,13 +596,14 @@ static int cpri_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct cpri_dev *cpri_dev;
 	struct cpri_framer *framer = NULL;
-	dev_t devt;
-	int cpri_major, cpri_minor;
-	unsigned int framer_id, max_framers;
+	int framer_index;
+	unsigned int framer_id;
 	int i, rc = 0;
 	struct cpri_common_regs __iomem *common_regs;
 	const struct of_device_id *id;
+	struct device *sysfs_dev;
 	unsigned char dev_name[20];
+	unsigned char framer_name[20];
 
 	if (!np || !of_device_is_available(np)) {
 		rc = -ENODEV;
@@ -594,7 +627,7 @@ static int cpri_probe(struct platform_device *pdev)
 		goto err_mem;
 	}
 
-	sprintf(dev_name, "%s%d", DEV_NAME, cpri_dev->dev_id);
+	sprintf(dev_name, DEV_NAME "%d", cpri_dev->dev_id);
 
 	cpri_dev->regs = of_iomap(np, 0);
 	if (!cpri_dev->regs) {
@@ -611,104 +644,127 @@ static int cpri_probe(struct platform_device *pdev)
 	cpri_dev->irq_gen4 = irq_of_parse_and_map(np, 3);
 	cpri_dev->irq_err = irq_of_parse_and_map(np, 4);
 
-	/* Allocating dynamic major and minor nos for framer interface */
-	rc = alloc_chrdev_region(&devt, 0,
-			MAX_FRAMERS_PER_COMPLEX, dev_name);
-	if (rc < 0) {
-		dev_dbg(dev, "alloc_chrdev_region() failed");
-		goto err_chrdev;
-	}
-	cpri_major = MAJOR(devt);
-	cpri_minor = MINOR(devt);
-
 	cpri_dev->framers = 0;
-
-	max_framers = MAX_FRAMERS_PER_COMPLEX;
-	cpri_dev->framer = kmalloc((sizeof(struct cpri_framer *) * max_framers),
-					GFP_KERNEL);
-	if (!cpri_dev->framer) {
-		dev_err(dev, "Failed to allocate framer container");
-		rc = -ENOMEM;
-		goto err_mem;
-	}
 	common_regs = cpri_dev->regs;
 
 	for_each_child_of_node(np, child) {
-
 		rc = of_property_read_u32(child, "framer-id", &framer_id);
 		if (rc) {
 			dev_err(dev, "Failed to get framer id");
-			goto err_chrdev;
+			goto err_reg;
+		}
+		if (framer_id != cpri_dev->framers) {
+			dev_err(dev, "Framer id %d should be %d",
+					framer_id, cpri_dev->framers);
+			goto err_reg;
+		}
+		if (framer_id >= MAX_FRAMERS_PER_COMPLEX) {
+			dev_err(dev, "Framer id %d exceeds MAX_FRAMERS_PER_COMPLEX",
+					framer_id);
+			goto err_reg;
 		}
 
-		cpri_dev->framers++;
+		sprintf(framer_name, "%s_" FRMR_NAME "%d", dev_name, framer_id);
 
-		cpri_dev->framer[framer_id] =
-			kzalloc(sizeof(struct cpri_framer), GFP_KERNEL);
-		if (cpri_dev->framer[framer_id] == NULL) {
-			dev_err(dev, "Failed to allocate framer");
+		/* Allocate space for a framer device */
+		framer = kzalloc(sizeof(struct cpri_framer), GFP_KERNEL);
+		if (framer == NULL) {
+			dev_err(dev, "%s: failed to allocate framer memory",
+				framer_name);
 			rc = -ENOMEM;
-			goto err_chrdev;
+			goto err_reg;
 		}
 
-		/* Populate framer strcuture */
-		framer = cpri_dev->framer[framer_id];
+		/* Populate framer structure */
+		framer_index = cpri_dev->framers++;
+		cpri_dev->framer[framer_index] = framer;
 		framer->cpri_dev = cpri_dev;
 		framer->cpri_node = np;
 		framer->id = framer_id;
+		framer->debug = DEBUG_MESSAGES;
+		strncpy(framer->name, framer_name, sizeof(framer->name)-1);
+		framer->name[sizeof(framer->name)-1] = 0;
 
 		framer->regs = of_iomap(child, 0);
 		if (!framer->regs) {
-			dev_err(dev, "Failed to map framer reg addr");
+			dev_err(dev, "%s: failed to map framer reg addr",
+				framer_name);
 			rc = -ENOMEM;
-			goto err_chrdev;
+			goto err_fmem;
 		}
-		dev_dbg(dev, "framer->regs ---> %p", framer->regs);
-		/* Enable clock for framer register access */
-		if (framer->id == 1)
-			cpri_reg_set(
-				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
-		else
-			cpri_reg_set(
-				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
 
 		rc = of_property_read_u32(child, "max-axcs",
 			(u32 *)&framer->max_axcs);
 		if (rc) {
-			dev_err(dev, "Failed to get max axc");
-			goto err_chrdev;
+			dev_err(dev, "%s: error %d reading max-axcs",
+				framer_name, rc);
+			goto err_map;
 		}
 
 		rc = of_property_read_u32(child, "memblk-size",
 			(u32 *)&framer->axc_memblk_size);
 		if (rc) {
-			dev_err(dev, "Failed to get memblk-size");
-			goto err_chrdev;
+			dev_err(dev, "%s: error %d reading memblk-size",
+				framer_name, rc);
+			goto err_map;
 		}
 
+		framer->dev.parent = &pdev->dev;
+		dev_set_name(&framer->dev, "framer%d", framer_id);
+		rc = device_register(&framer->dev);
+		if (rc) {
+			dev_err(dev, "%s: error %d registering device",
+				framer_name, rc);
+			goto err_map;
+		}
+		dev_set_drvdata(&framer->dev, framer);
+
 		/* Create cdev for each framer */
-		framer->dev_t = MKDEV(cpri_major, cpri_minor + framer_id);
+		framer->dev_t = MKDEV(cpri_major, cpri_minor + framer_id +
+				cpri_dev->dev_id * MAX_FRAMERS_PER_COMPLEX);
 		cdev_init(&framer->cdev, &cpri_fops);
 		framer->cdev.owner = THIS_MODULE;
 		rc = cdev_add(&framer->cdev, framer->dev_t, 1);
 		if (rc < 0) {
-			dev_err(dev, "cdev_add failed");
-			goto err_chrdev;
+			dev_err(dev, "Error %d while adding %s",
+				rc, framer_name);
+			goto err_rdev;
 		}
-		device_create(priv->cpri_class,
-			framer->cpri_dev->dev, framer->dev_t,
-			NULL, "%s_frmr%d", dev_name, framer->id);
+		/* Create sysfs device */
+		sysfs_dev = device_create(cpri_class, &framer->dev,
+				framer->dev_t, NULL, framer_name);
+		if (IS_ERR(sysfs_dev)) {
+			rc = PTR_ERR(sysfs_dev);
+			dev_err(dev, "Error %d while creating %s",
+				rc, dev_name);
+			goto err_cdev;
+		}
+
+		rc = sysfs_create_group(&framer->dev.kobj, &attr_group);
+		if (rc < 0) {
+			dev_err(dev, "Error %d while creating group %s",
+				rc, dev_name);
+			goto err_devc;
+		}
 
 		spin_lock_init(&framer->regs_lock);
 		spin_lock_init(&framer->err_en_lock);
 		spin_lock_init(&framer->rx_cw_lock);
 		spin_lock_init(&framer->tx_cw_lock);
 		sema_init(&framer->axc_sem, 1);
+		init_timer(&framer->link_monitor_timer);
 
+		/* Enable clock for framer register access */
+		if (framer->id == 0)
+			cpri_reg_set(
+				&common_regs->cpri_ctrlclk, C1_CLK_MASK);
+		else
+			cpri_reg_set(
+				&common_regs->cpri_ctrlclk, C2_CLK_MASK);
 		cpri_mask_irq_events(framer);
 		if (process_framer_irqs(child, framer) < 0) {
 			dev_err(dev, "framer events not supported");
-			goto err_cdev;
+			goto err_sysfs;
 		}
 
 		framer->sfp_dev_node = of_parse_phandle(child,
@@ -719,17 +775,21 @@ static int cpri_probe(struct platform_device *pdev)
 		framer->sfp_dev = get_attached_sfp_dev(framer->sfp_dev_node);
 		if (framer->sfp_dev == NULL) {
 			dev_err(dev, "get_attached_sfp_dev fail");
-			goto err_cdev;
+			goto err_irqs;
 		}
 		sfp_set_attached_framer(framer->sfp_dev, framer);
-		if (cpri_eth_init(pdev, framer, child) < 0)
+		if (cpri_eth_init(pdev, framer, child) < 0) {
 			dev_err(dev, "ethernet init failed");
-
+			goto err_reg;
+		}
+		dev_info(dev, "%s attached to sfp%d", framer->name,
+			framer->sfp_dev->id);
 	}
+
 	/* Setup cpri err interrupts */
 	if (cpri_register_irq(cpri_dev) < 0) {
 		dev_err(dev, "cpri dev irq init failure");
-		goto err_cdev;
+		goto err_reg;
 	}
 	/* Add to the list of cpri devices - this is required
 	 * as the probe is called for multiple cpri complexes
@@ -746,18 +806,45 @@ static int cpri_probe(struct platform_device *pdev)
 	else
 		schedule_delayed_work(&priv->sfp_irq_wq, HZ);
 
-	dev_info(dev, "%s done", __func__);
-
 	return 0;
 
+err_irqs:
+	free_irq(framer->irq_rx_t, framer);
+	free_irq(framer->irq_tx_t, framer);
+	free_irq(framer->irq_rx_c, framer);
+	free_irq(framer->irq_tx_c, framer);
+err_sysfs:
+	sysfs_remove_group(&framer->dev.kobj, &attr_group);
+err_devc:
+	device_destroy(cpri_class, framer->dev_t);
 err_cdev:
 	cdev_del(&framer->cdev);
-	for (i = 0; i < cpri_dev->framers; i++)
-		device_destroy(priv->cpri_class, cpri_dev->framer[i]->dev_t);
-	class_destroy(priv->cpri_class);
-err_chrdev:
-	unregister_chrdev_region(devt, MAX_FRAMERS_PER_COMPLEX);
-	kfree(cpri_dev->framer);
+err_rdev:
+	device_unregister(&framer->dev);
+err_map:
+	iounmap(framer->regs);
+err_fmem:
+	kfree(framer);
+	cpri_dev->framers--;
+err_reg:
+	for (i = 0; i < cpri_dev->framers; i++) {
+		framer = cpri_dev->framer[i];
+		cpri_eth_deinit(pdev, framer);
+		if (framer->sfp_dev)
+			sfp_set_attached_framer(framer->sfp_dev, NULL);
+		free_irq(framer->irq_rx_t, framer);
+		free_irq(framer->irq_tx_t, framer);
+		free_irq(framer->irq_rx_c, framer);
+		free_irq(framer->irq_tx_c, framer);
+		del_timer(&framer->link_monitor_timer);
+		sysfs_remove_group(&framer->dev.kobj, &attr_group);
+		device_destroy(cpri_class, framer->dev_t);
+		cdev_del(&framer->cdev);
+		device_unregister(&framer->dev);
+		iounmap(framer->regs);
+		kfree(framer);
+	}
+	iounmap(cpri_dev->regs);
 err_mem:
 	kfree(cpri_dev);
 err_out:
@@ -777,8 +864,9 @@ static int cpri_remove(struct platform_device *pdev)
 	if (!cpri_dev)
 		return -ENODEV;
 
-	iounmap(cpri_dev->regs);
-	free_irq(cpri_dev->irq_err, cpri_dev);
+	/* Removing the tasklet */
+	tasklet_kill(&cpri_dev->err_tasklet_frmr0);
+	tasklet_kill(&cpri_dev->err_tasklet_frmr1);
 
 	/* Removing ethernet interfaces that are bound to this device
 	 * and also the framer resources
@@ -786,24 +874,21 @@ static int cpri_remove(struct platform_device *pdev)
 	for (i = 0; i < cpri_dev->framers; i++) {
 		framer = cpri_dev->framer[i];
 		cpri_eth_deinit(pdev, framer);
-		iounmap(framer->regs);
+		if (framer->sfp_dev)
+			sfp_set_attached_framer(framer->sfp_dev, NULL);
 		free_irq(framer->irq_rx_t, framer);
 		free_irq(framer->irq_tx_t, framer);
 		free_irq(framer->irq_rx_c, framer);
 		free_irq(framer->irq_tx_c, framer);
-		cdev_del(&framer->cdev);
 		del_timer(&framer->link_monitor_timer);
-		device_destroy(priv->cpri_class, framer->dev_t);
-		unregister_chrdev_region(framer->dev_t, 1);
+		sysfs_remove_group(&framer->cdev.kobj, &attr_group);
+		device_destroy(cpri_class, framer->dev_t);
+		cdev_del(&framer->cdev);
+		device_unregister(&framer->dev);
+		iounmap(framer->regs);
 		kfree(framer);
 	}
 
-	/* Removing framer container */
-	kfree(cpri_dev->framer);
-
-	/* Removing the tasklet */
-	tasklet_kill(&cpri_dev->err_tasklet_frmr0);
-	tasklet_kill(&cpri_dev->err_tasklet_frmr1);
 	/* Deleting the cpri device from list */
 	spin_lock(&priv->cpri_list_lock);
 	list_for_each_safe(pos, nx, &priv->cpri_dev_list) {
@@ -816,12 +901,15 @@ static int cpri_remove(struct platform_device *pdev)
 	}
 	spin_unlock(&priv->cpri_list_lock);
 
+	free_irq(cpri_dev->irq_err, cpri_dev);
+	iounmap(cpri_dev->regs);
+
 	return 0;
 }
 
 static struct platform_driver cpri_driver = {
 	.driver = {
-		.name = "cpri",
+		.name = DRIVER_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = cpri_match,
 	},
@@ -831,24 +919,50 @@ static struct platform_driver cpri_driver = {
 
 static int __init cpri_mod_init(void)
 {
-	int rc;
-	priv = kzalloc(sizeof(struct cpri_priv), GFP_KERNEL);
-	if (priv == NULL) {
-		pr_err("%s: out of memory\n", __func__);
-		return -ENOMEM;
+	int err;
+	dev_t devno;
+
+	/* Register our major, and accept a dynamic number. */
+	err = alloc_chrdev_region(&devno, 0,
+				MAX_CPRI_COMPLEXES * MAX_FRAMERS_PER_COMPLEX,
+				DRIVER_NAME);
+	if (err < 0) {
+		pr_err("cpri: can't get major number: %d\n", err);
+		goto chrdev_fail;
+	}
+	cpri_major = MAJOR(devno);
+	cpri_minor = MINOR(devno);
+
+	/* Create the device class if required */
+	cpri_class = class_create(THIS_MODULE, DRIVER_NAME);
+	if (IS_ERR(cpri_class)) {
+		err = PTR_ERR(cpri_class);
+		pr_err("cpri: class_create() failed %d\n", err);
+		goto class_fail;
 	}
 
-	priv->cpri_class = class_create(THIS_MODULE, CLASS_NAME);
-	if (IS_ERR(priv->cpri_class)) {
-		pr_err("class_create() failed for cpri class dev");
-		rc = PTR_ERR(priv->cpri_class);
-		kfree(priv);
-		return rc;
+	priv = kzalloc(sizeof(struct cpri_priv), GFP_KERNEL);
+	if (priv == NULL) {
+		pr_err("cpri %s: out of memory\n", __func__);
+		err = -ENOMEM;
+		goto alloc_fail;
 	}
+
 	INIT_LIST_HEAD(&priv->cpri_dev_list);
 	spin_lock_init(&priv->cpri_list_lock);
 
-	return platform_driver_register(&cpri_driver);
+	err = platform_driver_register(&cpri_driver);
+	if (err == 0)
+		return 0;
+
+	kfree(priv);
+alloc_fail:
+	class_destroy(cpri_class);
+class_fail:
+	unregister_chrdev_region(cpri_major,
+				MAX_CPRI_COMPLEXES * MAX_FRAMERS_PER_COMPLEX);
+chrdev_fail:
+	return err;
 }
 
 static void __exit cpri_exit(void)
@@ -857,8 +971,9 @@ static void __exit cpri_exit(void)
 	free_irq(priv->sfp_irq, priv);
 
 	platform_driver_unregister(&cpri_driver);
-
-	class_destroy(priv->cpri_class);
+	class_destroy(cpri_class);
+	unregister_chrdev_region(cpri_major,
+				MAX_CPRI_COMPLEXES * MAX_FRAMERS_PER_COMPLEX);
 	kfree(priv);
 }
 
@@ -867,4 +982,4 @@ module_exit(cpri_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Freescale Semiconductor, Inc");
-MODULE_DESCRIPTION("cpri driver");
+MODULE_DESCRIPTION("Freescale CPRI Driver");
