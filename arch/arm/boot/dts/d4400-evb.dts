@@ -508,8 +508,8 @@
 
 				eeprom-handle =<&xcvr_eeprom>;
 				eeprom-addr = <0x51>;
-				eeprom-pagesize = <16>;
-				eeprom-bytesize = <256>;
+				eeprom-pagesize = <256>;
+				eeprom-bytesize = <65536>;
 				ipmi-mfg-str = "Freescale";
 				ipmi-name-str = "FSL Wideband transceiver R1.00";
 			};
