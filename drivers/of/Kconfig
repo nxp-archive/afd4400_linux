@@ -83,4 +83,12 @@ config OF_MTD
 	depends on MTD
 	def_bool y
 
+config OF_DYNAMIC
+	depends on OF
+	def_bool y
+
+config OF_OVERLAY
+	depends on OF
+	def_bool y
+
 endmenu # OF

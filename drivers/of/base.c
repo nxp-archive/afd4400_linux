@@ -117,14 +117,14 @@ static inline struct device_node *kref_to_device_node(struct kref *kref)
  *	In of_node_put() this function is passed to kref_put()
  *	as the destructor.
  */
-static void of_node_release(struct kref *kref)
+void of_node_release(struct kref *kref)
 {
 	struct device_node *node = kref_to_device_node(kref);
 	struct property *prop = node->properties;
 
 	/* We should never be releasing nodes that haven't been detached. */
 	if (!of_node_check_flag(node, OF_DETACHED)) {
-		pr_err("ERROR: Bad of_node_put() on %s\n", node->full_name);
+		pr_err("ERROR: Bad of_node_release() on %s\n", node->full_name);
 		dump_stack();
 		kref_init(&node->kref);
 		return;
@@ -225,7 +225,7 @@ EXPORT_SYMBOL(of_find_all_nodes);
  * Find a property with a given name for a given node
  * and return the value.
  */
-static const void *__of_get_property(const struct device_node *np,
+const void *__of_get_property(const struct device_node *np,
 				     const char *name, int *lenp)
 {
 	struct property *pp = __of_find_property(np, name, lenp);
@@ -252,7 +252,7 @@ EXPORT_SYMBOL(of_get_property);
 static int __of_device_is_compatible(const struct device_node *device,
 				     const char *compat)
 {
-	const char* cp;
+	const char *cp;
 	int cplen, l;
 
 	cp = __of_get_property(device, "compatible", &cplen);
@@ -286,7 +286,8 @@ int of_device_is_compatible(const struct device_node *device,
 EXPORT_SYMBOL(of_device_is_compatible);
 
 /**
- * of_machine_is_compatible - Test root of device tree for a given compatible value
+ * of_machine_is_compatible - Test root of device tree for a given compatible
+ *     value
  * @compat: compatible string to look for in root node's compatible property.
  *
  * Returns true if the root node has the given value in its
@@ -378,9 +379,9 @@ EXPORT_SYMBOL(of_get_parent);
  *	of_get_next_parent - Iterate to a node's parent
  *	@node:	Node to get parent of
  *
- * 	This is like of_get_parent() except that it drops the
- * 	refcount on the passed node, making it suitable for iterating
- * 	through a node's parents.
+ *	This is like of_get_parent() except that it drops the
+ *	refcount on the passed node, making it suitable for iterating
+ *	through a node's parents.
  *
  *	Returns a node pointer with refcount incremented, use
  *	of_node_put() on it when done.
@@ -419,7 +420,8 @@ struct device_node *of_get_next_child(const struct device_node *node,
 	for (; next; next = next->sibling)
 		if (of_node_get(next))
 			break;
-	of_node_put(prev);
+		if (node->_flags != 0)
+			of_node_put(prev);
 	raw_spin_unlock_irqrestore(&devtree_lock, flags);
 	return next;
 }
@@ -517,10 +519,11 @@ struct device_node *of_find_node_by_name(struct device_node *from,
 
 	raw_spin_lock_irqsave(&devtree_lock, flags);
 	np = from ? from->allnext : of_allnodes;
-	for (; np; np = np->allnext)
+	for (; np; np = np->allnext) {
 		if (np->name && (of_node_cmp(np->name, name) == 0)
 		    && of_node_get(np))
 			break;
+	}
 	of_node_put(from);
 	raw_spin_unlock_irqrestore(&devtree_lock, flags);
 	return np;
@@ -942,8 +945,9 @@ EXPORT_SYMBOL_GPL(of_property_read_string);
  *		return value is 0.
  *
  * Search for a property in a device tree node and retrieve a null
- * terminated string value (pointer to data, not a copy) in the list of strings
- * contained in that property.
+ * terminated string value (pointer to data, not a copy) in the list of
+ * strings contained in that property.
+ *
  * Returns 0 on success, -EINVAL if the property does not exist, -ENODATA if
  * property does not have a value, and -EILSEQ if the string is not
  * null-terminated within the length of the property data.
@@ -1092,21 +1096,22 @@ EXPORT_SYMBOL(of_parse_phandle);
  * Example:
  *
  * phandle1: node1 {
- * 	#list-cells = <2>;
+ *	#list-cells = <2>;
  * }
  *
  * phandle2: node2 {
- * 	#list-cells = <1>;
+ *	#list-cells = <1>;
  * }
  *
  * node3 {
- * 	list = <&phandle1 1 2 &phandle2 3>;
+ *	list = <&phandle1 1 2 &phandle2 3>;
  * }
  *
  * To get a device_node of the `node2' node you may call this:
  * of_parse_phandle_with_args(node3, "list", "#list-cells", 1, &args);
  */
-int of_parse_phandle_with_args(const struct device_node *np, const char *list_name,
+int of_parse_phandle_with_args(const struct device_node *np,
+	const char *list_name,
 				const char *cells_name, int index,
 				struct of_phandle_args *out_args)
 {
@@ -1177,7 +1182,8 @@ int of_parse_phandle_with_args(const struct device_node *np, const char *list_na
 				out_args->np = node;
 				out_args->args_count = count;
 				for (i = 0; i < count; i++)
-					out_args->args[i] = be32_to_cpup(list++);
+					out_args->args[i] =
+						be32_to_cpup(list++);
 			}
 			return 0;
 		}
@@ -1380,126 +1386,6 @@ int of_reconfig_notify(unsigned long action, void *p)
 	return notifier_to_errno(rc);
 }
 
-#ifdef CONFIG_PROC_DEVICETREE
-static void of_add_proc_dt_entry(struct device_node *dn)
-{
-	struct proc_dir_entry *ent;
-
-	ent = proc_mkdir(strrchr(dn->full_name, '/') + 1, dn->parent->pde);
-	if (ent)
-		proc_device_tree_add_node(dn, ent);
-}
-#else
-static void of_add_proc_dt_entry(struct device_node *dn)
-{
-	return;
-}
-#endif
-
-/**
- * of_attach_node - Plug a device node into the tree and global list.
- */
-int of_attach_node(struct device_node *np)
-{
-	unsigned long flags;
-	int rc;
-
-	rc = of_reconfig_notify(OF_RECONFIG_ATTACH_NODE, np);
-	if (rc)
-		return rc;
-
-	raw_spin_lock_irqsave(&devtree_lock, flags);
-	np->sibling = np->parent->child;
-	np->allnext = of_allnodes;
-	np->parent->child = np;
-	of_allnodes = np;
-	raw_spin_unlock_irqrestore(&devtree_lock, flags);
-
-	of_add_proc_dt_entry(np);
-	return 0;
-}
-
-#ifdef CONFIG_PROC_DEVICETREE
-static void of_remove_proc_dt_entry(struct device_node *dn)
-{
-	struct device_node *parent = dn->parent;
-	struct property *prop = dn->properties;
-
-	while (prop) {
-		remove_proc_entry(prop->name, dn->pde);
-		prop = prop->next;
-	}
-
-	if (dn->pde)
-		remove_proc_entry(dn->pde->name, parent->pde);
-}
-#else
-static void of_remove_proc_dt_entry(struct device_node *dn)
-{
-	return;
-}
-#endif
-
-/**
- * of_detach_node - "Unplug" a node from the device tree.
- *
- * The caller must hold a reference to the node.  The memory associated with
- * the node is not freed until its refcount goes to zero.
- */
-int of_detach_node(struct device_node *np)
-{
-	struct device_node *parent;
-	unsigned long flags;
-	int rc = 0;
-
-	rc = of_reconfig_notify(OF_RECONFIG_DETACH_NODE, np);
-	if (rc)
-		return rc;
-
-	raw_spin_lock_irqsave(&devtree_lock, flags);
-
-	if (of_node_check_flag(np, OF_DETACHED)) {
-		/* someone already detached it */
-		raw_spin_unlock_irqrestore(&devtree_lock, flags);
-		return rc;
-	}
-
-	parent = np->parent;
-	if (!parent) {
-		raw_spin_unlock_irqrestore(&devtree_lock, flags);
-		return rc;
-	}
-
-	if (of_allnodes == np)
-		of_allnodes = np->allnext;
-	else {
-		struct device_node *prev;
-		for (prev = of_allnodes;
-		     prev->allnext != np;
-		     prev = prev->allnext)
-			;
-		prev->allnext = np->allnext;
-	}
-
-	if (parent->child == np)
-		parent->child = np->sibling;
-	else {
-		struct device_node *prevsib;
-		for (prevsib = np->parent->child;
-		     prevsib->sibling != np;
-		     prevsib = prevsib->sibling)
-			;
-		prevsib->sibling = np->sibling;
-	}
-
-	of_node_set_flag(np, OF_DETACHED);
-	raw_spin_unlock_irqrestore(&devtree_lock, flags);
-
-	of_remove_proc_dt_entry(np);
-	return rc;
-}
-#endif /* defined(CONFIG_OF_DYNAMIC) */
-
 static void of_alias_add(struct alias_prop *ap, struct device_node *np,
 			 int id, const char *stem, int stem_len)
 {
@@ -1637,3 +1523,38 @@ const char *of_prop_next_string(struct property *prop, const char *cur)
 	return curv;
 }
 EXPORT_SYMBOL_GPL(of_prop_next_string);
+DEFINE_MUTEX(of_mutex);
+
+/* Overlay port to v3.8 kernel change */
+/*
+#ifdef CONFIG_PROC_DEVICETREE
+static void of_add_proc_dt_entry(struct device_node *dn)
+{
+	struct proc_dir_entry *ent;
+
+	ent = proc_mkdir(strrchr(dn->full_name, '/') + 1, dn->parent->pde);
+	if (ent)
+		proc_device_tree_add_node(dn, ent);
+}
+#endif
+*/
+
+/* Overlay port to v3.8 kernel change */
+/*
+#ifdef CONFIG_PROC_DEVICETREE
+static void of_remove_proc_dt_entry(struct device_node *dn)
+{
+	struct device_node *parent = dn->parent;
+	struct property *prop = dn->properties;
+
+	while (prop) {
+		remove_proc_entry(prop->name, dn->pde);
+		prop = prop->next;
+	}
+
+	if (dn->pde)
+		remove_proc_entry(dn->pde->name, parent->pde);
+}
+#endif
+*/
+#endif /* defined(CONFIG_OF_DYNAMIC) */

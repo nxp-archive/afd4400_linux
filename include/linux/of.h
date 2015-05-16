@@ -302,7 +302,6 @@ struct of_prop_reconfig {
 extern int of_reconfig_notifier_register(struct notifier_block *);
 extern int of_reconfig_notifier_unregister(struct notifier_block *);
 extern int of_reconfig_notify(unsigned long, void *);
-
 extern int of_attach_node(struct device_node *);
 extern int of_detach_node(struct device_node *);
 
@@ -531,4 +530,173 @@ static inline int of_property_read_u32(const struct device_node *np,
 	return of_property_read_u32_array(np, propname, out_value, 1);
 }
 
+#define for_each_of_allnodes_from(from, dn) \
+	for (dn = of_find_all_nodes(from); dn; dn = of_find_all_nodes(dn))
+#define for_each_of_allnodes(dn) for_each_of_allnodes_from(NULL, dn)
+
+struct device_node *__of_node_dup(const struct device_node *np,
+	const char *fmt, ...);
+
+extern struct mutex of_mutex;
+
+static inline void of_node_clear_flag(struct device_node *n,
+	unsigned long flag)
+{
+	clear_bit(flag, &n->_flags);
+}
+
+static inline void of_property_set_flag(struct property *p,
+	unsigned long flag)
+{
+	set_bit(flag, &p->_flags);
+}
+
+/* initialize a node */
+extern struct kobj_type of_node_ktype;
+static inline void of_node_init(struct device_node *node)
+{
+	/* Port to v3.8 kernel change */
+	kref_init(&node->kref);
+	/* kobject_init(&node->kobj, &of_node_ktype); */
+	/* node->fwnode.type = FWNODE_OF; */
+}
+
+struct of_reconfig_data {
+	struct device_node	*dn;
+	struct property		*prop;
+	struct property		*old_prop;
+};
+
+typedef int (*of_init_fn_2)(struct device_node *, struct device_node *);
+typedef void (*of_init_fn_1)(struct device_node *);
+
+#define OF_DECLARE_1(table, name, compat, fn) \
+		_OF_DECLARE(table, name, compat, fn, of_init_fn_1)
+#define OF_DECLARE_2(table, name, compat, fn) \
+		_OF_DECLARE(table, name, compat, fn, of_init_fn_2)
+
+/**
+ * struct of_changeset_entry	- Holds a changeset entry
+ *
+ * @node:	list_head for the log list
+ * @action:	notifier action
+ * @np:		pointer to the device node affected
+ * @prop:	pointer to the property affected
+ * @old_prop:	hold a pointer to the original property
+ *
+ * Every modification of the device tree during a changeset
+ * is held in a list of of_changeset_entry structures.
+ * That way we can recover from a partial application, or we can
+ * revert the changeset
+ */
+struct of_changeset_entry {
+	struct list_head node;
+	unsigned long action;
+	struct device_node *np;
+	struct property *prop;
+	struct property *old_prop;
+};
+
+/**
+ * struct of_changeset - changeset tracker structure
+ *
+ * @entries:	list_head for the changeset entries
+ *
+ * changesets are a convenient way to apply bulk changes to the
+ * live tree. In case of an error, changes are rolled-back.
+ * changesets live on after initial application, and if not
+ * destroyed after use, they can be reverted in one single call.
+ */
+struct of_changeset {
+	struct list_head entries;
+};
+
+enum of_reconfig_change {
+	OF_RECONFIG_NO_CHANGE = 0,
+	OF_RECONFIG_CHANGE_ADD,
+	OF_RECONFIG_CHANGE_REMOVE,
+};
+
+#ifdef CONFIG_OF_DYNAMIC
+extern int of_reconfig_get_state_change(unsigned long action,
+					struct of_reconfig_data *arg);
+
+extern void of_changeset_init(struct of_changeset *ocs);
+extern void of_changeset_destroy(struct of_changeset *ocs);
+extern int of_changeset_apply(struct of_changeset *ocs);
+extern int of_changeset_revert(struct of_changeset *ocs);
+extern int of_changeset_action(struct of_changeset *ocs,
+		unsigned long action, struct device_node *np,
+		struct property *prop);
+
+static inline int of_changeset_attach_node(struct of_changeset *ocs,
+		struct device_node *np)
+{
+	return of_changeset_action(ocs, OF_RECONFIG_ATTACH_NODE, np, NULL);
+}
+
+static inline int of_changeset_detach_node(struct of_changeset *ocs,
+		struct device_node *np)
+{
+	return of_changeset_action(ocs, OF_RECONFIG_DETACH_NODE, np, NULL);
+}
+
+static inline int of_changeset_add_property(struct of_changeset *ocs,
+		struct device_node *np, struct property *prop)
+{
+	return of_changeset_action(ocs, OF_RECONFIG_ADD_PROPERTY, np, prop);
+}
+
+static inline int of_changeset_remove_property(struct of_changeset *ocs,
+		struct device_node *np, struct property *prop)
+{
+	return of_changeset_action(ocs, OF_RECONFIG_REMOVE_PROPERTY, np, prop);
+}
+
+static inline int of_changeset_update_property(struct of_changeset *ocs,
+		struct device_node *np, struct property *prop)
+{
+	return of_changeset_action(ocs, OF_RECONFIG_UPDATE_PROPERTY, np, prop);
+}
+#endif /* CONFIG_OF_DYNAMIC */
+
+/* CONFIG_OF_RESOLVE api */
+extern int of_resolve_phandles(struct device_node *tree);
+
+/**
+ * of_device_is_system_power_controller - Tells if system-power-controller
+ *     is found for device_node
+ * @np: Pointer to the given device_node
+ *
+ * return true if present false otherwise
+ */
+static inline bool of_device_is_system_power_controller(
+	const struct device_node *np)
+{
+	return of_property_read_bool(np, "system-power-controller");
+}
+
+#ifdef CONFIG_OF_OVERLAY
+/* ID based overlays; the API for external users */
+int of_overlay_create(struct device_node *tree);
+int of_overlay_destroy(int id);
+int of_overlay_destroy_all(void);
+int of_overlay_addto_symbols(struct device_node *symnode,
+		struct device_node *newnode);
+#else
+static inline int of_overlay_create(struct device_node *tree)
+{
+	return -ENOTSUPP;
+}
+
+static inline int of_overlay_destroy(int id)
+{
+	return -ENOTSUPP;
+}
+
+static inline int of_overlay_destroy_all(void)
+{
+	return -ENOTSUPP;
+}
+#endif /* CONFIG_OF_OVERLAY */
 #endif /* _LINUX_OF_H */
