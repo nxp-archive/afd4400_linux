@@ -34,24 +34,6 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_ecspi1_1>;
 				fsl,spi-num-chipselects = <3>;
-
-				xcvr_spi1_0: xcvr_spi1_0@0 {
-					compatible = "xcvr_spi1_0";
-					spi-max-frequency = <20000000>;
-					reg = <0>;
-				};
-
-				xcvr_spi1_1: xcvr_spi1_1@1 {
-					compatible = "xcvr_spi1_1";
-					spi-max-frequency = <20000000>;
-					reg = <1>;
-				};
-
-				xcvr_spi1_2: xcvr_spi1_2@2 {
-					compatible = "xcvr_spi1_2";
-					spi-max-frequency = <20000000>;
-					reg = <2>;
-				};
 			};
 
 			ecspi@A8000 {
@@ -62,11 +44,6 @@
 				pinctrl-0 = <&pinctrl_ecspi2_1>;
 				fsl,spi-num-chipselects = <2>;
 
-				xcvr_spi2_0: xcvr_spi2_0@0 {
-					compatible = "xcvr_spi2_0";
-					spi-max-frequency = <20000000>;
-					reg = <0>;
-				};
 			};
 
 			ecspi@AC000 {
@@ -76,24 +53,6 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_ecspi3_1>;
 				fsl,spi-num-chipselects = <3>;
-
-				xcvr_spi3_0: xcvr_spi3_0@0 {
-					compatible = "xcvr_spi3_0";
-					spi-max-frequency = <20000000>;
-					reg = <0>;
-				};
-
-				xcvr_spi3_1: xcvr_spi3_1@1 {
-					compatible = "xcvr_spi3_1";
-					spi-max-frequency = <20000000>;
-					reg = <1>;
-				};
-
-				xcvr_spi3_2: xcvr_spi3_2@2 {
-					compatible = "xcvr_spi3_2";
-					spi-max-frequency = <20000000>;
-					reg = <2>;
-				};
 			};
 
 			ecspi@B4000 {
@@ -103,13 +62,6 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_ecspi5_1>;
 				fsl,spi-num-chipselects = <1>;
-
-				xcvr_spi5_0: xcvr_spi5_0@0 {
-					compatible = "xcvr_spi5_0";
-					spi-max-frequency = <20000000>;
-					reg = <0>;
-				};
-
 			};
 			ecspi@B8000 {
 				#address-cells = <1>;
@@ -118,30 +70,6 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_ecspi6_1>;
 				fsl,spi-num-chipselects = <4>;
-
-				xcvr_spi6_0: xcvr_spi6_0@0 {
-					compatible = "xcvr_spi6_0";
-					spi-max-frequency = <20000000>;
-					reg = <0>;
-				};
-
-				xcvr_spi6_1: xcvr_spi6_1@0 {
-					compatible = "xcvr_spi6_1";
-					spi-max-frequency = <20000000>;
-					reg = <1>;
-				};
-
-				xcvr_spi6_2: xcvr_spi6_2@0 {
-					compatible = "xcvr_spi6_2";
-					spi-max-frequency = <20000000>;
-					reg = <2>;
-				};
-
-				xcvr_spi6_3: xcvr_spi6_3@0 {
-					compatible = "xcvr_spi6_3";
-					spi-max-frequency = <20000000>;
-					reg = <3>;
-				};
 			};
 
 			ecspi@BC000 {
@@ -151,13 +79,6 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_ecspi7_1>;
 				fsl,spi-num-chipselects = <2>;
-
-				xcvr_spi7_0: xcvr_spi7_0@0 {
-					compatible = "xcvr_spi7_0";
-					spi-max-frequency = <20000000>;
-					reg = <0>;
-				};
-
 			};
 
 			ecspi@C0000 {
@@ -167,24 +88,6 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_ecspi8_1>;
 				fsl,spi-num-chipselects = <3>;
-
-				xcvr_spi8_0: xcvr_spi8_0@0 {
-					compatible = "xcvr_spi8_0";
-					spi-max-frequency = <20000000>;
-					reg = <0>;
-				};
-
-				xcvr_spi8_1: xcvr_spi8_1@1 {
-					compatible = "xcvr_spi8_1";
-					spi-max-frequency = <20000000>;
-					reg = <1>;
-				};
-
-				xcvr_spi8_2: xcvr_spi8_2@2 {
-					compatible = "xcvr_spi8_2";
-					spi-max-frequency = <20000000>;
-					reg = <2>;
-				};
 			};
 
 			i2c1: i2c@C4000 {

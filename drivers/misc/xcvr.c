@@ -41,6 +41,7 @@
 #include <linux/xcvr.h>
 #include <uapi/linux/xcvr.h>
 #include <mach/src.h>
+#include <linux/overlay_ext.h>
 
 #define DEV_NAME "xcvr"
 #define MAX_SPI_CNT	32
@@ -57,6 +58,157 @@ static int output_pins[MAX_OUTPUT_GPIO] = {[0 ... (MAX_OUTPUT_GPIO - 1)] = -1};
 static int ad9680_pins[3] = {[0 ... 2] = -1};
 /* Assume that every spi chip might have a reset */
 static int reset_src[MAX_SPI_CNT] = {[0 ... (MAX_SPI_CNT - 1)] = -1};
+
+/* spi channels */
+struct property xcvr_spi1_0_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi1_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi1_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "0",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi1_1_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi1_1", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi1_1", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "1",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi1_2_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi1_2", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi1_2", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "2",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct device_node xcvr_ecspi1[] = {
+	{ .name = "xcvr_spi1_0", .full_name = "xcvr_spi1_0@0", .properties = xcvr_spi1_0_prop, },
+	{ .name = "xcvr_spi1_1", .full_name = "xcvr_spi1_1@1", .properties = xcvr_spi1_1_prop, },
+	{ .name = "xcvr_spi1_2", .full_name = "xcvr_spi1_2@2", .properties = xcvr_spi1_2_prop, },
+	{}
+};
+struct property xcvr_spi2_0_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi2_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi2_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "0",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct device_node xcvr_ecspi2[] = {
+	{ .name = "xcvr_spi2_0", .full_name = "xcvr_spi2_0@0", .properties = xcvr_spi2_0_prop, },
+	{}
+};
+struct property xcvr_spi3_0_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi3_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi3_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "0",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi3_1_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi3_1", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi3_1", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "1",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi3_2_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi3_2", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi3_2", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "2",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct device_node xcvr_ecspi3[] = {
+	{ .name = "xcvr_spi3_0", .full_name = "xcvr_spi3_0@0", .properties = xcvr_spi3_0_prop, },
+	{ .name = "xcvr_spi3_1", .full_name = "xcvr_spi3_1@1", .properties = xcvr_spi3_1_prop, },
+	{ .name = "xcvr_spi3_2", .full_name = "xcvr_spi3_2@2", .properties = xcvr_spi3_2_prop, },
+	{}
+};
+struct property xcvr_spi5_0_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi5_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi5_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "0",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct device_node xcvr_ecspi5[] = {
+	{ .name = "xcvr_spi5_0", .full_name = "xcvr_spi5_0@0", .properties = xcvr_spi5_0_prop, },
+	{}
+};
+struct property xcvr_spi6_0_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi6_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi6_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "0",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi6_1_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi6_1", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi6_1", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "1",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi6_2_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi6_2", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi6_2", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "2",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi6_3_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi6_3", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi6_3", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "3",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct device_node xcvr_ecspi6[] = {
+	{ .name = "xcvr_spi6_0", .full_name = "xcvr_spi6_0@0", .properties = xcvr_spi6_0_prop, },
+	{ .name = "xcvr_spi6_1", .full_name = "xcvr_spi6_1@1", .properties = xcvr_spi6_1_prop, },
+	{ .name = "xcvr_spi6_2", .full_name = "xcvr_spi6_2@2", .properties = xcvr_spi6_2_prop, },
+	{ .name = "xcvr_spi6_3", .full_name = "xcvr_spi6_3@3", .properties = xcvr_spi6_3_prop, },
+	{}
+};
+struct property xcvr_spi7_0_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi7_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi7_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "0",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct device_node xcvr_ecspi7[] = {
+	{ .name = "xcvr_spi7_0", .full_name = "xcvr_spi7_0@0", .properties = xcvr_spi7_0_prop, },
+	{}
+};
+struct property xcvr_spi8_0_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi8_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi8_0", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "0",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi8_1_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi8_1", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi8_1", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "1",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct property xcvr_spi8_2_prop[] = {
+	{ .name = "name",              .value = "xcvr_spi8_2", .length = 1, ._flags = PROP_STR },
+	{ .name = "compatible",        .value = "xcvr_spi8_2", .length = 1, ._flags = PROP_STR },
+	{ .name = "spi-max-frequency", .value = "1312D00",     .length = 1, ._flags = PROP_NUM },
+	{ .name = "reg",               .value = "2",           .length = 1, ._flags = PROP_NUM },
+	{}
+};
+struct device_node xcvr_ecspi8[] = {
+	{ .name = "xcvr_spi8_0", .full_name = "xcvr_spi8_0@0", .properties = xcvr_spi8_0_prop, },
+	{ .name = "xcvr_spi8_1", .full_name = "xcvr_spi8_1@1", .properties = xcvr_spi8_1_prop, },
+	{ .name = "xcvr_spi8_2", .full_name = "xcvr_spi8_2@2", .properties = xcvr_spi8_2_prop, },
+	{}
+};
 
 /* wideband spi devices attributes */
 static struct spi_device_params wideband_spi_params[] = {
@@ -91,6 +243,46 @@ static struct of_device_id spi_match_wb[] = {
 	{},
 };
 
+/* wideband spi overlay */
+struct fragment_node frag_xcvr_spi_wb[] = {
+	{
+		.target = "&ecspi1",
+		.np_array = xcvr_ecspi1,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi2",
+		.np_array = xcvr_ecspi2,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi3",
+		.np_array = xcvr_ecspi3,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi5",
+		.np_array = xcvr_ecspi5,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi6",
+		.np_array = xcvr_ecspi6,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi7",
+		.np_array = xcvr_ecspi7,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi8",
+		.np_array = xcvr_ecspi8,
+		.ov_prop_array = NULL,
+	},
+	{}
+};
+
 /* roc devices attribute */
 static struct spi_device_params roc_spi_params[] = {
 	{AD93681, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 30000000},
@@ -109,6 +301,16 @@ static struct of_device_id spi_match_roc0[] = {
 	{},
 };
 
+/* roc0 spi overlay */
+struct fragment_node frag_xcvr_spi_roc0[] = {
+	{
+		.target = "&ecspi1",
+		.np_array = xcvr_ecspi1,
+		.ov_prop_array = NULL,
+	},
+	{}
+};
+
 /* roc1 devices binding to dtb */
 static struct of_device_id spi_match_roc1[] = {
 	{.compatible = "xcvr_spi3_0",
@@ -119,6 +321,16 @@ static struct of_device_id spi_match_roc1[] = {
 			.data = &roc_spi_params[AD93681 + ROC_SPI_CNT]},
 	{},
 
+};
+
+/* roc1 spi overlay */
+struct fragment_node frag_xcvr_spi_roc1[] = {
+	{
+		.target = "&ecspi3",
+		.np_array = xcvr_ecspi3,
+		.ov_prop_array = NULL,
+	},
+	{}
 };
 
 static struct of_device_id wb_misc_match[] = {
@@ -454,6 +666,13 @@ static int wb_misc_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
+	ret = ov_load(frag_xcvr_spi_wb);
+	if (ret < 0) {
+		pr_err("%s: failed to create spi overlay with err %x\n",
+				DEV_NAME, ret);
+		goto out1;
+	}
+
 	ret = spi_register_driver(&spi_driver_wb);
 	if (ret) {
 		pr_err("%s: spi_register_driver failed with err %x\n",
@@ -549,10 +768,14 @@ static int roc_misc_probe(struct platform_device *pdev)
 
 	if (connector == 1) {
 		cur_xcvr = ROC0_PRESENT;
-		ret = spi_register_driver(&spi_driver_roc0);
+		ret = ov_load(frag_xcvr_spi_roc0);
+		if (ret >= 0)
+			ret = spi_register_driver(&spi_driver_roc0);
 	} else if (connector == 2) {
 		cur_xcvr = ROC1_PRESENT;
-		ret = spi_register_driver(&spi_driver_roc1);
+		ret = ov_load(frag_xcvr_spi_roc1);
+		if (ret >= 0)
+			ret = spi_register_driver(&spi_driver_roc1);
 	} else {
 		pr_err("%s: Invalid fmc connector value: %i\n", DEV_NAME,
 			connector);
