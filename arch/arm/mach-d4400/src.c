@@ -23,6 +23,38 @@
 
 struct src_priv *src_priv;
 
+/* Returns boot memory type: 0-nor flash, 1-qspi flash */
+int src_get_boot_mem_type(void)
+{
+	int ret = 0; /* 0-nor flash boot by default */
+	u32 sbmr;
+
+	if (src_priv) {
+		sbmr = ioread32(&src_priv->regs->sbmr);
+		if (sbmr & 0x10)
+			ret = 1; /* qspi mem type */
+	}
+	return ret;
+}
+
+/* Returns serial flash vendor id:
+ * 0 - Winbond
+ * 1 - Spansion
+ * 2 - Macronix
+ * 3 - Numonyx
+ */
+int src_get_serial_flash_type(void)
+{
+	int ret = 0;
+	u32 sbmr;
+
+	if (src_priv) {
+		sbmr = ioread32(&src_priv->regs->sbmr);
+		ret = ((sbmr & 0x6000) >> 13) & 0x03;
+	}
+	return ret;
+}
+
 static int src_assert_sw_reset(struct src_priv *src_priv, int idx)
 {
 	int rc = 0, shift;

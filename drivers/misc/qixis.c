@@ -39,6 +39,7 @@
 
 #include <linux/qixis.h>
 #include <mach/mach-d4400.h>
+#include <mach/src.h>
 
 #define DRIVER_NAME "d4400-fpga"
 #define QIXIS_DEVICE_NAME "qixis"
@@ -344,7 +345,7 @@ int qixis_xcvr_eeprom_power(void)
 	/* EVB revA board does not route power to eeprom on transceiver
 	 * board.
 	 */
-	if ((qixis_board_type()== QIXIS_BOARD_TYPE_D4400EVB) &&
+	if ((qixis_board_type() == QIXIS_BOARD_TYPE_D4400EVB) &&
 		(qixis_board_rev() == QIXIS_BOARD_REV_A))
 		return 0;
 	return 1;
@@ -756,7 +757,7 @@ static int __init d4400_fpga_probe(struct platform_device *pdev)
 	dev_t devno;
 	int err = 0;
 	struct device *device = NULL;
-	u8 reg0, reg1;
+	u8 reg0 = 0, reg1;
 
 	mutex_init(&qixis_lock);
 
@@ -821,14 +822,21 @@ static int __init d4400_fpga_probe(struct platform_device *pdev)
 		goto group_fail;
 	}
 
-	reg0 = qixis_read(0);
-	reg1 = qixis_read(1);
 	qixis_board_info.board_type = QIXIS_BOARD_TYPE_UNKNOWN;
 	qixis_board_info.board_rev  = QIXIS_BOARD_REV_UNKNOWN;
+
+	if (!src_get_boot_mem_type()) {
+		/* NOR flash boot, qixis fpga is mem mapped for EVB */
+		reg0 = qixis_read(0);
+		reg1 = qixis_read(1);
+	} else
+		/* Qspi boot, qixis fpga not available */
+		reg1 = ~reg0;
+
 	if (reg0 == reg1) {
 		qixis_board_info.board_type = QIXIS_BOARD_TYPE_D4400RDB;
 		qixis_board_info.board_rev  = (reg0 >> 6) & 3;
-	} else {
+	} else if (reg0 == 0x25) {
 		qixis_board_info.board_type = QIXIS_BOARD_TYPE_D4400EVB;
 		switch (reg1) {
 		case 0x11:
@@ -949,7 +957,8 @@ static struct platform_driver d4400_fpga_driver = {
 
 static int __init d4400_fpga_init(void)
 {
-	return platform_driver_probe(&d4400_fpga_driver, d4400_fpga_probe);
+	return platform_driver_probe(&d4400_fpga_driver,
+		d4400_fpga_probe);
 }
 
 static void __exit d4400_fpga_exit(void)

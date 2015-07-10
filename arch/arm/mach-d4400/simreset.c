@@ -23,6 +23,7 @@
 #include <linux/delay.h>
 #include <mach/simreset.h>
 #include <mach/src_priv.h>
+#include <linux/mtd/mtd.h>
 
 const unsigned int d4400_reg_default[] = {
 	0xdeadbeef,	/* Unused (dcd barker) */
@@ -108,6 +109,52 @@ int load_from_weim_nor_flash(struct weim_flash_mem *weim_flash_base,
 	return ret;
 }
 
+/* Load IVT table from  qspi NOR flash into internal RAM. */
+int load_from_qspi_flash(struct internal_ram *internal_ram_base)
+{
+	int ret = 0;
+	struct mtd_info *mtd = NULL;
+	u32 buf32[QSPI_FLASH_TMP_BUF_SIZE/4];
+	u8 *p;
+	int i,j;
+	int chunks;
+	size_t lenread;
+	loff_t from;
+
+#ifdef CONFIG_MTD_SPI_NOR
+	/* Access MTD partition directly */
+	mtd = fsl_qspi_get_mtd(0);
+#endif
+	if (!mtd) {
+		pr_warn("MTD for qspi does not exists!\n");
+		return -EINVAL;
+	}
+	chunks = roundup(D4400_IVT_MAX_SIZE_BYTES, QSPI_FLASH_TMP_BUF_SIZE) /
+		QSPI_FLASH_TMP_BUF_SIZE;
+
+	/* Offset to IVT table and DCD data in qspi flash */
+	from = D4400_QSPI_NOR_FLASH_IVT_OFFSET;
+
+	p = (u8 *)buf32;
+	j = 0;
+	while(chunks) {
+		/* Read a chunk */
+		ret = mtd->_read(mtd, from, QSPI_FLASH_TMP_BUF_SIZE,
+			&lenread, p);
+		if (ret)
+			break;
+
+		/* Transfer to internal ram */
+		for(i = 0; i < (QSPI_FLASH_TMP_BUF_SIZE/4); ++i, ++j) {
+			iowrite32(buf32[i], &internal_ram_base->data32[j +
+				(D4400_INT_RAM_IVT_OFFSET/4)]);
+		}
+		from += QSPI_FLASH_TMP_BUF_SIZE;
+		--chunks;
+	}
+	return ret;
+}
+
 /* Load necessary data into internal RAM for simulated reset. */
 int load_internal_ram(void)
 {
@@ -116,13 +163,19 @@ int load_internal_ram(void)
 	struct device_node *np_sys_reset_regs;	/* System reset registers */
 	struct device_node *np_weim_flash_mem;	/* Weim/Nor flash memory */
 	struct device_node *np_qspi_flash_mem;	/* Qspi flash memory */
+	struct weim_flash_mem *weim_flash_base;	/* Weim base flash mem addr */
+
+	/* Retrieve internal ram addr to load DCD & stub function. */
+	struct internal_ram *internal_ram_base;
+	/* System reset reg is used to determine type of flash. */
+	struct src_regs *sys_reset_regs;
 
 	np_int_ram = of_find_compatible_node(NULL, NULL,
 		D4400_INT_RAM_DTS_ENTRY_NODE_STR);
 	np_weim_flash_mem =
 		of_find_compatible_node(NULL, NULL, "fsl,d4400-weim-flash");
 	np_qspi_flash_mem =
-		of_find_compatible_node(NULL, NULL, "fsl,d4400-qspi-flash");
+		of_find_compatible_node(NULL, NULL, "fsl,d4400-qspi");
 	np_sys_reset_regs =
 		of_find_compatible_node(NULL, NULL, "fsl,src-d4400");
 
@@ -131,43 +184,40 @@ int load_internal_ram(void)
 			pr_warn("Internal RAM not found in DTS tree.\n");
 		if (!np_sys_reset_regs)
 			pr_warn("System reset registers not found in DTS tree.\n");
-		ret = 1; /* Failed */
-	} else {
-		/* Retrieve internal ram addr to load DCD & stub function. */
-		struct internal_ram *internal_ram_base =
-			of_iomap(np_int_ram, 0);
-		/* System reset reg is used to determine type of flash. */
-		struct src_regs *sys_reset_regs =
-			of_iomap(np_sys_reset_regs, 0);
-		/*
-		 * Determine types of flash and load the IVT header into
-		 * internal RAM.  Query the flash type: 0-weim/nor 1-qspi
-		 */
-		if (ioread32(&sys_reset_regs->sbmr) & SRC_SBMR_MEM_TYPE_MASK) {
-			/* Qspi flash */
-			if (!np_qspi_flash_mem) {
-				pr_warn("Qspi not found in DTS tree.\n");
-				ret = 1;
-			} else {
-				/* Qspi flash */
-				/* TODO: Implement qspi flash read */
-				pr_warn("TODO: Implement qspi flash for simulated reset!\n");
-			}
-		} else {
-			/* Weim nor flash */
-			struct weim_flash_mem *flash_base =
-				of_iomap(np_weim_flash_mem, 0);
-			ret = load_from_weim_nor_flash(flash_base,
-				internal_ram_base);
-		}
-
-		/* Load stub function into internal RAM. */
-		if (ret == 0)
-			ret = load_stub_func(internal_ram_base);
-		/* Load register default values into internal RAM. */
-		if (ret == 0)
-			ret = load_reg_default(internal_ram_base);
+		return -ENXIO;
 	}
+
+	/* Retrieve internal ram addr to load DCD & stub function. */
+	internal_ram_base = of_iomap(np_int_ram, 0);
+	/* System reset reg is used to determine type of flash. */
+	sys_reset_regs = of_iomap(np_sys_reset_regs, 0);
+
+	/*
+	 * Determine types of flash and load the IVT header into
+	 * internal RAM.  Query the flash type: 0-weim/nor 1-qspi
+	 */
+	if (ioread32(&sys_reset_regs->sbmr) & SRC_SBMR_MEM_TYPE_MASK) {
+		/* Qspi nor flash */
+		if (!np_qspi_flash_mem) {
+			pr_warn("Qspi not found in DTS tree.\n");
+			return -ENXIO;
+		}	
+		ret = load_from_qspi_flash(internal_ram_base);
+
+	} else {
+		/* Weim nor flash */
+		weim_flash_base = of_iomap(np_weim_flash_mem, 0);
+		ret = load_from_weim_nor_flash(weim_flash_base,
+			internal_ram_base);
+	}
+
+	/* Load stub function into internal RAM. */
+	if (ret == 0)
+		ret = load_stub_func(internal_ram_base);
+	/* Load register default values into internal RAM. */
+	if (ret == 0)
+		ret = load_reg_default(internal_ram_base);
+
 	return ret;
 }
 

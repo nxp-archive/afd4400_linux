@@ -261,7 +261,45 @@
 			};
 		};
 
+		aips-bus@4000000 { /* AIPS3 */
+			qspi@0A8000 {
+				flash0: s25fl256s0@0 {
+					#address-cells = <1>;
+					#size-cells = <1>;
+					compatible = "spansion,s25fl256s0";
+					spi-max-frequency = <50000000>;
+					io-mode = <4>; /* 1-single, 2-dual, 4-quad IO */
 
+					partition@0 {
+						/* U-Boot Image-512KB */
+						reg = <0x0 0x00080000>;
+						label = "bootloader";
+						read-only;
+					};
+					partition@00080000 {
+						/* Env variables, 256KB, area 1*/
+						reg = <0x000080000 0x00040000>;
+						label = "environment-1";
+					};
+					partition@000C0000 {
+						/* Env variables, 256KB, area 2*/
+						reg = <0x0000C0000 0x00040000>;
+						label = "environment-2";
+					};
+					partition@00100000 {
+						/* U-Boot Redundant Image-512KB */
+						reg = <0x00100000 0x00080000>;
+						label = "redundant-bootloader";
+						read-only;
+					};
+					partition@00180000 {
+						/* 28MB for JFFS2 based Root file System */
+						reg = <0x00180000 0x01E80000>;
+						label = "filesystem";
+					};
+				};
+			};
+		};
                 weim-bus@30000000 {
                         nor_flash@0 {
                                 compatible = "cfi-flash";

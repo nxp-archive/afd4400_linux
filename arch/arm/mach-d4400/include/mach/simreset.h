@@ -247,13 +247,31 @@ struct internal_ram {
 };
 
 /* Weim (NOR) flash ram where ivt, u-boot, and linux resides. */
-#define D4400_WEIM_NOR_FLASH_ADDRESS		(0x30000000) /* Per spec */
-#define D4400_WEIM_NOR_FLASH_IVT_ADDRESS	(0x30001000) /* Per spec */
-#define D4400_WEIM_NOR_FLASH_IVT_OFFSET		(0x1000) /* Per spec */
+#define D4400_WEIM_NOR_FLASH_ADDRESS		(0x30000000) /* Per hw spec */
+#define D4400_WEIM_NOR_FLASH_IVT_ADDRESS	(0x30001000) /* Per hw spec */
+#define D4400_WEIM_NOR_FLASH_IVT_OFFSET		(0x1000) /* Per hw spec */
 #define D4400_WEIM_NOR_FLASH_SIZE_MAX		(128 * 1024 * 1024)
+
 struct weim_flash_mem {
 	u32 data32[D4400_WEIM_NOR_FLASH_SIZE_MAX / 4];
 };
+
+/* Qspi (NOR) flash ram where ivt, u-boot, and linux resides. */
+#define D4400_QSPI_NOR_FLASH_ADDRESS		(0x08000000) /* Per hw spec */
+#define D4400_QSPI_NOR_FLASH_IVT_OFFSET		(0x0000) /* Per hw spec */
+
+/* Qspi registers */
+#define QSPI_REG_BASE_ADDRESS		(0x40A8000)
+#define QSPI_MCR_REG_ADRESS		(0x0 + QSPI_REG_BASE_ADDRESS)
+#define QSPI_FR_REG_ADRESS		(0x160 + QSPI_REG_BASE_ADDRESS)
+#define QSPI_RSER_REG_ADRESS		(0x164 + QSPI_REG_BASE_ADDRESS)
+
+#define QSPI_FR_REG_CLEAR		0x0C037ED1 /* 0's to reserved bits */
+
+/* Temporary buffer for data from qspi.  Keep this size small as it
+ * is local function buffer.
+ */
+#define QSPI_FLASH_TMP_BUF_SIZE 	64
 
 void simreset_stubfunc(unsigned int ivt_table_ptr);
 void simreset_stubfunc_end(void);
@@ -271,4 +289,5 @@ void set_simreset_marker(void);
 void clear_simreset_marker(void);
 void check_ram_simreset_marker(void);
 void clear_ram_simreset_marker(void);
+struct mtd_info *fsl_qspi_get_mtd(int index);
 #endif /* __LINUX_SIMRESET_H */

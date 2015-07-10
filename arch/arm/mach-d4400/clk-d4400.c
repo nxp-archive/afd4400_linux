@@ -34,20 +34,20 @@ static void __iomem *ccm_base;
 void __init d4400_clock_map_io(void) { }
 
 enum d4400_clks {
-	dummy, osc1_dev, osc2_sgmii, sys_pll, ddr_pll, tbgen_pll,
-	tbgen_pll_half,	ref, sys, arm, per, vsp_clk, ram, sys_bus,
-	ahb, ip, gpc, uart1_serial, uart1_per, uart2_serial, uart2_per,
-	uart3_serial, uart3_per, uart4_serial, uart4_per, weim_sel,
-	weim_clk, div_pll_sys, etsec_rtc, sync_ref, async_ckil, sync_ckil,
-	ecspi1_sel, ecspi1_clk, ecspi2_sel, ecspi2_clk, ecspi3_sel, ecspi3_clk,
-	ecspi4_sel, ecspi4_clk, ecspi5_sel, ecspi5_clk, ecspi6_sel, ecspi6_clk,
-	ecspi7_sel, ecspi7_clk, ecspi8_sel, ecspi8_clk, vspa_dp_sel,
-	vspa_dp_clk, ccm_at, trace_clk, ddr_pll_by, mmdc_sel, mmdc_clk,
-	epit_ipg, epit_per, uart1_ipg, uart1_pen,  uart2_ipg, uart2_pen,
-        uart3_ipg, uart3_pen, uart4_ipg, uart4_pen, i2c1_per,
-	i2c2_per, i2c3_per, i2c4_per, i2c5_per, i2c6_per,
-	i2c7_per, i2c8_per, i2c9_per, i2c10_per, i2c11_per, sync_ref_src_1,
-	sync_ref_src_2, clk_max
+	dummy, osc1_dev, osc2_sgmii, sys_pll, ddr_pll, tbgen_pll, /* 0-5 */
+	tbgen_pll_half,	ref, sys, arm, per, vsp_clk, ram, sys_bus, /* 6-13 */
+	ahb, ip, gpc, uart1_serial, uart1_per, uart2_serial, uart2_per, /* 14-20 */
+	uart3_serial, uart3_per, uart4_serial, uart4_per, weim_sel, /* 21-25 */
+	weim_clk, div_pll_sys, etsec_rtc, sync_ref, async_ckil, sync_ckil, /* 26-31 */
+	ecspi1_sel, ecspi1_clk, ecspi2_sel, ecspi2_clk, ecspi3_sel, ecspi3_clk, /* 32-37 */
+	ecspi4_sel, ecspi4_clk, ecspi5_sel, ecspi5_clk, ecspi6_sel, ecspi6_clk, /* 38-43 */
+	ecspi7_sel, ecspi7_clk, ecspi8_sel, ecspi8_clk, vspa_dp_sel, /* 44-48 */
+	vspa_dp_clk, ccm_at, trace_clk, ddr_pll_by, mmdc_sel, mmdc_clk, /* 49-54 */
+	epit_ipg, epit_per, uart1_ipg, uart1_pen,  uart2_ipg, uart2_pen, /* 55-60 */
+        uart3_ipg, uart3_pen, uart4_ipg, uart4_pen, i2c1_per, /* 61-65 */
+	i2c2_per, i2c3_per, i2c4_per, i2c5_per, i2c6_per, /* 66-70 */
+	i2c7_per, i2c8_per, i2c9_per, i2c10_per, i2c11_per, sync_ref_src_1, /* 71-76 */
+	sync_ref_src_2, qspi_sel, qspi_gate, clk_max /* 77-80 */
 };
 
 static const char *pll_sys_sels[]  = { "osc1_dev", "osc2_sgmii" };
@@ -74,6 +74,7 @@ static const char *mmdc_sels[] = {"ref", "sys_pll", "ddr_pll", "ddr_pll_by"};
 static const char *vspa_dp_sels[] = {"sys_bus", "sys_pll", "ddr_pll",
 					"ddr_pll_by"};
 static const char *sync_ref_sels[] = {"sync_ref_src_1", "sync_ref_src_2"};
+static const char *qspi_sels[] = {"ref", "gpio_acc"};
 
 static struct clk *clk[clk_max];
 static struct clk_onecell_data clk_data;
@@ -389,6 +390,12 @@ int __init d4400_clocks_init(void)
 					0, 0, &d4400_ccm_lock);
 	clk[i2c11_per] = d4400_clk_gate(NULL, "i2c11_per", "sync_ref",
 					CLK_SET_RATE_PARENT,ccm_base + 0x58,
+					20, 0, &d4400_ccm_lock);
+	clk[qspi_sel] = clk_register_mux(NULL, "qspi_sel", qspi_sels,
+				ARRAY_SIZE(qspi_sels), 0, ccm_base + 0x4,
+				27, 1, 0, &d4400_ccm_lock);
+	clk[qspi_gate] = d4400_clk_gate(NULL, "qspi_gate", "ahb",
+					CLK_SET_RATE_PARENT,ccm_base + 0x4c,
 					20, 0, &d4400_ccm_lock);
 
 	for (i = 0; i < ARRAY_SIZE(clk); i++)

@@ -27,12 +27,12 @@
 /* Stub function runs in internal RAM. */
 void simreset_stubfunc(unsigned int int_ram_ivt_addr)
 {
-	unsigned long *src_addr =
-		(unsigned long *)D4400_WEIM_NOR_FLASH_ADDRESS;
+	unsigned long *src_addr;
 	struct _ivt_table *ivt = (struct _ivt_table *)int_ram_ivt_addr;
 	struct _boot_data *boot;
 	struct _dcd_data *reg_default;
 	int i, max_words;
+	unsigned long *dest;
 
 	boot = (struct _boot_data *)(int_ram_ivt_addr +
 		(ivt->boot_data_ptr - ivt->ivt_ptr));
@@ -48,6 +48,9 @@ void simreset_stubfunc(unsigned int int_ram_ivt_addr)
 				reg_default->entry[i].data32;
 		}
 	}
+
+	/* Set destination of u-boot code */
+	dest = (unsigned long *)boot->dest_ptr;
 
 #if 0 /* Programming DCD is not currently needed. */
 	/*
@@ -100,16 +103,25 @@ void simreset_stubfunc(unsigned int int_ram_ivt_addr)
 			++max_words;
 
 		if (*sbmr & SRC_SBMR_MEM_TYPE_MASK) {
-			/*  Copy from qspi flash to DDR */
-			/* TODO: Implement Qspi read. */
-			while (1) { asm volatile ("nop"); }
-		} else {
+			u32 *reg;
+
+			/* Turn off qspi interrupts */
+			reg = (u32 *)QSPI_RSER_REG_ADRESS;
+			*reg = 0;
+			/* Clear pending interrupts */
+			reg = (u32 *)QSPI_FR_REG_ADRESS;
+			*reg = QSPI_FR_REG_CLEAR;
+
+			/*  Copy from qspi flash to DDR, AMBA bus access */
+			src_addr = (unsigned long *)D4400_QSPI_NOR_FLASH_ADDRESS;
+		} else
 			/* Copy from weim/nor flash to DDR */
-			unsigned int *dest = (unsigned int *)boot->dest_ptr;
-			do {
-				*dest++ = *src_addr++;
-			} while (--max_words);
-		}
+			src_addr = (unsigned long *)D4400_WEIM_NOR_FLASH_ADDRESS;
+
+		/* Copy u-boot to DDR */
+		do {
+			*dest++ = *src_addr++;
+		} while (--max_words);
 	}
 
 	/*

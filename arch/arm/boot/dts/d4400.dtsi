@@ -1389,7 +1389,12 @@
 				#address-cells = <1>;
 				#size-cells = <1>;
 				compatible = "fsl,d4400-qspi";
-				reg = <0xA8000 0x4000>;
+				interrupts = <0 101 0x4>;
+				reg = <0x000a8000 0x4000>;
+				reg-names = "QuadSPI";
+				clocks = <&clks 78>, <&clks 79>;
+				clock-names = "sel", "gate";
+				amba-addr = <0x8000000>, <0x10000000>; /* AMBA bus access */
 				status = "okay";
 			};
 

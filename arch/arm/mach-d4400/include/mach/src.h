@@ -16,4 +16,6 @@ void *src_get_handle(struct device_node *src_dev_node);
 int of_get_named_src_reset(struct device_node *np,
 		struct of_phandle_args *phandle, const char *propname,
 		int index);
+int src_get_boot_mem_type(void);
+int src_get_serial_flash_type(void);
 #endif
