@@ -16,7 +16,7 @@ void d4400_print_silicon_rev(const char *cpu, int srev)
 	if (srev == D4400_SILICON_REVISION_UNKNOWN)
 		pr_info("CPU identified as %s, unknown revision\n", cpu);
 	else
-		pr_info("CPU identified as %s, silicon rev %d\n",
+		pr_info("CPU identified as %s, silicon rev 0x%02X\n",
 				cpu, srev & 0xff);
 }
 
