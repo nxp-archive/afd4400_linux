@@ -127,10 +127,6 @@ soft:
 
 static void __init d4400_init_late(void)
 {
-/*
- *FIXME - Add power management register function here
- */
-	d4400_gpc_init();
 	#if defined(D4400_GIT_LAST_COMMIT_HASH) && \
 		defined(D4400_GIT_LAST_COMMIT_DATE)
 	pr_err("KERNEL: git commit: Hash: %.7s; Date: %s)\n",
@@ -170,6 +166,7 @@ static void __init d4400_timer_init(void)
 {
 	d4400_scm_init();
 	d4400_clocks_init();
+	d4400_gpc_init();
 	d4400_print_silicon_rev("D4400", d4400_silicon_revision());
 }
 static void __init d4400_init_machine(void)

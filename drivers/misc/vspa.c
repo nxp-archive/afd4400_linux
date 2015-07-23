@@ -2674,6 +2674,16 @@ static int vspa_probe(struct platform_device *pdev)
 	mbox_reset(vspadev);
 	cmd_reset(vspadev);
 
+	/* Enable core power gating */
+	err = d4400_gpc_vspa_core_pow_gate(vspadev->id);
+	if (err) {
+		dev_err(dev, "%s: core_power_gate() err = %d\n",
+			device_name, err);
+		goto err_ioremap;
+	}
+	/* Enable dynamic VSPA core power gating */
+	vspa_reg_write(vspadev->regs + CONTROL_REG_OFFSET, (1<<31));
+
 	err = request_irq(vspadev->flags1_irq_no, vspa_flags1_irq_handler,
 				0, device_name, vspadev);
 	if (err < 0) {
