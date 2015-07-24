@@ -105,6 +105,10 @@ static struct class *vspa_class = NULL;
 #define ERR(...)	{if (vspadev->debug & DEBUG_MESSAGES) \
 				pr_err(VSPA_DEVICE_NAME __VA_ARGS__);}
 
+#define CONTROL_REG_MASK (~0x000100FF)
+#define CONTROL_PDN_EN	 (1<<31)
+#define CONTROL_HOST_GO	 (1<<0)
+
 /*********************** Accessor Functions ***************************/
 
 static inline void vspa_reg_write(void __iomem *addr, u32 val)
@@ -1080,7 +1084,7 @@ static void watchdog_callback(unsigned long data)
 		}
 		vspadev->watchdog_value = val;
 		val = vspa_reg_read(regs + CONTROL_REG_OFFSET);
-		val |= 1; // HOST_GO
+		val = (val & CONTROL_REG_MASK) | CONTROL_HOST_GO;
 		vspa_reg_write(regs + CONTROL_REG_OFFSET, val);
 		mod_timer(&vspadev->watchdog_timer, jiffies +
 			msecs_to_jiffies(vspadev->watchdog_interval_msecs));
@@ -1441,6 +1445,7 @@ static int powerdown(struct vspa_device *vspadev)
 	int ret = 0;
 	int ctr;
 	int powered;
+	uint32_t val;
 
 	/* check if the VSPA core is powered */
 	powered = d4400_gpc_vspa_full_pow(vspadev->id);
@@ -1461,6 +1466,15 @@ static int powerdown(struct vspa_device *vspadev)
 	mod_timer(&vspadev->watchdog_timer, jiffies);
 
 	if (powered) {
+		/* Disable dynamic VSPA core power gating */
+		val = vspa_reg_read(regs + CONTROL_REG_OFFSET);
+		val = (val & CONTROL_REG_MASK) & ~CONTROL_PDN_EN;
+		vspa_reg_write(regs + CONTROL_REG_OFFSET, val);
+		ret = d4400_gpc_vspa_core_pow_up(vspadev->id);
+		if (ret)
+			ERR("%d: powerdown() core_pow_up => %d\n",
+							vspadev->id, ret);
+
 		/* Enable the invasive (halting) debug mode */
 		vspa_reg_write(dbg_regs + DBG_GDBEN_REG_OFFSET, 0x1);
 
@@ -1483,7 +1497,9 @@ static int powerdown(struct vspa_device *vspadev)
 			ret = d4400_gpc_vspa_full_pow_gate(vspadev->id);
 		}
 		if (ret)
-			ERR("%d: powerdown() => %d\n", vspadev->id, ret);
+			ERR("%d: powerdown() full_pow_gate => %d\n",
+							vspadev->id, ret);
+
 	}
 	vspadev->state = ret ? VSPA_STATE_UNKNOWN : VSPA_STATE_POWER_DOWN;
 	return ret;
@@ -1492,6 +1508,8 @@ static int powerdown(struct vspa_device *vspadev)
 static int powerup(struct vspa_device *vspadev)
 {
 	int ret;
+	int ret1;
+	uint32_t val;
 	u32 __iomem *regs = vspadev->regs;
 
 	if (vspadev->state != VSPA_STATE_POWER_DOWN)
@@ -1499,7 +1517,7 @@ static int powerup(struct vspa_device *vspadev)
 
 	ret = d4400_gpc_vspa_full_pow_up(vspadev->id);
 	if (ret) {
-		ERR("%d: powerup() ret = %d\n", vspadev->id, ret);
+		ERR("%d: powerup() full_pow_up = %d\n", vspadev->id, ret);
 		powerdown(vspadev);
 	} else {
 		/* Disable all interrupts */
@@ -1508,6 +1526,14 @@ static int powerup(struct vspa_device *vspadev)
 		event_reset_queue(vspadev);
 		mbox_reset(vspadev);
 		cmd_reset(vspadev);
+		/* Enable dynamic VSPA core power gating */
+		ret1 = d4400_gpc_vspa_core_pow_gate(vspadev->id);
+		if (ret1)
+			ERR("%d: powerup() core_pow_gate => %d\n",
+							vspadev->id, ret1);
+		val = vspa_reg_read(regs + CONTROL_REG_OFFSET);
+		val = (val & CONTROL_REG_MASK) | CONTROL_PDN_EN;
+		vspa_reg_write(regs + CONTROL_REG_OFFSET, val);
 	}
 	vspadev->state = ret ? VSPA_STATE_UNKNOWN :
 					VSPA_STATE_UNPROGRAMMED_IDLE;
@@ -1537,7 +1563,7 @@ static int startup(struct vspa_device *vspadev)
 
 	/* Ask the VSPA to go */
 	val = vspa_reg_read(regs + CONTROL_REG_OFFSET);
-	val |= 1; // HOST_GO
+	val = (val & CONTROL_REG_MASK) | CONTROL_HOST_GO;
 	vspa_reg_write(regs + CONTROL_REG_OFFSET, val);
 
 	/* Wait for the 64 bit mailbox bit to be set */
@@ -2565,6 +2591,7 @@ static int vspa_probe(struct platform_device *pdev)
 	size_t dma_size;
 	uint32_t* dma_vaddr;
 	uint32_t param0, param1, param2;
+	uint32_t val;
 
 	BUG_ON(vspa_major == 0 || vspa_class == NULL);
 
@@ -2681,8 +2708,9 @@ static int vspa_probe(struct platform_device *pdev)
 			device_name, err);
 		goto err_ioremap;
 	}
-	/* Enable dynamic VSPA core power gating */
-	vspa_reg_write(vspadev->regs + CONTROL_REG_OFFSET, (1<<31));
+	val = vspa_reg_read(vspadev->regs + CONTROL_REG_OFFSET);
+	val = (val & CONTROL_REG_MASK) | CONTROL_PDN_EN;
+	vspa_reg_write(vspadev->regs + CONTROL_REG_OFFSET, val);
 
 	err = request_irq(vspadev->flags1_irq_no, vspa_flags1_irq_handler,
 				0, device_name, vspadev);

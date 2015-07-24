@@ -99,10 +99,19 @@ int d4400_gpc_vspa_full_pow_gate(u8 vspa_id)
 /* vspa_id max = 10 , start ID = 0 */
 int d4400_gpc_vspa_full_pow_up(u8 vspa_id)
 {
+	u32 val;
+	u32 ret;
+	u32 offset;
+
 	if (vspa_id >= NUM_VSPAS)
 		return -EINVAL;
 
-	return d4400_ccm_vspa_full_pow_up(vspa_id);
+	ret = d4400_ccm_vspa_full_pow_up(vspa_id);
+	offset = FULL_VSPA0_PGC_OFFSET + vspa_id * 0x20;
+	val = readl(gpc_base + offset + GPC_PGC_PGCR_REG_OFFSET);
+	val &= ~GPC_PGC_PGCR_PCR_MASK;
+	writel(val, (gpc_base + offset + GPC_PGC_PGCR_REG_OFFSET));
+	return ret;
 }
 
 /* returns 1 if VSPA power is on */
