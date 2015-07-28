@@ -598,6 +598,14 @@ config DFE_JESD204
 	  Transport 2 --> 1 lane max
 
 endif #jesd
+
+config DFE_SUP_REG
+	tristate "DFE Supervisor Register"
+	help
+	  This gives supervisor access to any memory location.  This is
+	  useful for registers that require this type of access like
+	  the IIM.  It only works as a module.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

@@ -58,3 +58,4 @@ obj-$(CONFIG_XCVR)		+= xcvr.o xcvr_if.o ipmi-eeprom-util.o
 obj-$(CONFIG_TBGEN)		+= tbgen.o
 obj-$(CONFIG_GCR_DEV)		+= gcr.o
 obj-$(CONFIG_DFE_JESD204)	+= jesd_phygasket.o jesd204.o
+obj-$(CONFIG_DFE_SUP_REG)       += reg.o
