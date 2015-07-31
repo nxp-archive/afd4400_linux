@@ -82,6 +82,11 @@
 #define VDD_CP_BY_HALF  0xAD
 #define JCPLL_REF_MON_PIN_REG   0x018
 #define REF_MON_DLD     0x0D
+#define JCPLL_REF_SWITCHOVER_REG 0x01A
+#define ENABLE_REFA	0x00
+#define ENABLE_REFB	0x0C
+#define JCPLL_PLL_BLOCK_PD_REG  0x01C
+#define ENABLE_ALL	0x00
 #define JCPLL_PLL_READBACK_REG  0x01F
 #define DIG_LOCK_DETECT 0x01
 #define JCPLL_PWR_DWN_REG       0x230
@@ -541,7 +546,7 @@ int qixis_jcpll_locked(void)
 }
 EXPORT_SYMBOL(qixis_jcpll_locked);
 
-int qixis_jcpll_use_refc(int enable)
+int qixis_jcpll_use_ref(int ref)
 {
 	int err;
 
@@ -549,14 +554,37 @@ int qixis_jcpll_use_refc(int enable)
 		return -EPROBE_DEFER;
 
 	mutex_lock(&qixis_lock);
-	err = __qixis_jcpll_write_reg(enable ? ENABLE_REFC : DISABLE_REFC,
-						 JCPLL_REFC_REG);
+	switch (ref) {
+	case QIXIS_JCPLL_REFA:
+		err = __qixis_jcpll_write_reg(ENABLE_REFA,
+						  JCPLL_REF_SWITCHOVER_REG);
+		if (!err)
+			err = __qixis_jcpll_write_reg(DISABLE_REFC,
+							 JCPLL_REFC_REG);
+		break;
+	case QIXIS_JCPLL_REFB:
+		err = __qixis_jcpll_write_reg(ENABLE_ALL,
+						  JCPLL_PLL_BLOCK_PD_REG);
+		if (!err)
+			err = __qixis_jcpll_write_reg(ENABLE_REFB,
+						  JCPLL_REF_SWITCHOVER_REG);
+		if (!err)
+			err = __qixis_jcpll_write_reg(DISABLE_REFC,
+							 JCPLL_REFC_REG);
+		break;
+	case QIXIS_JCPLL_REFC:
+		err = __qixis_jcpll_write_reg(ENABLE_REFC, JCPLL_REFC_REG);
+		break;
+	default:
+		err = -EINVAL;
+		break;
+	}
 	if (!err)
 		err = __qixis_jcpll_write_reg(UPDATE_IO, JCPLL_IO_UPDATE_REG);
 	mutex_unlock(&qixis_lock);
 	return err;
 }
-EXPORT_SYMBOL(qixis_jcpll_use_refc);
+EXPORT_SYMBOL(qixis_jcpll_use_ref);
 
 static ssize_t show_board_type(struct device *dev,
 			struct device_attribute *devattr, char *buf)
@@ -710,9 +738,9 @@ static long qixis_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (copy_to_user((u8 *)jcpllrb.value_ptr, &temp8, sizeof(u8)))
 			err = -EFAULT;
 		break;
-	/* Select the JCPLL reference clock source as RefC or normal (REFA) */
-	case QIXIS_JCPLL_USE_REFC:
-		err = qixis_jcpll_use_refc(arg);
+	/* Select the JCPLL reference clock source */
+	case QIXIS_JCPLL_USE_REF:
+		err = qixis_jcpll_use_ref(arg);
 		break;
 	/* Check presence of a transciver */
 	case QIXIS_XCVR_PRESENT:

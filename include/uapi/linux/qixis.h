@@ -52,6 +52,12 @@ enum qixis_board_rev {
 	QIXIS_BOARD_REV_B = 1,
 };
 
+enum qixis_jcpll_ref {
+	QIXIS_JCPLL_REFA = 0,
+	QIXIS_JCPLL_REFB = 1,
+	QIXIS_JCPLL_REFC = 2,
+};
+
 struct qixis_board_info {
 	enum qixis_board_type board_type;
 	enum qixis_board_rev board_rev;
@@ -79,7 +85,7 @@ struct qixis_jcpll_write_buf {
 						struct qixis_jcpll_write_buf)
 #define QIXIS_JCPLL_READ			_IOR(QIXIS_MAGIC, 5, \
 						struct qixis_jcpll_read_buf)
-#define QIXIS_JCPLL_USE_REFC			_IOW(QIXIS_MAGIC, 6, \
+#define QIXIS_JCPLL_USE_REF			_IOW(QIXIS_MAGIC, 6, \
 							unsigned int)
 #define QIXIS_XCVR_PRESENT			_IOR(QIXIS_MAGIC, 7, \
 							unsigned int)
