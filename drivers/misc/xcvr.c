@@ -285,19 +285,27 @@ struct fragment_node frag_xcvr_spi_wb[] = {
 
 /* roc devices attribute */
 static struct spi_device_params roc_spi_params[] = {
-	{AD93681, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 30000000},
-	{AD93682, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 30000000},
+	{AD93681, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 20000000},
+	{AD93682, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 20000000},
 	{AD9525,  SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 15000000},
-	{AD93681 + ROC_SPI_CNT, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 30000000},
-	{AD93682 + ROC_SPI_CNT, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 30000000},
+	{AD93681 + ROC_SPI_CNT, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 20000000},
+	{AD93682 + ROC_SPI_CNT, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 20000000},
 	{AD9525 + ROC_SPI_CNT,  SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 15000000},
 };
 
 /* roc0 devices binding to dtb */
 static struct of_device_id spi_match_roc0[] = {
+#ifdef CONFIG_BOARD_EVB /* and RDB */
 	{.compatible = "xcvr_spi1_0", .data = &roc_spi_params[AD93682]},
-	{.compatible = "xcvr_spi1_1", .data = &roc_spi_params[AD9525]},
+	{.compatible = "xcvr_spi5_1", .data = &roc_spi_params[AD9525]},
 	{.compatible = "xcvr_spi1_2", .data = &roc_spi_params[AD93681]},
+#elif defined CONFIG_BOARD_4T4R
+	{.compatible = "xcvr_spi1_1", .data = &roc_spi_params[AD93681]}, /* tx */
+	{.compatible = "xcvr_spi5_0", .data = &roc_spi_params[AD9525]},
+	{.compatible = "xcvr_spi1_0", .data = &roc_spi_params[AD93682]}, /* rx */
+#else
+#error No board defined for ROC_0 transceiver
+#endif
 	{},
 };
 
@@ -313,12 +321,23 @@ struct fragment_node frag_xcvr_spi_roc0[] = {
 
 /* roc1 devices binding to dtb */
 static struct of_device_id spi_match_roc1[] = {
+#ifdef CONFIG_BOARD_EVB /* and RDB */
 	{.compatible = "xcvr_spi3_0",
 			.data = &roc_spi_params[AD93682 + ROC_SPI_CNT]},
 	{.compatible = "xcvr_spi3_1",
 			.data = &roc_spi_params[AD9525 + ROC_SPI_CNT]},
 	{.compatible = "xcvr_spi3_2",
 			.data = &roc_spi_params[AD93681 + ROC_SPI_CNT]},
+#elif defined CONFIG_BOARD_4T4R
+	{.compatible = "xcvr_spi3_0",
+			.data = &roc_spi_params[AD93682 + ROC_SPI_CNT]}, /* tx */
+	{.compatible = "xcvr_spi5_0",
+			.data = &roc_spi_params[AD9525 + ROC_SPI_CNT]},
+	{.compatible = "xcvr_spi3_1",
+			.data = &roc_spi_params[AD93681 + ROC_SPI_CNT]}, /* rx */
+#else
+#error No board defined for ROC_1 transceiver
+#endif
 	{},
 
 };

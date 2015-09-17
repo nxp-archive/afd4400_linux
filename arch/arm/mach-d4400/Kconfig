@@ -20,6 +20,28 @@ config SOC_D4400
 
 endmenu
 
+config BOARD_EVB
+       tristate "EVB board"
+       depends on SOC_D4400
+       default n
+       help
+         EVB board support for Freescale D4400 processor
+
+config BOARD_4T4R
+       tristate "POC board"
+       depends on SOC_D4400
+       default n
+       help
+         4T4R board support for Freescale D4400 processor
+
+config  D4400_QSPI_NUMONYX_BUG_WORKAROUND
+       tristate "D4400 qspi Numonyx bug workaround"
+       depends on SOC_D4400
+       depends on BOARD_4T4R
+       default n
+       help
+         Work around qspi bug with erase cmd in Numonyx mode
+
 config SERDES_D4400
        tristate "SerDes driver"
        depends on SOC_D4400

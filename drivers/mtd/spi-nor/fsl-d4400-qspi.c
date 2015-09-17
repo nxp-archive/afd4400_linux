@@ -51,6 +51,11 @@
 #define DEBUG_QSPI_MESSAGES		(1<<0)
 #define DEBUG_QSPI_GENERAL		(1<<1)
 
+#define SET_DUMMY_CYCLES(dummy_cycles)\
+	writel(dummy_cycles, qspi_base + QSPI_LCR_REG);
+
+static void __iomem *qspi_base;
+
 /* Debug and error reporting macros */
 #define IF_DEBUG(x) if (qspi->debug & (x))
 #define ERR(...) {if (qspi->debug & DEBUG_QSPI_MESSAGES) \
@@ -60,7 +65,12 @@ static int d4400_flash_vendor_val[] = {
 	(1 << 3),	/* 0 - Winbond */
 	(2 << 3),	/* 1 - Spansion */
 	(3 << 3),	/* 2 - Macronix */
+#ifdef CONFIG_D4400_QSPI_NUMONYX_BUG_WORKAROUND
+	/* Work around for Numonyx/Micron, use Spansion mode */
+	(2 << 3),	/* 1 - Spansion */
+#else
 	(4 << 3),	/* 3 - Numonyx */
+#endif
 };
 
 enum fsl_qspi_devtype {
@@ -505,14 +515,19 @@ static int fsl_qspi_setup(struct fsl_qspi *q)
 	reg &= ~QSPI_MCR_MDIS_MASK;
 	writel(reg, base + QSPI_MCR_REG);
 
+	/* Clear pending interrupts */
+	reg = readl(q->iobase + QSPI_FR_REG);
+	writel(reg, q->iobase + QSPI_FR_REG);
+
+	/* In case a delay is needed to propagate the deassert of
+	 * irq to cpu.
+	 */
+	udelay(2);
+
 	/* Enable transaction finished interrupt */
 	reg = readl(base + QSPI_RSER_REG);
 	reg |= QSPI_RSER_TFIE_MASK;
 	writel(reg, base + QSPI_RSER_REG);
-
-	/* Clear pending interrupts */
-	reg = readl(q->iobase + QSPI_FR_REG);
-	writel(reg, q->iobase + QSPI_FR_REG);
 
 	return 0;
 }
@@ -548,6 +563,7 @@ static int fsl_qspi_cmd_translate(struct fsl_qspi *q, u8 cmd)
 	case SPINOR_OP_RDID:
 	case SPINOR_OP_WRSR:
 	case SPINOR_OP_RDCR:
+	case SPINOR_OP_RDFSR:
 	case SPINOR_OP_EN4B:
 	case SPINOR_OP_BRWR:
 	case SPINOR_OP_PP_4B:
@@ -649,6 +665,8 @@ static int fsl_qspi_read_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len)
 	int ret;
 	struct fsl_qspi *q = nor->priv;
 
+	SET_DUMMY_CYCLES(nor->read_dummy);
+
 	ret = fsl_qspi_runcmd(q, opcode, 0, len);
 	if (ret)
 		return ret;
@@ -661,6 +679,8 @@ static int fsl_qspi_read(struct spi_nor *nor, loff_t from,
 		size_t len, size_t *retlen, u_char *buf)
 {
 	struct fsl_qspi *q = nor->priv;
+
+	SET_DUMMY_CYCLES(nor->read_dummy);
 
 	dev_dbg(q->dev, "read from (0x%.8x),len:%d\n",
 		(u32)q->amba_base + (u32)from, len);
@@ -680,6 +700,8 @@ static int fsl_qspi_nor_write(struct fsl_qspi *q, struct spi_nor *nor,
 	u32 tmp;
 
 	dev_dbg(q->dev, "to 0x%.8x, len : %d\n", to, count);
+
+	SET_DUMMY_CYCLES(nor->read_dummy);
 
 	/* Clear the TX FIFO. */
 	tmp = readl(q->iobase + QSPI_MCR_REG);
@@ -708,6 +730,9 @@ static int fsl_qspi_write_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len,
 	int ret;
 
 	if (!buf) {
+
+		SET_DUMMY_CYCLES(nor->read_dummy);
+
 		ret = fsl_qspi_runcmd(q, opcode, 0, 1);
 		if (ret)
 			return ret;
@@ -730,6 +755,8 @@ static void fsl_qspi_write(struct spi_nor *nor, loff_t to,
 		size_t len, size_t *retlen, const u_char *buf)
 {
 	struct fsl_qspi *q = nor->priv;
+
+	SET_DUMMY_CYCLES(nor->read_dummy);
 
 	fsl_qspi_nor_write(q, nor, nor->program_opcode, to,
 				(u32 *)buf, len, retlen);
@@ -791,6 +818,9 @@ static int fsl_qspi_probe(struct platform_device *pdev)
 	if (IS_ERR(q->iobase))
 		return PTR_ERR(q->iobase);
 
+	/* Save the base address */
+	qspi_base = q->iobase;
+
 	/* Qspi AMBA bus memory mapped address: [0]-start [1]-size */
 	ret = of_property_read_u32_array(np, "amba-addr", amba_addr, 2);
 	if (ret) {
@@ -844,6 +874,7 @@ static int fsl_qspi_probe(struct platform_device *pdev)
 	q->devtype_data = (struct fsl_qspi_devtype_data *)of_id->data;
 	platform_set_drvdata(pdev, q);
 
+	/* Setup the qspi module */
 	ret = fsl_qspi_setup(q);
 	if (ret)
 		goto irq_failed;

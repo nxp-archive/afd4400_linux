@@ -168,6 +168,7 @@ static const struct file_operations cpri_fops = {
  * Read the interrupt gpio pins to clear
  * the interrupt.
  */
+#ifndef CONFIG_BOARD_4T4R
 static void handle_sfp_irq(struct work_struct *work)
 {
 	struct cpri_priv *priv =
@@ -187,6 +188,7 @@ static void handle_sfp_irq(struct work_struct *work)
 		}
 	}
 }
+#endif
 
 /* CPRI rx timing interrupt handler
  * Right now we are not doing anything
@@ -478,11 +480,13 @@ static irqreturn_t cpri_err_handler(int irq, void *cookie)
 	return IRQ_HANDLED;
 }
 
+#ifndef CONFIG_BOARD_4T4R
 static irqreturn_t cpri_sfp_int_handler(int irq, void *cookie)
 {
 	schedule_delayed_work(&priv->sfp_irq_wq, 0);
 	return IRQ_HANDLED;
 }
+#endif
 
 /***************************** Sysfs *******************************/
 
@@ -521,6 +525,7 @@ static const struct attribute_group attr_group = {
 
 /************************* Probe / Remove **************************/
 
+#ifndef CONFIG_BOARD_4T4R
 static int cpri_init_sfp_irq(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -562,6 +567,7 @@ out1:
 	dev_err(dev, "%s failed", __func__);
 	return -EFAULT;
 }
+#endif
 
 static int cpri_register_irq(struct cpri_dev *cpdev)
 {
@@ -800,11 +806,13 @@ static int cpri_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(dev, cpri_dev);
 
+#ifndef CONFIG_BOARD_4T4R
 	/* Only the CPRI complex 1 has this SFP gpio interrupt entry */
 	if (cpri_dev->dev_id == 0)
 		cpri_init_sfp_irq(pdev);
 	else
 		schedule_delayed_work(&priv->sfp_irq_wq, HZ);
+#endif
 
 	return 0;
 

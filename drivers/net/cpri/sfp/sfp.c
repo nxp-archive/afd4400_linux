@@ -31,6 +31,8 @@
 #include <linux/cpri.h>
 #include "../cpri.h"
 
+extern void d4400_pinmux_hack(int index);
+
 #define MAX_SFPS	4
 #define SFP_DEVICE_NAME "sfp"
 
@@ -494,6 +496,20 @@ static int sfp_config_gpios(struct sfp_dev *sfp)
 {
 	struct device *dev = &(sfp->client->dev);
 
+#ifdef CONFIG_BOARD_4T4R
+	/* Cpri 1 */
+	d4400_pinmux_hack(633); /* GPIOB_0 Tx disable */
+	d4400_pinmux_hack(529); /* GPIOA_8 Tx fault */
+	d4400_pinmux_hack(533); /* GPIOA_9 Rx los */
+	d4400_pinmux_hack(537); /* GPIOA_10 Prs */
+
+	/* Cpri 2 */
+	d4400_pinmux_hack(640); /* GPIOB_1 Tx disable */
+	d4400_pinmux_hack(540); /* GPIOA_11 Tx fault */
+	d4400_pinmux_hack(543); /* GPIOA_12 Rx los */
+	d4400_pinmux_hack(546); /* GPIOA_13 Prs */
+#endif
+
 	/* Get the GPIO pin numbers from device node */
 	sfp->prs = of_get_named_gpio(sfp->dev_node,
 			"gpio-sfp-prs", 0);
@@ -542,10 +558,18 @@ static int sfp_config_gpios(struct sfp_dev *sfp)
 		/* If tx_disable is an input (1-input), then set tx_disable
 		 * as output.
 		 */
+#ifdef CONFIG_BOARD_EVB
+		/* Evb/rdb boards use I/O expander, 1-input 0-output */
 		if (gpio_get_direction(sfp->tx_disable) == 1) {
 			/* Set as output/high to disable. */
 			gpio_direction_output(sfp->tx_disable, 1);
 		}
+#else
+		/* On-chip gpio does not implement gpio_get_direction().
+		 * Just set the direction that we need.
+		 */
+		gpio_direction_output(sfp->tx_disable, 1);
+#endif
 	}
 	sfp->prs_state = 0;
 	sfp->rxlos_state = 0;

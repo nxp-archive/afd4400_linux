@@ -1,0 +1,417 @@
+/*
+ * Copyright (C) 2013 Freescale Semiconductor, Inc.
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+/dts-v1/;
+
+/include/ "d4400.dtsi"
+
+/ {
+	model = "D4400 4T4R Board";
+	compatible = "fsl,d4400";
+
+	aliases {
+		cpri0ethernet0 = &cp1_framer1;
+		cpri1ethernet0 = &cp2_framer1;
+	};
+
+        memory {
+                reg = <0x90000000 0x60000000>;
+        };
+
+        soc@0 {
+                aips-bus@1000000 { /* AIPS1 */
+                        uart3: serial@f4000 {
+                                pinctrl-names = "default";
+                                pinctrl-0 = <&pinctrl_uart3_1>;
+                                status = "okay";
+                        };
+			ecspi@A4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi1_1>;
+				fsl,spi-num-chipselects = <3>;
+			};
+
+			ecspi@A8000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi2_1>;
+				fsl,spi-num-chipselects = <2>;
+
+			};
+
+			ecspi@AC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi3_1>;
+				fsl,spi-num-chipselects = <3>;
+			};
+
+			ecspi@B4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi5_1>;
+				fsl,spi-num-chipselects = <1>;
+
+					jcpll: ad9525@0 {
+						compatible = "adi,ad9525";
+						spi-max-frequency = <20000000>;
+						reg = <0>;
+					};
+			};
+			ecspi@B8000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi6_1>;
+				fsl,spi-num-chipselects = <4>;
+			};
+
+			ecspi@BC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi7_1>;
+				fsl,spi-num-chipselects = <2>;
+			};
+
+			ecspi@C0000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_ecspi8_1>;
+				fsl,spi-num-chipselects = <3>;
+			};
+
+			i2c1: i2c@C4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c1_1>;
+
+				cpriphy0: sfp0@50 {
+					id = <0>;
+					compatible = "sfp-dev";
+					reg = <0x50 0x51>;
+					max-addr = <0x2>;
+					gpio-sfp-txdisable = <&gpioB 0 0>;
+					gpio-sfp-txfault = <&gpioA 8 0>;
+					gpio-sfp-prs = <&gpioA 10 0>;
+					gpio-sfp-rxlos = <&gpioA 9 0>;
+				};
+
+			};
+
+			i2c2: i2c@C8000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c2_1>;
+			};
+
+			i2c3: i2c@CC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c3_1>;
+
+				cpriphy2: sfp2@50 {
+					id = <2>;
+					compatible = "sfp-dev";
+					reg = <0x50 0x51>;
+					max-addr = <0x2>;
+					gpio-sfp-txdisable = <&gpioB 1 0>;
+					gpio-sfp-txfault = <&gpioA 11  0>;
+					gpio-sfp-prs = <&gpioA 13  0>;
+					gpio-sfp-rxlos = <&gpioA 12  0>;
+				};
+			};
+
+			cpri@0x100000 {
+
+				cp1_framer1: framer1@0x0 {
+					reg = <0x0 0x8000>;
+					framer-id = <0>;
+					max-axcs = <24>;
+					memblk-size = <0x1800>;
+					local-mac-address = [ 00 00 AB CD 21 AB ];
+					interrupts = <0 71 0x04>,
+						<0 73 0x04>,
+						<0 75 0x04>,
+						<0 77 0x04>;
+					sfp-handle = <&cpriphy0>;
+					serdes-handle = <&serdes3 2>;
+				};
+			};
+                };
+                aips-bus@1200000 { /* AIPS2 */
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+
+			i2c5: i2c@DC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c5_1>;
+			};
+
+			i2c9: i2c@EC000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c9_1>;
+
+				xcvr_eeprom: eeprom@54 {
+					reg = <0x54>;
+					compatible = "xcvr_eeprom";
+				};
+
+				system_eeprom: eeprom@54 {
+					reg = <0x54>;
+					compatible = "system_eeprom";
+					pagesize = <16>;
+					bytesize = <256>;
+				};
+			};
+
+			i2c10: i2c@F0000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c10_1>;
+			};
+
+			i2c11: i2c@F4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c11_1>;
+			};
+
+			cpri@0x100000 {
+
+				cp2_framer1: framer1@0x0 {
+					reg = <0x0 0x8000>;
+					framer-id = <0>;
+					max-axcs = <24>;
+					memblk-size = <0x1800>;
+					local-mac-address = [ 00 00 AB CD 21 EF ];
+					interrupts = <0 84 0x04>,
+						<0 86 0x04>,
+						<0 88 0x04>,
+						<0 90 0x04>;
+					sfp-handle = <&cpriphy2>;
+					serdes-handle = <&serdes3 4>;
+		                };
+			};
+		};
+
+		aips-bus@4000000 { /* AIPS3 */
+
+                        iomuxc@8c000 {
+
+		                uart3 {
+                                        pinctrl_uart3_1: uart3grp-1 {
+                                                fsl,pins = <
+                                                        341 0x80000000    /* D4400_PAD_UART3_TXD_UART_3_TXD */
+                                                        345 0x80000000    /* D4400_PAD_UART3_RXD_UART_3_RXD */
+                                                >;
+                                        };
+                                };
+
+                                sfpctrl {
+                                        pinctrl_sfpctrl_1: sfpctrlgrp-1 {
+                                                fsl,pins = <
+
+							/* cpri1 sfp */
+                                                        633 0x80000000    /* D4400_PAD_GPIOB0_GPIOB_0 */
+                                                        529 0x80000000    /* D4400_PAD_GPIOA8_GPIOA_8 */
+                                                        533 0x80000000    /* D4400_PAD_GPIOA9_GPIOA_9 */
+                                                        537 0x80000000    /* D4400_PAD_GPIOA10_GPIOA_10 */
+
+							/* cpri2 sfp */
+                                                        640 0x80000000    /* D4400_PAD_GPIOB1_GPIOB_1 */
+                                                        540 0x80000000    /* D4400_PAD_GPIOA11_GPIOA_11 */
+                                                        543 0x80000000    /* D4400_PAD_GPIOA12_GPIOA_12 */
+                                                        546 0x80000000    /* D4400_PAD_GPIOA13_GPIOA_13 */
+                                                >;
+                                        };
+                                };
+
+                                leds {
+                                        pinctrl_leds_1: ledsgrp-1 {
+                                                fsl,pins = <
+                                                        351 0x80000000    /* D4400_PAD_UART4_TXD_GPIOE_29 */
+                                                        357 0x80000000    /* D4400_PAD_UART4_RXD_GPIOE_30 */
+                                                >;
+                                        };
+                                };
+
+                                rmii {
+                                        pinctrl_rmii_1: rmiigrp-1 {
+                                                fsl,pins = <
+                                                        1141 0x80000000    /* D4400_PAD_GPIOD8_TSEC1_RXD0 */
+                                                        1025 0x80000000    /* D4400_PAD_GPIOC24_TSEC1_RXD_1 */
+							1048 0x80000000    /* D4400_PAD_GPIOC27_TSEC1_RX_ERR */
+							1064 0x80000000    /* D4400_PAD_GPIOC29_TSEC1_TX_CLK */
+							1072 0x80000000    /* D4400_PAD_GPIOC30_TSEC1_TXD0 */
+							1080 0x80000000    /* D4400_PAD_GPIOC31_TSEC1_TXD1 */
+							1106 0x80000000    /* D4400_PAD_GPIOD3_TSEC1_TXEN */
+							1134 0x80000000    /* D4400_PAD_GPIOD7_TSEC1_RX_DV */
+							1147 0x80000000    /* D4400_PAD_TSEC_MDC_ETSEC_MDC */
+							1150 0x80000000    /* D4400_PAD_TSEC_MDIO_ETSEC_MDIO */
+                                                >;
+                                        };
+                                };
+
+			};
+
+			mdio@084000 {
+				phy0: smsc-phy@0 {
+					reg = <3>;
+					device_type = "ethernet-phy";
+				};
+
+				tbi0: tbi-phy@10 {
+					device_type = "tbi-phy";
+					reg = <0x10>;
+				};
+			};
+
+			qspi@0A8000 {
+				flash0: mt25ql01g@0 {
+					#address-cells = <1>;
+					#size-cells = <1>;
+					compatible = "micron,mt25ql01g";
+					spi-max-frequency = <50000000>;
+					io-mode = <1>; /* 1-single, 2-dual, 4-quad IO */
+
+					/* 128MB flash */
+					partition@0 {
+						/* U-Boot Image-512KB */
+						reg = <0x0 0x00080000>;
+						label = "bootloader";
+						read-only;
+					};
+					partition@00080000 {
+						/* Env variables, 64KB, area 1*/
+						reg = <0x000080000 0x00010000>;
+						label = "environment-1";
+					};
+					partition@00090000 {
+						/* Env variables, 64KB, area 2*/
+						reg = <0x000090000 0x00010000>;
+						label = "environment-2";
+					};
+					partition@000A0000 {
+						/* U-Boot Redundant Image-512KB */
+						reg = <0x000A0000 0x00080000>;
+						label = "redundant-bootloader";
+						read-only;
+					};
+					partition@00120000 {
+						/* 64MB for Linux image */
+						reg = <0x00120000 0x04000000>;
+						label = "kernel";
+					};
+					partition@04120000 {
+						/* 62.875 MB for JFFS2 based Root file System */
+						reg = <0x04120000 0x03EE0000>;
+						label = "filesystem";
+					};
+				};
+			};
+		};
+
+		fsl-d4400-sys {
+			compatible = "fsl,d4400-sys";
+			eeprom-handle =<&system_eeprom>;
+			gpio-led1 = <&gpioE 29  0>;
+			gpio-led2 = <&gpioE 30  0>;
+		};
+
+                xcvr_if: xcvr_if@1 {
+			compatible = "fsl,xcvr-interface";
+
+			xcvr-roc1 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				platform-drv-name = "roc_misc_driver";
+				/* FMC connector: 0-none, 1-fmc1, 2-fmc2, 3-fmc1 & fmc2 */
+				connector-fmc = <1>;
+				interrupt-parent = <&gpioA>;
+				interrupts = <16 0x04>,
+					<17 0x04>;
+				id = <1>;
+				cs-gpios = <&gpioC 16 0>,
+					<&gpioC 18 0>,
+					<&gpioC 19 0>;
+				tx-reset = <5>;
+				rx-reset = <3>;
+
+				eeprom-handle =<&xcvr_eeprom>;
+				eeprom-addr = <0x54>;
+				eeprom-pagesize = <16>;
+				eeprom-bytesize = <256>;
+				ipmi-mfg-str = "Freescale";
+				ipmi-name-str = "FSL D4400 4T4R21 POC Board";
+			};
+
+			xcvr-roc2 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				platform-drv-name = "roc_misc_driver";
+				/* FMC connector: 0-none, 1-fmc1, 2-fmc2, 3-fmc1 & fmc2 */
+				connector-fmc = <2>;
+				interrupt-parent = <&gpioA>;
+				interrupts = <18 0x04>,
+					<19 0x04>;
+				id = <2>;
+				cs-gpios = <&gpioC 20 0>,
+					<&gpioC 22 0>,
+					<&gpioC 23 0>;
+				tx-reset = <6>;
+				rx-reset = <4>;
+
+				eeprom-handle =<&xcvr_eeprom>;
+				eeprom-addr = <0x54>;
+				eeprom-pagesize = <16>;
+				eeprom-bytesize = <256>;
+				ipmi-mfg-str = "Freescale";
+				ipmi-name-str = "FSL D4400 4T4R21 POC Board";
+			};
+                };
+        };
+
+	landshark@0xc000000 { /* LandShark */
+		compatible = "fsl,landshark";
+		address = <0xc0000000>;
+		length = <0x10000000>;
+		status = "okay";
+	};
+};
