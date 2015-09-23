@@ -27,11 +27,10 @@
 #include <linux/of_gpio.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
+#include <linux/pinctrl/consumer.h>
 
 #include <linux/cpri.h>
 #include "../cpri.h"
-
-extern void d4400_pinmux_hack(int index);
 
 #define MAX_SFPS	4
 #define SFP_DEVICE_NAME "sfp"
@@ -496,20 +495,6 @@ static int sfp_config_gpios(struct sfp_dev *sfp)
 {
 	struct device *dev = &(sfp->client->dev);
 
-#ifdef CONFIG_BOARD_4T4R
-	/* Cpri 1 */
-	d4400_pinmux_hack(633); /* GPIOB_0 Tx disable */
-	d4400_pinmux_hack(529); /* GPIOA_8 Tx fault */
-	d4400_pinmux_hack(533); /* GPIOA_9 Rx los */
-	d4400_pinmux_hack(537); /* GPIOA_10 Prs */
-
-	/* Cpri 2 */
-	d4400_pinmux_hack(640); /* GPIOB_1 Tx disable */
-	d4400_pinmux_hack(540); /* GPIOA_11 Tx fault */
-	d4400_pinmux_hack(543); /* GPIOA_12 Rx los */
-	d4400_pinmux_hack(546); /* GPIOA_13 Prs */
-#endif
-
 	/* Get the GPIO pin numbers from device node */
 	sfp->prs = of_get_named_gpio(sfp->dev_node,
 			"gpio-sfp-prs", 0);
@@ -732,6 +717,7 @@ static int sfp_probe(struct i2c_client *client,
 	int use_smbus = 0, err = 0;
 	unsigned write_max;
 	u8 device_name[10];
+	struct pinctrl *pinctrl;
 
 	/* Getting the device node from i2c client */
 	node = client->dev.of_node;
@@ -810,6 +796,12 @@ static int sfp_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, sfp);
 
 	/* ------------ End populating sfp_dev ---------- */
+
+	/* Pin muxing.  Note: Do not exit on error because sfp
+	 * gpio signals may be coming from I/O expander in which
+	 * no pin muxing on ASIC is required.
+	 */
+	pinctrl = devm_pinctrl_get_select_default(dev);
 
 	/* Configure transceiver pins */
 	err = sfp_config_gpios(sfp);

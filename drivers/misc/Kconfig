@@ -563,6 +563,13 @@ config XCVR
 	 AD9525 (Clock Gen) RFICs from Analog devices (ROC card) and
 	 the wideband card from FSL.
 
+config D4400_SYS
+        tristate "D4400 System Driver"
+        depends on SOC_D4400
+        help
+         The D4400 system driver is part of the kernel and provides
+         system utilities such as provided board information.
+
 config GCR_DEV
 	tristate "GCR Configuration support "
 	help

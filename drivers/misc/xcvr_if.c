@@ -45,6 +45,8 @@
 #include <linux/qixis.h>
 #include <linux/xcvr_if.h>
 #include <uapi/linux/xcvr_if.h>
+#include <linux/util-d4400.h>
+#include <linux/fsl-d4400-sys.h>
 
 /* Debug and error reporting macros */
 #define IF_DEBUG(x) if (xcvrif_dev_data->debug & (x))
@@ -826,6 +828,15 @@ static int xcvrif_remove(struct platform_device *pdev)
 	return ret;
 }
 
+static int xcvr_eeprom_available(void)
+{
+#ifdef CONFIG_BOARD_EVB
+	return qixis_xcvr_eeprom_power();
+#else
+	return d4400_sys_xcvr_eeprom_power();
+#endif
+
+}
 static int xcvr_add_dev(int id, const char *platform_drv_name,
 	struct device_node *child)
 {
@@ -847,7 +858,7 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 		/* Verify IPMI info only if xcvr eeprom is powered which is
 		 * dependent on board rev.
 		 */
-		if (qixis_xcvr_eeprom_power()) {
+		if (xcvr_eeprom_available()) {
 			/* Get properties of the eeprom */
 			eeprom = xcvrif_get_eeprom_info(id, pxcvr_dev);
 			if (!eeprom)

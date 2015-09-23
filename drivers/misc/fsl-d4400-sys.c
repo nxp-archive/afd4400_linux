@@ -1,0 +1,1069 @@
+/*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2, as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ *
+ */
+
+#include <linux/types.h>
+#include <linux/platform_device.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/device.h>
+#include <linux/cdev.h>
+#include <linux/uaccess.h>
+#include <linux/fs.h>
+#include <linux/sched.h>
+#include <linux/param.h>
+#include <linux/delay.h>
+#include <linux/of_platform.h>
+#include <linux/of_address.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
+#include <linux/io.h>
+#include <linux/of_gpio.h>
+#include <linux/gpio.h>
+#include <linux/string.h>
+#include <linux/slab.h>
+#include <linux/of_i2c.h>
+#include <linux/pinctrl/consumer.h>
+
+#include <mach/src.h>
+#include <linux/fsl-d4400-sys.h>
+#include <mach/mach-d4400.h>
+
+#define DRIVER_NAME "d4400-sys"
+#define D4400_SYS_MOD_NAME "d4400-sys"
+
+/* Debug and error reporting macros */
+#define IF_DEBUG(x) if (d4400_sys_data->debug & (x))
+#define ERR(...) {if (d4400_sys_data->debug & DEBUG_D4400_SYS_DEV_MESSAGES) \
+				pr_err(D4400_SYS_MOD_NAME __VA_ARGS__); }
+
+struct d4400_sys_dev *d4400_sys_data;
+
+static const char * const board_names[] = {
+	"UNKNOWN", "D4400_EVB", "D4400_RDB", "D4400_4T4R",
+};
+
+static const char *d4400_sys_board_type_name(void)
+{
+	int brd = 0;
+
+	if (!d4400_sys_data)
+		goto out;
+
+	brd = d4400_sys_data->brd_info.board_type + 1;
+	if (brd > (sizeof(board_names)/sizeof(char *)))
+		brd = 0;
+out:
+	return board_names[brd];
+}
+
+static char d4400_sys_board_rev_letter(void)
+{
+	char rev = '?';
+
+	if (!d4400_sys_data)
+		goto out;
+
+	if (d4400_sys_data->brd_info.board_rev >= 0)
+		rev = d4400_sys_data->brd_info.board_rev + 'A';
+out:
+	return rev;
+}
+
+int d4400_sys_board_type(void)
+{
+	if (!d4400_sys_data)
+		return FSL_BOARD_TYPE_UNKNOWN;
+
+	return d4400_sys_data->brd_info.board_type;
+}
+EXPORT_SYMBOL(d4400_sys_board_type);
+
+int d4400_sys_board_rev(void)
+{
+	if (!d4400_sys_data)
+		return FSL_BOARD_REV_UNKNOWN;
+
+	return d4400_sys_data->brd_info.board_rev;
+}
+EXPORT_SYMBOL(d4400_sys_board_rev);
+
+int d4400_sys_xcvr_eeprom_power(void)
+{
+	if (!d4400_sys_data)
+		return 0;
+
+	/* For now, all boards using this driver has eeprom
+	 * for transceiver.  Note that these boards may be using
+	 * the system eeprom for this purpose.
+	 */
+	return 1;
+}
+EXPORT_SYMBOL(d4400_sys_xcvr_eeprom_power);
+
+int d4400_sys_leds_set_clear(unsigned int set, unsigned int clear)
+{
+	u8 leds = 0;
+
+	if (!d4400_sys_data)
+		return -ENODEV;
+
+	mutex_lock(&d4400_sys_data->lock);
+
+	switch (d4400_sys_data->brd_info.board_type) {
+	case FSL_BOARD_TYPE_D44004T4R:
+		{
+			struct fsl_4t4r_board *brd_4t4r =
+				(struct fsl_4t4r_board *)d4400_sys_data->brd;
+
+			leds = (u8) (((leds & ~clear) | set) & 0x03);
+			gpio_direction_output(brd_4t4r->gpio_led1,
+				leds & 0x01);
+			gpio_direction_output(brd_4t4r->gpio_led2,
+				(leds & 0x02)>>1);
+
+		}
+		break;
+	default:
+		break;
+	}
+	mutex_unlock(&d4400_sys_data->lock);
+	return 0;
+}
+EXPORT_SYMBOL(d4400_sys_leds_set_clear);
+
+int d4400_sys_set_reboot_method(unsigned int method)
+{
+	if (!d4400_sys_data)
+		return -ENODEV;
+
+	/* 0-hard/WDT reset, nonzero-simulated reset */
+	mutex_lock(&d4400_sys_data->lock);
+	d4400_set_reboot_method(method);
+	mutex_unlock(&d4400_sys_data->lock);
+	return 0;
+}
+EXPORT_SYMBOL(d4400_sys_set_reboot_method);
+
+static int d4400_sys_xcvr_present(int xcvr_id)
+{
+	u8 ret = 0;
+
+	if (!d4400_sys_data)
+		return -ENODEV;
+
+	mutex_lock(&d4400_sys_data->lock);
+
+	switch (d4400_sys_data->brd_info.board_type) {
+	case FSL_BOARD_TYPE_D44004T4R:
+
+		/* Two transceivers available, each bit position
+		 * represents a transceiver.
+		 */
+		if (xcvr_id <= 0x03)
+			ret = xcvr_id;
+		break;
+	default:
+		break;
+	}
+	mutex_unlock(&d4400_sys_data->lock);
+	return ret;
+}
+
+static int board_ipmi_4t4r(struct ipmi_info *ipmi,
+	struct fsl_4t4r_board *brd_4t4r)
+{
+	int ret = 0;
+	int i;
+	u32 recordver = 0;
+	struct ipmi_mrec_fsl_board_info *brd_info;
+	struct ipmi_multirecord *mrec = &ipmi->multirec;
+
+	/* Default values if nothing found */
+	brd_4t4r->ipmi_mrec_recordver = 0;
+	brd_4t4r->freqband_MHz = 2100;	/* 2.1GHz */
+	brd_4t4r->features = 0;
+
+	/* Get IPMI mrec board info if available */
+	if (mrec->num_rec == 0)
+		/* Don't return error, early boards may not have
+		 * IPMI multirec burned in eeprom.
+		 */
+		return 0;
+
+	/* Look for record version first.  Then decode the other
+	 * multirec type based on record version.
+	 */
+	for(i = 0; i < mrec->num_rec; ++i) {
+		if (mrec->rechdr[i]->type_id == IPMI_MREC_TID_FSL_RECORDVER) {
+			u8 *d = mrec->rechdr[i]->data;
+			recordver = d[0] | (d[1]<<8) | (d[2]<<16) | (d[3]<<24);
+			brd_4t4r->ipmi_mrec_recordver = recordver;
+		}
+	}
+
+	/* Look for other data only if record version was found */
+	for(i = 0; (i < mrec->num_rec) && (recordver); ++i) {
+
+		switch(mrec->rechdr[i]->type_id) {
+		case IPMI_MREC_TID_FSL_RECORDVER:
+			/* Already processed */
+			break;
+		case IPMI_MREC_TID_FSL_CALDATA:
+		case IPMI_MREC_TID_FSL_CALDATA_PTR:
+			/* Nothing to do for now */
+			break;
+
+		case IPMI_MREC_TID_FSL_BOARDINFO:
+			/* TODO: In future, make the decode of board info
+			 * conditional based upon record version.
+			 */
+			brd_info = (struct ipmi_mrec_fsl_board_info *)
+				mrec->rechdr[i]->data;
+			brd_4t4r->freqband_MHz = brd_info->freqband_MHz;
+			brd_4t4r->features = brd_info->features;
+		}
+	}
+	return ret;
+}
+
+static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
+{
+	int ret = 0;
+	struct device_node *dev_node = d4400_sys->dev->of_node;
+	struct device *dev = d4400_sys->dev;
+	struct pinctrl *pinctrl;
+	struct fsl_4t4r_board *brd_4t4r = NULL;
+
+	brd_4t4r = kzalloc(
+		sizeof(struct fsl_4t4r_board), GFP_KERNEL);
+	if (!brd_4t4r) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	/* Pin muxing */
+	pinctrl = devm_pinctrl_get_select_default(dev);
+	if (IS_ERR(pinctrl)) {
+		dev_err(dev, "can't get/select pinctrl\n");
+		ret = -EINVAL;
+		goto out_err;
+	}
+
+	/* Led gpio */
+	brd_4t4r->gpio_led1 = of_get_named_gpio(dev_node,
+		"gpio-led1", 0);
+	if (!gpio_is_valid(brd_4t4r->gpio_led1)) {
+		dev_err(dev, "4T4R brd led1 gpio %d is not valid\n",
+			brd_4t4r->gpio_led1);
+		ret = -EINVAL;
+		goto out_err;
+	} else {
+		gpio_request(brd_4t4r->gpio_led1, "gpio-led1");
+		gpio_direction_output(brd_4t4r->gpio_led1, 0);
+	}
+
+	/* Led gpio */
+	brd_4t4r->gpio_led2 = of_get_named_gpio(dev_node,
+		"gpio-led2", 0);
+	if (!gpio_is_valid(brd_4t4r->gpio_led2)) {
+		dev_err(dev, "4T4R brd led2 gpio %d is not valid\n",
+			brd_4t4r->gpio_led2);
+		ret = -EINVAL;
+		goto out_err;
+	} else {
+		gpio_request(brd_4t4r->gpio_led2, "gpio-led2");
+		gpio_direction_output(brd_4t4r->gpio_led2, 0);
+	}
+
+	/* Get IPMI info */
+	if (d4400_sys->ipmi)
+		ret = board_ipmi_4t4r(d4400_sys->ipmi, brd_4t4r);
+
+	/* Normal reboot method:
+	 *   0 - via WDT and cpu reset
+	 *   1 - simulated cpu reset
+	 */
+	d4400_sys->reboot_method = 0;
+
+	/* Save board data */
+	d4400_sys->brd = brd_4t4r;
+
+out:
+	return 0;
+out_err:
+	kfree(brd_4t4r);
+	return ret;
+}
+
+static int d4400_sys_setup_board(struct d4400_sys_dev *d4400_sys)
+{
+	int ret = 0;
+
+	mutex_lock(&d4400_sys->lock);
+
+	switch (d4400_sys_data->brd_info.board_type) {
+	case FSL_BOARD_TYPE_D44004T4R:
+		ret = board_setup_4t4r(d4400_sys);
+		break;
+	default:
+		break;
+	}
+
+	mutex_unlock(&d4400_sys->lock);
+	return ret;
+}
+
+static int generate_ipmi_info_str(char *buf)
+{
+	char *p = buf;
+	int j;
+	struct ipmi_info *ipmi;
+
+	if (!d4400_sys_data)
+		return 0;
+	if (!d4400_sys_data->ipmi) {
+		sprintf(p, "IPMI information does not exists for this board.\n");
+		goto out;
+	}
+	ipmi = d4400_sys_data->ipmi;
+
+	/* Basic IPMI info */
+	sprintf(p, "Mfg: %s\n\tName: %s\n\tSerial: %s\n\tPartnum: %s\n",
+		ipmi->board.mfg_str,
+		ipmi->board.name_str,
+		ipmi->board.serial_str,
+		ipmi->board.partnum_str);
+	p += strlen(p);
+
+	/* System specific info */
+	switch (d4400_sys_data->brd_info.board_type) {
+	case FSL_BOARD_TYPE_D44004T4R:
+		{
+			struct fsl_4t4r_board *brd_4t4r;
+			brd_4t4r = d4400_sys_data->brd;
+			sprintf(p, "\tFreq band: %i MHz\n",
+				brd_4t4r->freqband_MHz);
+			p += strlen(p);
+			sprintf(p, "Multirec ver: %0i.%0i\n",
+				(brd_4t4r->ipmi_mrec_recordver>>16) & 0xff,
+				brd_4t4r->ipmi_mrec_recordver & 0xff);
+			p += strlen(p);
+			break;
+		}
+	default:
+		break;
+	}
+
+	/* Raw multirecord info */
+	sprintf(p, "\tMultirecords: %i  size: %i\n",
+		ipmi->multirec.num_rec,
+		ipmi->multirec.size);
+	p += strlen(p);
+
+	for (j = 0; j < ipmi->multirec.num_rec; ++j) {
+		ipmi_printstr_record_hdr(&p,
+			ipmi->multirec.rechdr[j]);
+	}
+	p += strlen(p);
+
+out:
+	return strlen(buf);
+}
+
+static ssize_t show_ipmi_info(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	return generate_ipmi_info_str(buf);
+}
+
+static ssize_t show_board_type(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	return sprintf(buf, "%d\n", d4400_sys_board_type());
+}
+
+static ssize_t show_board_rev(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	return sprintf(buf, "%d\n", d4400_sys_board_rev());
+}
+
+static ssize_t show_board_type_name(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	return sprintf(buf, "%s\n", d4400_sys_board_type_name());
+}
+
+static ssize_t show_board_rev_name(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	return sprintf(buf, "Rev %c\n", d4400_sys_board_rev_letter());
+}
+
+static ssize_t show_leds(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	u8 leds = 0;
+
+	mutex_lock(&d4400_sys_data->lock);
+
+	switch (d4400_sys_data->brd_info.board_type) {
+	case FSL_BOARD_TYPE_D44004T4R:
+		{
+			struct fsl_4t4r_board *brd_4t4r =
+				(struct fsl_4t4r_board *)d4400_sys_data->brd;
+			leds = gpio_get_value(brd_4t4r->gpio_led1);
+			leds |= (gpio_get_value(brd_4t4r->gpio_led2) << 1);
+		}
+		break;
+	default:
+		break;
+	}
+	mutex_unlock(&d4400_sys_data->lock);
+	return sprintf(buf, "%d\n", leds);
+}
+
+static ssize_t set_leds(struct device *dev, struct device_attribute *attr,
+		       const char *buf, size_t count)
+{
+	int err;
+	unsigned int val;
+
+	err = kstrtouint(buf, 0, &val);
+	if (err)
+		return err;
+
+	d4400_sys_leds_set_clear(val, ~val);
+	return count;
+}
+
+static ssize_t set_debug(struct device *dev,
+	struct device_attribute *devattr,
+	const char *buf, size_t count)
+{
+	int ret;
+	unsigned int val;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	mutex_lock(&d4400_sys_data->lock);
+	d4400_sys_data->debug = val;
+	mutex_unlock(&d4400_sys_data->lock);
+
+	return count;
+}
+
+static ssize_t show_debug(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	u32 debug;
+
+	mutex_lock(&d4400_sys_data->lock);
+	debug = d4400_sys_data->debug;
+	mutex_unlock(&d4400_sys_data->lock);
+
+	return sprintf(buf, "%d / 0x%x\n", debug, debug);
+}
+
+static ssize_t show_reboot(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	int reboot = 0;
+
+	mutex_lock(&d4400_sys_data->lock);
+	reboot = d4400_sys_data->reboot_method;
+	mutex_unlock(&d4400_sys_data->lock);
+
+	return sprintf(buf, "%d\n", reboot);
+}
+
+static ssize_t set_reboot(struct device *dev, struct device_attribute *attr,
+		       const char *buf, size_t count)
+{
+	int err;
+	unsigned int val;
+
+	err = kstrtouint(buf, 0, &val);
+	if (err)
+		return err;
+
+	mutex_lock(&d4400_sys_data->lock);
+	if (val)
+		/* Simulated reboot */
+		d4400_sys_data->reboot_method = 1;
+	else
+		/* Normal reboot via WDT, cpu reset */
+		d4400_sys_data->reboot_method = 0;
+	mutex_unlock(&d4400_sys_data->lock);
+
+	d4400_set_reboot_method(d4400_sys_data->reboot_method);
+
+	return count;
+}
+
+static DEVICE_ATTR(board_type,      S_IRUGO, show_board_type,      NULL);
+static DEVICE_ATTR(board_type_name, S_IRUGO, show_board_type_name, NULL);
+static DEVICE_ATTR(board_rev,       S_IRUGO, show_board_rev,       NULL);
+static DEVICE_ATTR(board_rev_name,  S_IRUGO, show_board_rev_name,  NULL);
+static DEVICE_ATTR(leds,  S_IWUSR | S_IRUGO, show_leds,            set_leds);
+static DEVICE_ATTR(reboot, S_IWUSR | S_IRUGO, show_reboot,         set_reboot);
+static DEVICE_ATTR(debug, S_IWUSR | S_IRUGO, show_debug,           set_debug);
+static DEVICE_ATTR(ipmi_info,       S_IRUGO, show_ipmi_info,        NULL);
+
+static struct attribute *d4400_sys_attributes[] = {
+	&dev_attr_board_type.attr,
+	&dev_attr_board_type_name.attr,
+	&dev_attr_board_rev.attr,
+	&dev_attr_board_rev_name.attr,
+	&dev_attr_leds.attr,
+	&dev_attr_reboot.attr,
+	&dev_attr_debug.attr,
+	&dev_attr_ipmi_info.attr,
+	NULL
+};
+
+static const struct attribute_group attr_group = {
+	.attrs = d4400_sys_attributes,
+};
+
+static int d4400_sys_open(struct inode *i, struct file *f)
+{
+	int err = 0;
+
+	/* For now, nothing to do. */
+
+	return err;
+}
+
+static int d4400_sys_close(struct inode *i, struct file *f)
+{
+	return 0;
+}
+
+static long d4400_sys_ioctl(struct file *filp, unsigned int cmd,
+	unsigned long arg)
+{
+	int err = 0;
+	void __user *ioargp = (void __user *)arg;
+	u32 temp;
+
+	switch (cmd) {
+
+	/* Return board type and revision */
+	case FSL_D4400_SYS_BOARD_INFO:
+		if (copy_to_user((struct d4400_sys_board_info *)ioargp,
+				&d4400_sys_data->brd_info,
+				sizeof(struct d4400_sys_board_info))) {
+			err = -EFAULT;
+			goto out;
+		}
+		break;
+
+	/* Check presence of a transceiver */
+	case FSL_D4400_SYS_XCVR_PRESENT:
+		if (copy_from_user(&temp, (u32 *)ioargp, sizeof(u32))) {
+			err = -EFAULT;
+			goto out;
+		}
+		temp = d4400_sys_xcvr_present(temp);
+		if (copy_to_user((u32 *)ioargp, &temp, sizeof(u32)))
+			err = -EFAULT;
+		break;
+
+	/* Set / Clear the software LEDs */
+	case FSL_D4400_SYS_LEDS_SET_CLEAR:
+		err = d4400_sys_leds_set_clear((arg>>8)&0xFF, arg&0xFF);
+		break;
+
+	/* Set reboot method */
+	case FSL_D4400_SYS_SET_REBOOT_METHOD:
+		err = d4400_sys_set_reboot_method(arg);
+		break;
+	default:
+		err = -EINVAL;
+	}
+	if (!err)
+		return 0;
+out:
+	pr_err("FSL D4400 System Driver: ioctl() error %d\n", err);
+	return err;
+}
+
+static const struct file_operations d4400_sys_fops = {
+	.owner = THIS_MODULE,
+	.open = d4400_sys_open,
+	.release = d4400_sys_close,
+	.unlocked_ioctl = d4400_sys_ioctl,
+};
+
+static int eeprom_read(struct d4400_sys_i2c_eeprom *eeprom,
+	u8 *buf, int start_addr, int num)
+{
+	int ret = 0;
+	struct i2c_msg msgs[2];
+	int addr;
+	int eeprom_addr = eeprom->addr;
+
+	/* TODO: Add ability to do page boundary crossing such as
+	 * r/w from one 64K page that extends to the next 64K page.
+	 */
+
+	if ((!eeprom) || (!buf))
+		return ret;
+
+	if (eeprom->addrlen > 1) {
+		/* Major mfg of eeproms expect MSB of 16-bit address first
+		 * followed by LSB.  Any address bits beyond 16-bit is put
+		 * in the slave address byte (bits b[1:0] location).
+		 */
+		addr  = (start_addr & 0xff00) >> 8;
+		addr |= (start_addr & 0x00ff) << 8;
+
+		if (eeprom->bytesize > (64 * 1024)) {
+			/* Slave addr b[0] is addr bit A17 */
+			eeprom_addr &= ~0x01;
+			eeprom_addr |= ((start_addr & 0x10000) >> 16);
+		}
+		if (eeprom->bytesize > (256 * 1024)) {
+			/* Slave addr b[1] is addr bit A18 */
+			eeprom_addr &= ~0x02;
+			eeprom_addr |= ((start_addr & 0x20000) >> 16);
+		}
+	} else
+		addr = start_addr & 0x00ff;
+
+	/* Write the address to read */
+	msgs[0].addr = eeprom_addr;
+	msgs[0].flags = 0;
+	msgs[0].len = eeprom->addrlen;
+	msgs[0].buf = (u8 *)&addr; /* Addr msb sent first */
+
+	/* Read the entire IPMI info */
+	msgs[1].addr = eeprom_addr;
+	msgs[1].flags = I2C_M_RD,
+	msgs[1].len = num,
+	msgs[1].buf = buf,
+
+	/* Number of msgs processed is returned, neg if error */
+	ret = i2c_transfer(eeprom->client->adapter, msgs, 2);
+	if (ret != 2)
+		ret = -ENODEV;
+	else
+		ret = 0;
+	return ret;
+}
+
+static struct ipmi_info *d4400_sys_verify_ipmi_info(
+	struct d4400_sys_i2c_eeprom *eeprom)
+{
+	int ret = 0;
+	u8 ipmi_rawbuf[IPMI_EEPROM_DATA_SIZE];
+	struct ipmi_info *ipmi = NULL;
+
+	memset(ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
+	ret = eeprom_read(eeprom, ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
+	if (ret)
+		goto out0;
+
+	ipmi = kzalloc(sizeof(struct ipmi_info), GFP_KERNEL);
+	if (!ipmi) {
+		pr_err(D4400_SYS_MOD_NAME ": IPMI: Failed to allocate %d bytes for IPMI info\n",
+			sizeof(struct ipmi_info));
+		goto out0;
+	}
+
+	/* Create IPMI info */
+	ret = ipmi_create(ipmi_rawbuf, ipmi);
+	if (ret) {
+		pr_err(D4400_SYS_MOD_NAME ": IPMI: Failed to find valid IPMI information\n");
+		goto out1;
+	}
+	pr_info("IPMI board mfg   :  %s\n", ipmi->board.mfg_str);
+	pr_info("IPMI board name  :  %s\n", ipmi->board.name_str);
+
+	return ipmi;
+out1:
+	ipmi_free(ipmi);
+	kfree(ipmi);
+out0:
+	return NULL;
+}
+
+static struct d4400_sys_i2c_eeprom *get_eeprom_info(
+	struct platform_device *pdev)
+{
+	struct device_node *eeprom_node;
+	struct i2c_client *eeprom_client;
+	struct d4400_sys_i2c_eeprom *eeprom;
+	u32 pagesize;
+	u32 bytesize;
+	u32 addrlen;
+
+	eeprom_node = of_parse_phandle(pdev->dev.of_node, "eeprom-handle", 0);
+	if (!eeprom_node) {
+		pr_err(D4400_SYS_MOD_NAME ": eeprom-handle not found\n");
+		goto out;
+	}
+
+	eeprom_client = of_find_i2c_device_by_node(eeprom_node);
+	if (!eeprom_client) {
+		pr_err(D4400_SYS_MOD_NAME ": Failed to find eeprom i2c device handle\n");
+		goto out;
+	}
+
+	if (of_property_read_u32(eeprom_node, "bytesize", &bytesize)) {
+		pr_err(D4400_SYS_MOD_NAME ": bytesize property not found\n");
+		goto out;
+	}
+
+	if (of_property_read_u32(eeprom_node, "pagesize", &pagesize)) {
+		pr_err(D4400_SYS_MOD_NAME ": pagesize property not found\n");
+		goto out;
+	}
+
+	/* Determine how many address bytes are needed: 1 or 2 bytes.
+	 * Note that large eeproms that need more than 16 address bits
+	 * use bits in the control byte (i2c slave address byte) to extend
+	 * the address bits.  For example, 128K byte eeprom (17 addr bits
+	 * needed) uses 2 byte address plus 1 bit in the control reg.
+	 */
+	if (bytesize > 256)
+		/* Two addr bytes needed */
+		addrlen = 2;
+	else
+		addrlen = 1;
+
+	eeprom = kzalloc(sizeof(struct d4400_sys_i2c_eeprom), GFP_KERNEL);
+	if (!eeprom) {
+		pr_err(D4400_SYS_MOD_NAME ": Failed to allocate %d bytes for eeprom info\n",
+			sizeof(struct d4400_sys_i2c_eeprom));
+		goto out;
+	}
+	eeprom->client = eeprom_client;
+	eeprom->addr = eeprom_client->addr;
+	eeprom->pagesize = pagesize;
+	eeprom->bytesize = bytesize;
+	eeprom->addrlen = addrlen;
+
+	return eeprom;
+out:
+	return NULL;
+}
+
+static int __init d4400_sys_probe(struct platform_device *pdev)
+{
+	int ret = 0;
+	struct device_node *np = pdev->dev.of_node;
+	struct device *dev = &pdev->dev;
+	struct device *sysfs_dev;
+
+	if (!np || !of_device_is_available(np)) {
+		pr_err(D4400_SYS_MOD_NAME ": No  interface device available\n");
+		return -ENODEV;
+	}
+
+	d4400_sys_data = kzalloc(sizeof(struct d4400_sys_dev), GFP_KERNEL);
+	if (!d4400_sys_data) {
+		pr_err(D4400_SYS_MOD_NAME ": Failed to allocate device data\n");
+		ret = -ENOMEM;
+		goto out;
+	}
+	d4400_sys_data->dev = dev;
+	mutex_init(&d4400_sys_data->lock);
+
+	/* Create char device */
+	ret = alloc_chrdev_region(&d4400_sys_data->devt, 0, 1,
+		D4400_SYS_MOD_NAME);
+	if (ret) {
+
+		ret = -ENOMEM;
+		goto out;
+	}
+	d4400_sys_data->major = MAJOR(d4400_sys_data->devt);
+	d4400_sys_data->minor = MINOR(d4400_sys_data->devt);
+
+	/* Create device class for sysfs */
+	d4400_sys_data->class = class_create(THIS_MODULE, D4400_SYS_MOD_NAME);
+	if (IS_ERR(d4400_sys_data->class)) {
+		ret = PTR_ERR(d4400_sys_data->class);
+		goto out_class;
+	}
+
+	/* Create character device */
+	cdev_init(&d4400_sys_data->dev_cdev, &d4400_sys_fops);
+	d4400_sys_data->dev_cdev.owner = THIS_MODULE;
+	ret = cdev_add(&d4400_sys_data->dev_cdev, d4400_sys_data->devt, 1);
+	if (ret) {
+		pr_err(D4400_SYS_MOD_NAME ": Error %d while adding cdev",
+			ret);
+		goto out_cdev;
+	}
+
+	/* Create the device node in /dev */
+	sysfs_dev = device_create(d4400_sys_data->class, &pdev->dev,
+		d4400_sys_data->devt,	NULL, D4400_SYS_MOD_NAME);
+	if (NULL == sysfs_dev) {
+		ret = PTR_ERR(sysfs_dev);
+		pr_err(D4400_SYS_MOD_NAME ": Error %d while creating device",
+			 ret);
+		goto out_dev;
+	}
+
+	ret = sysfs_create_group(&pdev->dev.kobj, &attr_group);
+	if (ret < 0) {
+		pr_err(D4400_SYS_MOD_NAME ": Error %d while creating group",
+			ret);
+		goto out_group;
+	}
+	dev_set_drvdata(&pdev->dev, d4400_sys_data);
+
+	/* Get system eeprom info */
+	d4400_sys_data->eeprom = get_eeprom_info(pdev);
+	d4400_sys_data->ipmi = d4400_sys_verify_ipmi_info(
+		d4400_sys_data->eeprom);
+	if (!d4400_sys_data->ipmi) {
+		pr_err(D4400_SYS_MOD_NAME ": Bad IPMI data in eeprom");
+		ret = -EINVAL;
+		goto out_group;
+	}
+
+	/* Get board type/rev */
+	d4400_sys_data->brd_info.board_type = fsl_get_board_type(
+		d4400_sys_data->ipmi->board.name_str);
+	d4400_sys_data->brd_info.board_rev = fsl_get_board_rev(
+		d4400_sys_data->ipmi->board.partnum_str);
+
+	/* Setup the board */
+	ret = d4400_sys_setup_board(d4400_sys_data);
+	if (ret)
+		goto out_group;
+
+	return 0;
+
+out_group:
+	device_destroy(d4400_sys_data->class, d4400_sys_data->devt);
+out_dev:
+	cdev_del(&d4400_sys_data->dev_cdev);
+out_cdev:
+	class_destroy(d4400_sys_data->class);
+out_class:
+	unregister_chrdev_region(d4400_sys_data->devt, 1);
+out:
+	kfree(d4400_sys_data);
+	return ret;
+}
+
+static int __exit d4400_sys_remove(struct platform_device *pdev)
+{
+	int ret = 0;
+	struct d4400_sys_dev *d4400_sys_data = dev_get_drvdata(&pdev->dev);
+
+	sysfs_remove_group(&pdev->dev.kobj, &attr_group);
+	device_destroy(d4400_sys_data->class, d4400_sys_data->devt);
+	cdev_del(&d4400_sys_data->dev_cdev);
+	class_destroy(d4400_sys_data->class);
+	unregister_chrdev_region(d4400_sys_data->devt, 1);
+
+	kfree(d4400_sys_data);
+	return ret;
+}
+
+static struct of_device_id d4400_sys_ids[] = {
+	{.compatible = "fsl,d4400-sys", },
+	{ /* sentinel */ }
+};
+
+static struct platform_driver d4400_sys_driver = {
+	.driver = {
+		.name = DRIVER_NAME,
+		.owner = THIS_MODULE,
+		.of_match_table = d4400_sys_ids,
+	},
+	.remove = __exit_p(d4400_sys_remove),
+};
+
+static int __init d4400_sys_init(void)
+{
+	return platform_driver_probe(&d4400_sys_driver,
+		d4400_sys_probe);
+}
+
+static void __exit d4400_sys_exit(void)
+{
+	platform_driver_unregister(&d4400_sys_driver);
+}
+
+module_init(d4400_sys_init);
+module_exit(d4400_sys_exit);
+
+MODULE_DESCRIPTION("FSL DFE D4400 system driver");
+MODULE_LICENSE("GPL v2");
+MODULE_ALIAS("platform:" DRIVER_NAME);
+
+/* Get the eeprom offset address.  Part of this address could
+ * reside in the i2c slave address itself if the eeprom size is
+ * larger than a 16-bit address can hold.
+ */
+#if 0 /* This function is not needed for now */
+static void eeprom_get_addr(int bytesize, int start_addr, int *addr,
+	int *eeprom_addr)
+{
+	/* Major mfg of eeproms expect MSB of 16-bit address first
+	 * followed by LSB.  Any address bits beyond 16-bit is put
+	 * in the slave address byte (bits b[1:0] location).
+	 */
+	*addr  = (start_addr & 0xff00) >> 8;
+	*addr |= (start_addr & 0x00ff) << 8;
+
+	if (bytesize > (64 * 1024)) {
+		/* Slave addr b[0] is addr bit A17 */
+		*eeprom_addr &= ~0x01;
+		*eeprom_addr |= ((start_addr & 0x10000) >> 16);
+	}
+	if (bytesize > (256 * 1024)) {
+		/* Slave addr b[1] is addr bit A18 */
+		*eeprom_addr &= ~0x02;
+		*eeprom_addr |= ((start_addr & 0x20000) >> 16);
+	}
+}
+
+/* This function is not needed for now */
+static int eeprom_write(struct d4400_sys_i2c_eeprom *eeprom,
+	u8 *buf, int start_addr, int num)
+{
+	int ret = 0;
+	struct i2c_msg msgs[2];
+	struct i2c_msg msgschk[1];
+	int addr;
+	int eeprom_addr = eeprom->addr;
+	u8 *tmpbuf, *src, *dest;
+	int i, shift;
+	int allocsize;
+	int left;
+	int cur_addr;
+	int data_size;
+	int nextpageaddr;
+
+	/* TODO: Add ability to do page boundary crossing such as
+	 * r/w from one 64K page that extends to the next 64K page.
+	 */
+
+	if ((!eeprom) || (!buf))
+		return ret;
+
+	/* Temp buffer size is up to max of eeprom page size plus offset
+	 * address bytes.
+	 */
+	allocsize = eeprom->addrlen;
+	if (num > eeprom->pagesize)
+		allocsize += eeprom->pagesize;
+	else
+		allocsize += num;
+
+	/* Temp buffer */
+	tmpbuf = kzalloc(allocsize, GFP_KERNEL);
+	if (!tmpbuf)
+		return -ENOMEM;
+
+	/* Used to check for NACK after write to see when eeprom
+	 * is done writing. */
+	msgschk[0].addr = eeprom->addr;
+	msgschk[0].flags = 0;
+	msgschk[0].len = 0;
+	msgschk[0].buf = tmpbuf;
+
+	/* Write one chunk (up to pagesize) to eeprom */
+	src = buf;
+	left = num;
+	cur_addr = start_addr;
+	while (left > 0) {
+
+		/* Calculate address.  Note that the LSB of 'addr' contains
+		 * the MSB of the offset address.  For example for 16-bit
+		 * offset address:
+		 *   addr[7:0]  = cur_addr[15:8]
+		 *   addr[15:8] = cur_addr[7:0]
+		 */
+		eeprom_addr = eeprom->addr;
+		eeprom_get_addr(eeprom->bytesize, cur_addr, &addr,
+			&eeprom_addr);
+
+		/* Limit the write size to one page */
+		if (left > eeprom->pagesize)
+			data_size = eeprom->pagesize;
+		else
+			data_size = left;
+
+		/* Make sure we don't cross page boundary */
+		nextpageaddr = (cur_addr & ~(eeprom->pagesize-1))
+			+ eeprom->pagesize;
+		if ((cur_addr + data_size) > nextpageaddr)
+			data_size = (nextpageaddr - cur_addr);
+
+		/* Reset */
+		dest = tmpbuf;
+
+		/* Put in the address bytes, MSB first */
+		for (i = 0; i < eeprom->addrlen; ++i) {
+			shift = (8 * i);
+			*dest++ = (u8)((addr >> shift) & 0xff);
+		}
+
+		/* Data */
+		for (i = 0; i < data_size; ++i)
+			*dest++ = *src++;
+
+		/* Write: start with address byte(s) followed by data. */
+		msgs[0].addr = eeprom_addr;
+		msgs[0].flags = 0;
+		msgs[0].len = eeprom->addrlen + data_size;
+		msgs[0].buf = tmpbuf;
+
+		/* Number of msgs processed is returned, neg if error */
+		ret = i2c_transfer(eeprom->client->adapter, msgs, 1);
+		if (ret != 1)
+			ret = -ENODEV;
+		/* Reset */
+		ret = 0;
+
+		/* Do dummy read to see when device is done writing.  We'll get
+		 * NACKed until then.  Wait until read succeeds or timed out,
+		 */
+		i = 0;
+		while (i2c_transfer(eeprom->client->adapter, msgschk, 1) != 1) {
+			++i;
+			if (i > 100) {
+				ret = -EIO;
+				break;
+			}
+			mdelay(1);
+		}
+		if (ret)
+			break;
+
+		cur_addr += data_size;
+		left -= data_size;
+	}
+
+	kfree(tmpbuf);
+
+	return ret;
+}
+#endif

@@ -72,6 +72,7 @@
 						compatible = "adi,ad9525";
 						spi-max-frequency = <20000000>;
 						reg = <0>;
+						gpio-reset = <&gpioD 31 0>;
 					};
 			};
 			ecspi@B8000 {
@@ -117,6 +118,8 @@
 					gpio-sfp-txfault = <&gpioA 8 0>;
 					gpio-sfp-prs = <&gpioA 10 0>;
 					gpio-sfp-rxlos = <&gpioA 9 0>;
+					pinctrl-names = "default";
+					pinctrl-0 = <&pinctrl_sfp1_1>;
 				};
 
 			};
@@ -145,6 +148,9 @@
 					gpio-sfp-txfault = <&gpioA 11  0>;
 					gpio-sfp-prs = <&gpioA 13  0>;
 					gpio-sfp-rxlos = <&gpioA 12  0>;
+					pinctrl-names = "default";
+					pinctrl-0 = <&pinctrl_sfp2_1>;
+
 				};
 			};
 
@@ -184,9 +190,9 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_i2c9_1>;
 
-				xcvr_eeprom: eeprom@54 {
-					reg = <0x54>;
-					compatible = "xcvr_eeprom";
+				adt7461@4c {
+					compatible = "adi,adt7461";
+					reg = <0x4c>;
 				};
 
 				system_eeprom: eeprom@54 {
@@ -194,6 +200,11 @@
 					compatible = "system_eeprom";
 					pagesize = <16>;
 					bytesize = <256>;
+				};
+
+				xcvr_eeprom: eeprom@54 {
+					reg = <0x54>;
+					compatible = "xcvr_eeprom";
 				};
 			};
 
@@ -235,7 +246,7 @@
 
                         iomuxc@8c000 {
 
-		                uart3 {
+		                uart3_pins {
                                         pinctrl_uart3_1: uart3grp-1 {
                                                 fsl,pins = <
                                                         341 0x80000000    /* D4400_PAD_UART3_TXD_UART_3_TXD */
@@ -244,16 +255,18 @@
                                         };
                                 };
 
-                                sfpctrl {
-                                        pinctrl_sfpctrl_1: sfpctrlgrp-1 {
+                                sfpctrl_pins {
+                                        pinctrl_sfp1_1: sfp1grp-1 {
                                                 fsl,pins = <
-
 							/* cpri1 sfp */
                                                         633 0x80000000    /* D4400_PAD_GPIOB0_GPIOB_0 */
                                                         529 0x80000000    /* D4400_PAD_GPIOA8_GPIOA_8 */
                                                         533 0x80000000    /* D4400_PAD_GPIOA9_GPIOA_9 */
                                                         537 0x80000000    /* D4400_PAD_GPIOA10_GPIOA_10 */
-
+                                                >;
+                                        };
+                                        pinctrl_sfp2_1: sfp2grp-1 {
+                                                fsl,pins = <
 							/* cpri2 sfp */
                                                         640 0x80000000    /* D4400_PAD_GPIOB1_GPIOB_1 */
                                                         540 0x80000000    /* D4400_PAD_GPIOA11_GPIOA_11 */
@@ -263,7 +276,7 @@
                                         };
                                 };
 
-                                leds {
+                                leds_pins {
                                         pinctrl_leds_1: ledsgrp-1 {
                                                 fsl,pins = <
                                                         351 0x80000000    /* D4400_PAD_UART4_TXD_GPIOE_29 */
@@ -272,7 +285,7 @@
                                         };
                                 };
 
-                                rmii {
+                                rmii_pins {
                                         pinctrl_rmii_1: rmiigrp-1 {
                                                 fsl,pins = <
                                                         1141 0x80000000    /* D4400_PAD_GPIOD8_TSEC1_RXD0 */
@@ -353,6 +366,8 @@
 			eeprom-handle =<&system_eeprom>;
 			gpio-led1 = <&gpioE 29  0>;
 			gpio-led2 = <&gpioE 30  0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_leds_1>;
 		};
 
                 xcvr_if: xcvr_if@1 {
@@ -379,7 +394,7 @@
 				eeprom-pagesize = <16>;
 				eeprom-bytesize = <256>;
 				ipmi-mfg-str = "Freescale";
-				ipmi-name-str = "FSL D4400 4T4R21 POC Board";
+				ipmi-name-str = "FSL D4400 4T4R Reference Board";
 			};
 
 			xcvr-roc2 {
@@ -403,7 +418,7 @@
 				eeprom-pagesize = <16>;
 				eeprom-bytesize = <256>;
 				ipmi-mfg-str = "Freescale";
-				ipmi-name-str = "FSL D4400 4T4R21 POC Board";
+				ipmi-name-str = "FSL D4400 4T4R Reference Board";
 			};
                 };
         };

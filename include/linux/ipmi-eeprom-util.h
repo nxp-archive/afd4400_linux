@@ -158,6 +158,20 @@ struct ipmi_info {
 #define IPMI_EEPROM_DATA_SIZE	(256)
 #define IPMI_INFO_STRUCT_SIZE	(sizeof(ipmi_info))
 
+/* IPMI defined multi-record type ID */
+#define IPMI_MREC_TID_POWERSUP_INFO	0x00 /* Power supply info */
+#define IPMI_MREC_TID_DC_OUTPUT		0x01 /* DC output */
+#define IPMI_MREC_TID_DC_LOAD		0x02 /* DC load */
+#define IPMI_MREC_TID_MANAGEMENT_AREC	0x03 /* Management access record */
+#define IPMI_MREC_TID_BASE_COMPAT_REC	0x04 /* Base compatibility record */
+#define IPMI_MREC_TID_EXT_COMPAT_REC	0x05 /* Extended compatibility record */
+
+/* Freescale OEM multi-record type ID */
+#define IPMI_MREC_TID_FSL_RECORDVER	0xc0 /* Record version */
+#define IPMI_MREC_TID_FSL_CALDATA	0xc1 /* Calibration data */
+#define IPMI_MREC_TID_FSL_CALDATA_PTR	0xc2 /* Calibration data pointer */
+#define IPMI_MREC_TID_FSL_BOARDINFO	0xc3 /* Board information */
+
 int ipmi_create(u8 *ipmi_rawbuf, struct ipmi_info *ipmi);
 void ipmi_free(struct ipmi_info *ipmi);
 void ipmi_print_common_hdr(struct ipmi_common_hdr *common_hdr);
