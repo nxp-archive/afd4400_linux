@@ -322,7 +322,7 @@
 					#size-cells = <1>;
 					compatible = "micron,mt25ql01g";
 					spi-max-frequency = <50000000>;
-					io-mode = <1>; /* 1-single, 2-dual, 4-quad IO */
+					io-mode = <4>; /* 1-single, 4-quad IO */
 
 					/* 128MB flash */
 					partition@0 {
