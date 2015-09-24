@@ -1158,6 +1158,13 @@ config SENSORS_INA2XX
 	  This driver can also be built as a module.  If so, the module
 	  will be called ina2xx.
 
+config SENSORS_IR36021
+	tristate "IR IR36021"
+	depends on I2C
+	help
+	  If you say yes here you get support for monitoring the
+	  IR36021 Buck regulator.
+
 config SENSORS_THMC50
 	tristate "Texas Instruments THMC50 / Analog Devices ADM1022"
 	depends on I2C
