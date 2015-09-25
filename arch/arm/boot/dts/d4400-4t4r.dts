@@ -205,7 +205,14 @@
 				xcvr_eeprom: eeprom@54 {
 					reg = <0x54>;
 					compatible = "xcvr_eeprom";
+					pagesize = <16>;
+					bytesize = <256>;
 				};
+
+                                ir36021@78 {
+                                        compatible = "ir,ir36021";
+                                        reg = <0x78>;
+                                };
 			};
 
 			i2c10: i2c@F0000 {
