@@ -551,7 +551,7 @@ int serdes_init_pll(void *sdev_handle,
 		goto out;
 	}
 
-#if 0
+#if 1
 	/* If Pll is already initialized then return */
 	if (sdev->cflag & (1 << pll->pll_id)) {
 		dev_info(sdev->dev, "PLL %d already initialized\n",
