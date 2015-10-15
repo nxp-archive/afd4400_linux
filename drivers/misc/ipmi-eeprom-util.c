@@ -481,9 +481,20 @@ err_out:
 int ipmi_create(u8 *ipmi_rawbuf, struct ipmi_info *ipmi)
 {
 	int err, offset;
+	int i, sum;
 
 	if ((!ipmi) || (!ipmi_rawbuf))
 		return -1;
+
+	/* IPMI common header must have at least one non-zero byte.
+	 * If all common header bytes are zero, that indicates
+	 * there's no data.
+	 */
+	sum = 0;
+	for (i = 0; i < IPMI_COMMOM_HDR_SIZE; ++i)
+		sum += ipmi_rawbuf[i];
+	if (!sum)
+		return -EINVAL;
 
 	/* Null all data and pointers.  Asumes this is a new object. */
 	memset(ipmi, 0, sizeof(struct ipmi_info));
@@ -492,7 +503,7 @@ int ipmi_create(u8 *ipmi_rawbuf, struct ipmi_info *ipmi)
 	 * the buffer, as this area is mandatory.
 	 */
 	if (ipmi_verify_checksum(ipmi_rawbuf, 0, IPMI_COMMOM_HDR_SIZE))
-		return -1;
+		return -EINVAL;
 
 	/* Common header */
 	ipmi_create_common_hdr(ipmi_rawbuf, &ipmi->common_hdr);
