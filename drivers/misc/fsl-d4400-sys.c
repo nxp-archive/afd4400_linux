@@ -53,6 +53,9 @@
 
 struct d4400_sys_dev *d4400_sys_data;
 
+static struct ipmi_info *d4400_sys_verify_ipmi_info(
+	struct d4400_sys_i2c_eeprom *eeprom);
+
 static const char * const board_names[] = {
 	"UNKNOWN", "D4400_EVB", "D4400_RDB", "D4400_4T4R",
 };
@@ -122,8 +125,6 @@ int d4400_sys_leds_set_clear(unsigned int set, unsigned int clear)
 	if (!d4400_sys_data)
 		return -ENODEV;
 
-	mutex_lock(&d4400_sys_data->lock);
-
 	switch (d4400_sys_data->brd_info.board_type) {
 	case FSL_BOARD_TYPE_D44004T4R:
 		{
@@ -135,13 +136,11 @@ int d4400_sys_leds_set_clear(unsigned int set, unsigned int clear)
 				leds & 0x01);
 			gpio_direction_output(brd_4t4r->gpio_led2,
 				(leds & 0x02)>>1);
-
 		}
 		break;
 	default:
 		break;
 	}
-	mutex_unlock(&d4400_sys_data->lock);
 	return 0;
 }
 EXPORT_SYMBOL(d4400_sys_leds_set_clear);
@@ -208,7 +207,7 @@ static int board_ipmi_4t4r(struct ipmi_info *ipmi,
 	/* Look for record version first.  Then decode the other
 	 * multirec type based on record version.
 	 */
-	for(i = 0; i < mrec->num_rec; ++i) {
+	for (i = 0; i < mrec->num_rec; ++i) {
 		if (mrec->rechdr[i]->type_id == IPMI_MREC_TID_FSL_RECORDVER) {
 			u8 *d = mrec->rechdr[i]->data;
 			recordver = d[0] | (d[1]<<8) | (d[2]<<16) | (d[3]<<24);
@@ -217,9 +216,9 @@ static int board_ipmi_4t4r(struct ipmi_info *ipmi,
 	}
 
 	/* Look for other data only if record version was found */
-	for(i = 0; (i < mrec->num_rec) && (recordver); ++i) {
+	for (i = 0; (i < mrec->num_rec) && (recordver); ++i) {
 
-		switch(mrec->rechdr[i]->type_id) {
+		switch (mrec->rechdr[i]->type_id) {
 		case IPMI_MREC_TID_FSL_RECORDVER:
 			/* Already processed */
 			break;
@@ -444,11 +443,16 @@ static ssize_t set_leds(struct device *dev, struct device_attribute *attr,
 	int err;
 	unsigned int val;
 
+	mutex_lock(&d4400_sys_data->lock);
 	err = kstrtouint(buf, 0, &val);
-	if (err)
+	if (err) {
+		mutex_unlock(&d4400_sys_data->lock);
 		return err;
+	}
 
 	d4400_sys_leds_set_clear(val, ~val);
+	mutex_unlock(&d4400_sys_data->lock);
+
 	return count;
 }
 
@@ -459,11 +463,12 @@ static ssize_t set_debug(struct device *dev,
 	int ret;
 	unsigned int val;
 
-	ret = kstrtouint(buf, 0, &val);
-	if (ret)
-		return ret;
-
 	mutex_lock(&d4400_sys_data->lock);
+	ret = kstrtouint(buf, 0, &val);
+	if (ret) {
+		mutex_unlock(&d4400_sys_data->lock);
+		return ret;
+	}
 	d4400_sys_data->debug = val;
 	mutex_unlock(&d4400_sys_data->lock);
 
@@ -525,7 +530,7 @@ static DEVICE_ATTR(board_rev_name,  S_IRUGO, show_board_rev_name,  NULL);
 static DEVICE_ATTR(leds,  S_IWUSR | S_IRUGO, show_leds,            set_leds);
 static DEVICE_ATTR(reboot, S_IWUSR | S_IRUGO, show_reboot,         set_reboot);
 static DEVICE_ATTR(debug, S_IWUSR | S_IRUGO, show_debug,           set_debug);
-static DEVICE_ATTR(ipmi_info,       S_IRUGO, show_ipmi_info,        NULL);
+static DEVICE_ATTR(ipmi_info, S_IRUGO, show_ipmi_info,             NULL);
 
 static struct attribute *d4400_sys_attributes[] = {
 	&dev_attr_board_type.attr,
@@ -691,12 +696,13 @@ static struct ipmi_info *d4400_sys_verify_ipmi_info(
 
 	/* Create IPMI info */
 	ret = ipmi_create(ipmi_rawbuf, ipmi);
-	if (ret) {
-		pr_err(D4400_SYS_MOD_NAME ": IPMI: Failed to find valid IPMI information\n");
+	if (ret)
 		goto out1;
-	}
-	pr_info("IPMI board mfg   :  %s\n", ipmi->board.mfg_str);
-	pr_info("IPMI board name  :  %s\n", ipmi->board.name_str);
+
+	pr_info(D4400_SYS_MOD_NAME " IPMI board mfg :  %s\n",
+		ipmi->board.mfg_str);
+	pr_info(D4400_SYS_MOD_NAME " IPMI board name:  %s\n",
+		ipmi->board.name_str);
 
 	return ipmi;
 out1:
@@ -834,21 +840,23 @@ static int __init d4400_sys_probe(struct platform_device *pdev)
 	}
 	dev_set_drvdata(&pdev->dev, d4400_sys_data);
 
+	/* Set default in case IPMI data is not found */
+	d4400_sys_data->brd_info.board_type = FSL_BOARD_TYPE_UNKNOWN;
+	d4400_sys_data->brd_info.board_rev = FSL_BOARD_REV_UNKNOWN;
+
 	/* Get system eeprom info */
 	d4400_sys_data->eeprom = get_eeprom_info(pdev);
 	d4400_sys_data->ipmi = d4400_sys_verify_ipmi_info(
 		d4400_sys_data->eeprom);
-	if (!d4400_sys_data->ipmi) {
-		pr_err(D4400_SYS_MOD_NAME ": Bad IPMI data in eeprom");
-		ret = -EINVAL;
-		goto out_group;
+	if (!d4400_sys_data->ipmi)
+		pr_err(D4400_SYS_MOD_NAME ": Bad IPMI data in eeprom.  Using defaults.");
+	else {
+		/* Get board type/rev */
+		d4400_sys_data->brd_info.board_type = fsl_get_board_type(
+			d4400_sys_data->ipmi->board.name_str);
+		d4400_sys_data->brd_info.board_rev = fsl_get_board_rev(
+			d4400_sys_data->ipmi->board.partnum_str);
 	}
-
-	/* Get board type/rev */
-	d4400_sys_data->brd_info.board_type = fsl_get_board_type(
-		d4400_sys_data->ipmi->board.name_str);
-	d4400_sys_data->brd_info.board_rev = fsl_get_board_rev(
-		d4400_sys_data->ipmi->board.partnum_str);
 
 	/* Setup the board */
 	ret = d4400_sys_setup_board(d4400_sys_data);
@@ -917,14 +925,27 @@ MODULE_DESCRIPTION("FSL DFE D4400 system driver");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:" DRIVER_NAME);
 
+/* The following code implements the ability for users to write new
+ * IPMI raw data to the eeprom via sysfs file "ipmi_info" in the
+ * d4400 system driver class: /sys/class/d4400-sys/d4400-sys/device
+ * This code has been tested.
+ */
+#if 0
+static DEVICE_ATTR(ipmi_info, S_IWUSR | S_IRUGO, show_ipmi_info, set_ipmi_info);
+
 /* Get the eeprom offset address.  Part of this address could
  * reside in the i2c slave address itself if the eeprom size is
  * larger than a 16-bit address can hold.
  */
-#if 0 /* This function is not needed for now */
 static void eeprom_get_addr(int bytesize, int start_addr, int *addr,
 	int *eeprom_addr)
 {
+	/* For sizes 256 bytes or less, don't need to do anything */
+	if (bytesize <= 256) {
+		*addr = start_addr;
+		return;
+	}
+
 	/* Major mfg of eeproms expect MSB of 16-bit address first
 	 * followed by LSB.  Any address bits beyond 16-bit is put
 	 * in the slave address byte (bits b[1:0] location).
@@ -944,7 +965,6 @@ static void eeprom_get_addr(int bytesize, int start_addr, int *addr,
 	}
 }
 
-/* This function is not needed for now */
 static int eeprom_write(struct d4400_sys_i2c_eeprom *eeprom,
 	u8 *buf, int start_addr, int num)
 {
@@ -984,7 +1004,7 @@ static int eeprom_write(struct d4400_sys_i2c_eeprom *eeprom,
 
 	/* Used to check for NACK after write to see when eeprom
 	 * is done writing. */
-	msgschk[0].addr = eeprom->addr;
+	msgschk[0].addr = eeprom_addr;
 	msgschk[0].flags = 0;
 	msgschk[0].len = 0;
 	msgschk[0].buf = tmpbuf;
@@ -1002,6 +1022,7 @@ static int eeprom_write(struct d4400_sys_i2c_eeprom *eeprom,
 		 *   addr[15:8] = cur_addr[7:0]
 		 */
 		eeprom_addr = eeprom->addr;
+
 		eeprom_get_addr(eeprom->bytesize, cur_addr, &addr,
 			&eeprom_addr);
 
@@ -1020,11 +1041,14 @@ static int eeprom_write(struct d4400_sys_i2c_eeprom *eeprom,
 		/* Reset */
 		dest = tmpbuf;
 
-		/* Put in the address bytes, MSB first */
-		for (i = 0; i < eeprom->addrlen; ++i) {
-			shift = (8 * i);
-			*dest++ = (u8)((addr >> shift) & 0xff);
-		}
+		if (eeprom->bytesize > 256) {
+			/* Put in the address bytes, MSB first */
+			for (i = 0; i < eeprom->addrlen; ++i) {
+				shift = (8 * i);
+				*dest++ = (u8)((addr >> shift) & 0xff);
+			}
+		} else
+			*dest++ = (u8)addr;
 
 		/* Data */
 		for (i = 0; i < data_size; ++i)
@@ -1053,7 +1077,7 @@ static int eeprom_write(struct d4400_sys_i2c_eeprom *eeprom,
 				ret = -EIO;
 				break;
 			}
-			mdelay(1);
+			mdelay(10);
 		}
 		if (ret)
 			break;
@@ -1065,5 +1089,61 @@ static int eeprom_write(struct d4400_sys_i2c_eeprom *eeprom,
 	kfree(tmpbuf);
 
 	return ret;
+}
+
+static ssize_t set_ipmi_info(struct device *dev, struct device_attribute *attr,
+		       const char *buf, size_t count)
+{
+	int ret;
+	u8 ipmi_rawbuf[IPMI_EEPROM_DATA_SIZE];
+	struct ipmi_info *ipmi = NULL;
+
+	if (count < IPMI_EEPROM_DATA_SIZE) {
+		pr_err(D4400_SYS_MOD_NAME ": Insufficient data for IPMI info, %i bytes (%i needed)\n",
+			count, IPMI_EEPROM_DATA_SIZE);
+		return count;
+	}
+	memset(ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
+
+	mutex_lock(&d4400_sys_data->lock);
+	memcpy(ipmi_rawbuf, buf, IPMI_EEPROM_DATA_SIZE);
+	mutex_unlock(&d4400_sys_data->lock);
+
+	/* Test the raw data to make sure it is valid IPMI data. */
+	ipmi = kzalloc(sizeof(struct ipmi_info), GFP_KERNEL);
+	if (!ipmi) {
+		pr_err(D4400_SYS_MOD_NAME ": IPMI: Failed to allocate %d bytes for IPMI info\n",
+			sizeof(struct ipmi_info));
+		goto out0;
+	}
+
+	/* Create IPMI info as a test */
+	ret = ipmi_create(ipmi_rawbuf, ipmi);
+	if (ret) {
+		pr_err(D4400_SYS_MOD_NAME ": IPMI: Failed to find valid IPMI information\n");
+		goto out1;
+	}
+
+	/* Its good, write to eeprom */
+	mutex_lock(&d4400_sys_data->lock);
+	ret = eeprom_write(d4400_sys_data->eeprom, ipmi_rawbuf, 0,
+		IPMI_EEPROM_DATA_SIZE);
+	mutex_unlock(&d4400_sys_data->lock);
+	if (ret) {
+		pr_err(D4400_SYS_MOD_NAME ": IPMI: Failed program new IPMI data to eeprom\n");
+		goto out1;
+	}
+	pr_info(D4400_SYS_MOD_NAME ": IPMI: new IPMI data programmed to eeprom successfully\n");
+
+	/* Reload new IPMI data */
+	mutex_lock(&d4400_sys_data->lock);
+	d4400_sys_data->ipmi = d4400_sys_verify_ipmi_info(
+		d4400_sys_data->eeprom);
+	mutex_unlock(&d4400_sys_data->lock);
+out1:
+	ipmi_free(ipmi);
+	kfree(ipmi);
+out0:
+	return count;
 }
 #endif
