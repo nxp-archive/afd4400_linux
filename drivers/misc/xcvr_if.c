@@ -416,9 +416,9 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 			id);
 		goto out1;
 	}
-	pr_info("IPMI Xcvr%i board mfg   :  %s\n",
+	pr_info(XCVRIF_MOD_NAME " IPMI Xcvr%i board mfg :  %s\n",
 		id, ipmi->board.mfg_str);
-	pr_info("IPMI Xcvr%i board name  :  %s\n",
+	pr_info(XCVRIF_MOD_NAME " IPMI Xcvr%i board name:  %s\n",
 		id, ipmi->board.name_str);
 
 	matched = xcvrif_ipmi_match_str(pdev, "ipmi-mfg-str",
@@ -767,7 +767,11 @@ static int generate_ipmi_info_str(char *buf, int xcvr_index)
 	char *p = buf;
 
 	list_for_each_entry_safe(cur, nxt, &xcvrif_dev_data->headlist, list) {
-		if ((i == xcvr_index) || (xcvr_index == -1)) {
+		if (!cur->ipmi) {
+			sprintf(p, "Xcvr %i:\tIPMI data not available for this tranxceiver\n",
+				cur->index);
+			p += strlen(p);
+		} else if ((i == xcvr_index) || (xcvr_index == -1)) {
 			sprintf(p, "Xcvr %i:\tMfg: %s\n\tName: %s\n\tSerial: %s\n\tPartnum: %s\n",
 				cur->index,
 				cur->ipmi->board.mfg_str,
@@ -872,6 +876,7 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 			use_ipmi = 1;
 		}
 
+#ifdef CONFIG_BOARD_EVB
 		if (!ipmi) {
 			/* Do not print error mesg because the xcvr card may
 			 * not be installed and thus eeprom read failed.  This
@@ -880,6 +885,7 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 			ret = -ENODEV;
 			goto out_pdev;
 		}
+#endif
 		if (!platform_device_add(pxcvr_dev)) {
 			/* Init the device data */
 			xcvr_new = xcvrif_add_dev(id, pxcvr_dev, child,
@@ -893,7 +899,7 @@ static int xcvr_add_dev(int id, const char *platform_drv_name,
 			list_add_tail(&xcvr_new->list,
 				&xcvrif_dev_data->headlist);
 			if (!use_ipmi)
-				pr_info(XCVRIF_MOD_NAME ": Xcvr%i IPMI data matched, driver loaded\n",
+				pr_info(XCVRIF_MOD_NAME ": Xcvr%i driver loaded\n",
 					id);
 			else
 				pr_info(XCVRIF_MOD_NAME ": Xcvr%i card detected, driver loaded\n",
