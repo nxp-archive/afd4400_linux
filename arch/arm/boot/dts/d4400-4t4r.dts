@@ -374,7 +374,7 @@
 			gpio-led1 = <&gpioE 29  0>;
 			gpio-led2 = <&gpioE 30  0>;
 			pinctrl-names = "default";
-			pinctrl-0 = <&pinctrl_leds_1>;
+			pinctrl-0 = <&pinctrl_leds_1>, <&pinctrl_rmii_1>;
 		};
 
                 xcvr_if: xcvr_if@1 {
