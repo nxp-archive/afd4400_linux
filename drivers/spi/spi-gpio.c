@@ -28,6 +28,7 @@
 #include <linux/spi/spi.h>
 #include <linux/spi/spi_bitbang.h>
 #include <linux/spi/spi_gpio.h>
+#include <linux/pinctrl/consumer.h>
 
 
 /*
@@ -449,6 +450,14 @@ static int spi_gpio_probe(struct platform_device *pdev)
 		for (i = 0; i < SPI_N_CHIPSEL; i++)
 			spi_gpio->cs_gpios[i] =
 				of_get_named_gpio(np, "cs-gpios", i);
+	}
+
+	/* If node has pinctrl property, apply it */
+	if (of_find_property(pdev->dev.of_node, "pinctrl-names", NULL)) {
+		struct pinctrl *pinctrl;
+		pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
+		if (IS_ERR(pinctrl))
+			goto gpio_free;
 	}
 #endif
 
