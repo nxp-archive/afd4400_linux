@@ -36,19 +36,27 @@
  *   The overlay extension feature, from hereon refered to as overlay
  *   ext, provides another method to create the dts source and insertion.
  *   It allows the user to define the overlay node tree and properties
- *   in the code file in terms of data structures.  It provides a single
+ *   in the code file in terms of C data structures.  It provides a single
  *   api to compile the data structures and outputs a complete overlay
  *   node tree that can be used as an input to the overlay api which
  *   then inserts it into the live tree.  This feature does not require
  *   the use of the dtc.  The node and property contents are in human
  *   readable form in the code which eases development and debug.
  *
+ *   In order for the overlay feature to work, the dtc must support
+ *   overlay feature.  Such a dtc compiler generates a __symbols__ node
+ *   when the system device tree is compiled.  This node contains the
+ *   node names and proper phandle value of the node to allow nodes in
+ *   he overlay fragment to reference it.  It is known that dtc v1.4
+ *   (and higher ?) supports overlay feature and generates the
+ *   __symbols__ node.
+ *
  *
  *   A Simple Example
  *
  *   A quick example is provided to illustrate the concept of the overlay
- *   ext feature.  Suppose a node for a real time clock (rtc) is to be created
- *   int the live tree under the existing node "i2cbus1".
+ *   ext feature.  Suppose a node for a real time clock (rtc) is to be
+ *   created int the live tree under the existing node "i2cbus1".
  *
  *   -----------------------
  *   Dts overlay description:
@@ -88,7 +96,6 @@
  *   }
  *
  *
- *
  *   The overlay tree has the following hiearchy as shown below.  It
  *   has several standard nodes that are always created.  These nodes
  *   are:
@@ -100,8 +107,8 @@
  *   The topmost node is the root node.  All other nodes are children
  *   of the root node.  The symbols node contains names of new node
  *   that the user has requested to be added.  The fixup node contains
- *   names of nodes being referenced by properties that the user has
- *   requested to be added or modified to existing properties.
+ *   names of nodes in the live tree being referenced by properties of
+ *   nodes in the overlay tree.
  *
  *   A fragment node is created for each target node in the live tree
  *   that the user wants to add to or modify.  The __overlay__ is a
@@ -308,6 +315,60 @@ static struct property *process_raw_properties(struct property *rawprop);
 static int multihex_parse(char *src, char *dest, int numhex, char delimiter);
 static int find_num_multistr(char *src, int srcsize, char delimiter);
 static int ov_update_node_phandles(struct device_node *np, u32 handle_value);
+
+/*
+ * ov_get_max_phandleval - Search the device tree starting at the
+ *   given node and return he largest phandle value found.  This is
+ *   a recursive function and it can search the entire device tree
+ *   if given the root node as the starting point:
+ *
+ *      ov_get_max_phandleval(of_find_node_by_path("/"), 0);
+ *
+ *   Note that the node property "phandle" and "linux,phandle"
+ *   have the same values so only one of these properties need
+ *   to be evaluated.  In this function the value of "phandle"
+ *   is used.
+ *
+ *   Phandle values are store as big endian and may need to be
+ *   swapped according to cpu architecture.  Thus, the macro
+ *   be32_to_cpup() is used before phandle value is evaluated.
+ *
+ * @param node  The starting node to search.  All children nodes
+ *    are searched as this function is recursive.
+ *
+ * @param handle_val The phandle value to compare against. If a
+ *    node has a larger phandle, then a local handle value is updated
+ *    to the larger value.  The function returns the largest value
+ *    found.
+ *
+ * @returns
+ *  -  On Success, the largest phandle value found of all children nodes.
+ *  -  On Failure, zero.
+ */
+static u32 ov_get_max_phandleval(struct device_node *node, u32 handle_val)
+{
+	struct device_node *child;
+	struct property    *prop;
+	u32 val;
+
+	if (!node)
+		return 0;
+
+	for_each_child_of_node(node, child) {
+
+		for (prop = child->properties; prop != NULL;
+			prop = prop->next) {
+
+			if (of_prop_cmp(prop->name, "phandle") == 0) {
+				val = be32_to_cpup(prop->value);
+				if (val > handle_val)
+					handle_val = val;
+			}
+		}
+		handle_val = ov_get_max_phandleval(child, handle_val);
+	}
+	return handle_val;
+}
 
 /*
  * free_nodes - Free memory resources allocated to a node and all
@@ -1551,11 +1612,11 @@ err:
 }
 
 /*
- * ov_build_fragment_node - Create a fragment node containing all the
+ * ov_build_fragment_node - Creates a fragment node containing all the
  *    properties and node hiearchy as specified by the given fragment
  *    node structure.
  *
- *    For any properties that contain node reference(s), the node
+ *    For any properties that may contain node reference(s), the node
  *    references are added to the __fixups__ node.  This is a requirement
  *    of the overlay feature so that when the fragmens are added to the
  *    live tree, node references can be resolved to point to the proper
@@ -1675,7 +1736,7 @@ err:
 }
 
 /*
- * ov_create_tree - Create an overlay device tree node.  The resulting
+ * ov_create_tree - Creates an overlay device tree node.  The resulting
  *    root node is ready to be used to overlay the tree into the live
  *    tree using the of_overlay_create().
  *
@@ -1795,12 +1856,6 @@ struct device_node *ov_create_tree(struct fragment_node *fnp_array)
 	np_symbols->sibling = np_fixups;
 	np_symbols->allnext = np_fixups;
 
-
-	/* Finally, find all nodes with "linux,phandle" and "phandle"
-	 * property and increment the values.
-	 */
-	ov_update_node_phandles(np_root, 1);
-
 	return np_root;
 out:
 	if (np_root)
@@ -1835,6 +1890,7 @@ int ov_load(struct fragment_node *fnp_array)
 {
 	int ret = 0;
 	struct device_node *np_ov_root;
+	u32 phandle_start;
 
 	if (!fnp_array)
 		return -EINVAL;
@@ -1849,7 +1905,9 @@ int ov_load(struct fragment_node *fnp_array)
 	/* Must set detached flag */
 	of_node_set_flag(np_ov_root, OF_DETACHED);
 
-	/* Resolve node references */
+	/* Resolve node references. Note that phandle values are zeroed
+         * out.
+         */
 	ret = of_resolve_phandles(np_ov_root);
 	if (ret) {
 		pr_err("%s: Failed to resolve overlay tree, err = %i\n",
@@ -1857,8 +1915,17 @@ int ov_load(struct fragment_node *fnp_array)
 		goto out;
 	}
 
-	/* Apply the overlay tree to live tree.  Return value is the id of the
-	 * overlay.
+	/* Find the highest phandle value in use, add 1, and use it
+	 * as starting value as unique phandles for overlay nodes.
+	 */
+	phandle_start = ov_get_max_phandleval(of_find_node_by_path("/"), 0);
+
+	/* Assign unique phandles for overlay nodes */
+	phandle_start += 1;
+	ov_update_node_phandles(np_ov_root, phandle_start);
+
+	/* Apply the overlay tree to live tree.  Return value is the id of
+	 * the overlay.
 	 */
 	ret = of_overlay_create(np_ov_root);
 	if (ret < 0) {
