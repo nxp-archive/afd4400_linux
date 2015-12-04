@@ -89,4 +89,5 @@ void cpri_clear_monitor(struct cpri_framer *framer,
 void src_cpri_hwrst(int enable);
 
 void cpri_cw130_config(struct cpri_framer *framer, u32 enable_mask);
+int cpri_mux_10ms_output(int framer_id, int complex_id);
 #endif /* __CPRI_H */

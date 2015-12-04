@@ -23,15 +23,6 @@
 #include <mach/serdes-d4400.h>
 #include <mach/serdes-priv.h>
 
-#define GET_FRAT_MULT(f, b)	((b == (f >> 2)) ? FRAT_QUARTER :\
-				((b == (f >> 1)) ? FRAT_HALF    :\
-				((b == (f)       ? FRAT_FULL    :\
-				((b == (f << 1)) ? FRAT_DOUBLE  :\
-				 FRAT_INVAL)))))
-
-#define F(frate)  ((frate & 0x06) >> 1)
-
-
 static LIST_HEAD(serdes_dev_list);
 raw_spinlock_t serdes_list_lock;
 
@@ -116,16 +107,6 @@ static int serdes_set_group_protocol(enum srds_grp_prot_id grp_prot,
 		val = SRDS_GRP_PROT_CPRIG6_SINGLE_CHANNEL;
 		mask = SRDS_GRP_PROT_CPRIG6_CFG_MASK;
 		break;
-	case SERDES_PROT_JESD_1_LANE:
-		reg = (u32 *) (&base_reg->pccr5);
-		val = SRDS_GRP_PROT_JESDG1_SINGLE_CHANNEL;
-		mask = SRDS_GRP_PROT_JESDG1_CFG_MASK;
-		break;
-	case SERDES_PROT_JESD_2_LANE:
-		reg = (u32 *) (&base_reg->pccr5);
-		val = SRDS_GRP_PROT_JESDG2_DOUBLE_CHANNEL;
-		mask = SRDS_GRP_PROT_JESDG2_CFG_MASK;
-		break;
 	default:
 		rc = -EINVAL;
 		return rc;
@@ -135,6 +116,34 @@ static int serdes_set_group_protocol(enum srds_grp_prot_id grp_prot,
 	return rc;
 }
 
+static int serdes_set_jesd_group(int lane_id, enum srds_grp_prot_id grp_prot,
+			u32 first_lane, struct serdes_regs *base_regs)
+{
+	int rc = 0, shift;
+	u32 *reg, val = 0, mask = 0xF;
+
+	if (lane_id < 0 || lane_id > 7)
+		return -EINVAL;
+
+	shift = 28 - 4 * lane_id;
+	mask = mask << shift;
+	reg = (u32 *)(&base_regs->pccr5);
+
+	switch (grp_prot) {
+	case SERDES_PROT_JESD_1_LANE:
+		val = SRDS_GRP_PROT_JESDG1_SINGLE_CHANNEL << shift;
+		break;
+	case SERDES_PROT_JESD_2_LANE:
+		if (first_lane)
+			val = SRDS_GRP_PROT_JESDG2_DOUBLE_CHANNEL << shift;
+		break;
+	default:
+		rc = -EINVAL;
+		return rc;
+	}
+	srds_update_reg(reg, val, mask);
+	return 0;
+}
 /*
  * The ring oscillator (1) should not be used for protocol
  * with data rate greater than or equal to 8 Gbps.
@@ -147,29 +156,25 @@ static int serdes_set_group_protocol(enum srds_grp_prot_id grp_prot,
  */
 static u32 serdes_rate_select(u32 vco, u32 frate, u32 brate)
 {
-	/* hash [vco][mult][frat] */
-	const u32 hash[2][4][3] = {
-			{{0x02, 0x02, 0xff},
-			{0xff, 0x01, 0xff},
-			{0xff, 0x00, 0xff},
-			{0xff, 0x03, 0xff} },
+	u32 frates[] = {0x3, 0x3, 0x3, 0x3, 0x5, 0x5, 0x5, 0x5, 0xc, 0xc, 0xc, 0xc};
+	u32 brates[] = {9830400, 4915200, 2457600, 1228800,
+			7372800, 3686400, 1843200, 921600,
+			6144000, 3072000, 1536000, 768000};
+	u32 rrates[] = {0x3, 0x0, 0x1, 0x2, 0x3, 0x0, 0x1, 0x2, 0x3, 0x0, 0x1, 0x2};
+	int i;
 
-			{{0x02, 0x02, 0xff},
-			{0xff, 0x01, 0xff},
-			{0xff, 0x00, 0x00},
-			{0xff, 0xff, 0x03} } };
+	for (i = 0; i < ARRAY_SIZE(brates); i++) {
+		if (brate == 9830400 && vco == 1)
+			return 0xFF;
 
-	const u32 FREQ[16] = {[0] = 5000000, [1 ... 2] = 0,
-			      [3] = 4915200, [4 ... 11] = 0,
-			      [12] = 3072000, [13 ... 15] = 0};
-	u32 mult;
-
-
-	if (FREQ[frate] == 0 || brate == 0)
-		return 0xFF;
-	mult = GET_FRAT_MULT(FREQ[frate], brate);
-
-	return hash[vco][mult][F(frate)];
+		if (brate == brates[i]) {
+			if (frates[i] == frate)
+				return rrates[i];
+			else
+				return 0xFF;
+		}
+	}
+	return 0xFF;
 }
 
 signed int serdes_sfp_amp_set(void *sdev_handle, u32 lane_id,
@@ -251,10 +256,10 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 	cflag = lane_param->gen_conf.cflag;
 
 	/* TPLL_LES and RPLL_LES must be same */
-	if (((cflag & 0x4) >> 2) ^ ((cflag & 0x2) >> 1))
+	if (((cflag & SERDES_RPLL_LES) >> 2) ^ ((cflag & SERDES_TPLL_LES) >> 1))
 		return -EINVAL;
 	/* Get PLL ID according to lane */
-	tpll_id = (cflag & 0x2) >> 1;
+	tpll_id = (cflag & SERDES_TPLL_LES) >> 1;
 	if ((!tpll_id) && (lane_id > LANE_B))
 		pll_id = SERDES_PLL_2;
 	else
@@ -299,9 +304,9 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 		mask = SRDS_LN_GCR_TRAT_SEL_MASK | SRDS_LN_GCR_RRAT_SEL_MASK;
 
 	/* 20 bit enable flag */
-	val |= (cflag & 0x1) << SRDS_LN_GCR_IF20BIT_EN;
+	val |= (cflag & SERDES_20BIT_EN) << SRDS_LN_GCR_IF20BIT_EN;
 	/* First lane enable flag */
-	val |= (cflag & 0x8) << (SRDS_LN_GCR_FIRST_LN - 3);
+	val |= (cflag & SERDES_FIRST_LANE) << (SRDS_LN_GCR_FIRST_LN - 3);
 
 	/* Set lane protocol
 	 * TODO: Currently supporting lane protocol for CPRI and JESD
@@ -333,47 +338,29 @@ static int serdes_set_lane_config(struct serdes_lane_params *lane_param,
 	return rc;
 }
 
+
 static int serdes_set_pll_config(struct serdes_dev *sdev,
 	struct serdes_pll_params *pll, struct serdes_regs *base_reg)
 {
 	u32 *reg, val = 0, mask = 0;
 	int rc = 0;
-	unsigned int timeout;
+	unsigned long timeout;
 
 	/*Disable all lanes*/
 	serdes_disable_all_lanes(pll->pll_id, sdev->regs);
 
-	/*power down*/
 	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
-	val = ~SRDS_PLL_RSTCTL_SDEN_MASK;
+	srds_write_reg(reg, 0);
+	udelay(10);
+
 	mask = SRDS_PLL_RSTCTL_SDEN_MASK;
-	srds_update_reg(reg, val, mask);
-	udelay(1);
+	srds_update_reg(reg, mask, mask);
+	udelay(10);
 
-	/*power up again*/
-	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
-	val =  SRDS_PLL_RSTCTL_SDEN_MASK;
-	mask = SRDS_PLL_RSTCTL_SDEN_MASK;
-	srds_update_reg(reg, val, mask);
-	udelay(1);
+	mask = SRDS_PLL_RSTCTL_SDEN_MASK | SRDS_PLL_RSTCTL_PLLRST_B_MASK;
+	srds_update_reg(reg, mask, mask);
+	udelay(10);
 
-	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
-	val = SRDS_PLL_RSTCTL_RSTREQ_MASK;
-	mask = SRDS_PLL_RSTCTL_RSTREQ_MASK;
-	srds_update_reg(reg, val, mask);
-
-	timeout = jiffies + msecs_to_jiffies(SRDS_PLL_TIMEOUT_MS);
-
-	val = ioread32(reg);
-	while (!(val & SRDS_PLL_RSTCTL_RST_DONE_MASK)) {
-		if (jiffies > timeout) {
-			dev_info(sdev->dev, "Failed to reset pll %d\n",
-				pll->pll_id);
-			rc = -EBUSY;
-			goto out;
-		}
-		val = ioread32(reg);
-	}
 
 	/*Change PLL settings*/
 	/* PLL frequency configurations */
@@ -382,6 +369,9 @@ static int serdes_set_pll_config(struct serdes_dev *sdev,
 	switch (pll->frate_sel) {
 	case PLL_FREQ_3_072_GHZ:
 		val = FREQ_MULTIPLE_3_072_GHZ;
+		break;
+	case PLL_FREQ_3_6864_GHZ:
+		val = FREQ_MULTIPLE_3_686_GHZ;
 		break;
 	case PLL_FREQ_4_9152_GHZ:
 		val = FREQ_MULTIPLE_4_912_GHZ;
@@ -430,32 +420,16 @@ static int serdes_set_pll_config(struct serdes_dev *sdev,
 	}
 	srds_update_reg(reg, val, mask);
 
-	/* Reset and Enable */
 	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
-	val = SRDS_PLL_RSTCTL_RSTREQ_MASK;
 	mask = SRDS_PLL_RSTCTL_RSTREQ_MASK;
-	srds_update_reg(reg, val, mask);
-
-	timeout = jiffies + msecs_to_jiffies(SRDS_PLL_TIMEOUT_MS);
-
-	val = ioread32(reg);
-	while (!(val & SRDS_PLL_RSTCTL_RST_DONE_MASK)) {
-		if (jiffies > timeout) {
-			dev_info(sdev->dev, "Failed to reset pll %d\n",
-				pll->pll_id);
-			rc = -EBUSY;
-			goto out;
-		}
-		val = ioread32(reg);
-	}
-
-	timeout = jiffies + msecs_to_jiffies(SRDS_PLL_TIMEOUT_MS);
+	srds_update_reg(reg, mask, mask);
+	udelay(10);
 
 	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_ctl_reg0);
-
+	timeout = jiffies + msecs_to_jiffies(SRDS_PLL_TIMEOUT_MS);
 	val = ioread32(reg);
 	while (!(val & SRDS_PLLCR_PLL_LCK_MASK)) {
-		if (jiffies > timeout) {
+		if (time_after(jiffies, timeout)) {
 			dev_info(sdev->dev, "Failed to lock pll %d\n",
 				pll->pll_id);
 			rc = -EBUSY;
@@ -464,15 +438,12 @@ static int serdes_set_pll_config(struct serdes_dev *sdev,
 		val = ioread32(reg);
 	}
 
-	wmb();
-
 	reg = (u32 *)(&base_reg->pll_reg[pll->pll_id].pll_rstctl_reg);
-	val = (SRDS_PLL_RSTCTL_SDEN_MASK | SRDS_PLL_RSTCTL_PLLRST_B_MASK |
-		SRDS_PLL_RSTCTL_SRDST_B_MASK);
-	mask = val;
-	srds_update_reg(reg, val, mask);
-
+	mask = SRDS_PLL_RSTCTL_SDEN_MASK | SRDS_PLL_RSTCTL_SRDST_B_MASK |
+		SRDS_PLL_RSTCTL_PLLRST_B_MASK;
+	srds_update_reg(reg, mask, mask);
 	udelay(1);
+	wmb();
 
 out:
 	return rc;
@@ -527,6 +498,29 @@ void serdes_jcpll_enable(void *sdev_handle,
 }
 EXPORT_SYMBOL_GPL(serdes_jcpll_enable);
 
+int serdes_pll_power_down(void *sdev_handle, int pll_id)
+
+{
+	u32 *reg, val = 0, mask = 0;
+	struct serdes_dev *sdev = (struct serdes_dev *)sdev_handle;
+
+	if ((!sdev) || !(sdev->regs)) {
+		dev_err(sdev->dev, "Invalid dev info\n");
+		return -EINVAL;
+	}
+
+	if (pll_id >= SERDES_PLL_MAX) {
+		dev_err(sdev->dev, "Invalid PLL Params\n");
+		return -EINVAL;
+	}
+
+	reg = (u32 *)(&sdev->regs->pll_reg[pll_id].pll_rstctl_reg);
+	val = ~SRDS_PLL_RSTCTL_SDEN_MASK;
+	mask = SRDS_PLL_RSTCTL_SDEN_MASK;
+	srds_update_reg(reg, val, mask);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(serdes_pll_power_down);
 
 /* default:PLL on (POFF == 0)
  * for both SRDSxPLL1RSTCTL  & SRDSxPLL2RSTCTL register
@@ -537,7 +531,6 @@ int serdes_init_pll(void *sdev_handle,
 {
 	int rc = 0;
 	struct serdes_dev *sdev = (struct serdes_dev *)sdev_handle;
-
 
 	if ((!sdev) || !(sdev->regs)) {
 		dev_err(sdev->dev, "Invalid dev info\n");
@@ -551,23 +544,16 @@ int serdes_init_pll(void *sdev_handle,
 		goto out;
 	}
 
-#if 1
 	/* If Pll is already initialized then return */
-	if (sdev->cflag & (1 << pll->pll_id)) {
-		dev_info(sdev->dev, "PLL %d already initialized\n",
-				pll->pll_id);
-		rc = -EALREADY;
-		goto out;
-	}
-#endif
-
+	/*if (sdev->cflag & (1 << pll->pll_id))
+		return 0;
+	*/
 	/* PLL configuration */
 	rc = serdes_set_pll_config(sdev, pll, sdev->regs);
 	if (rc < 0) {
 		dev_err(sdev->dev, "Invalid PLL config\n");
 		goto out;
 	}
-
 
 	/* Update PLL initialized state */
 	sdev->cflag |= (1 << pll->pll_id);
@@ -593,9 +579,15 @@ int serdes_init_lane(void *sdev_handle,
 		goto out;
 	}
 
-	rc = serdes_set_group_protocol(lane_param->grp_prot, sdev->regs);
+	if (lane_param->gen_conf.lane_prot == SERDES_LANE_PROTS_JESD204) {
+		if (lane_param->gen_conf.cflag & SERDES_JESD_TX)
+			rc = serdes_set_jesd_group(lane_param->lane_id, lane_param->grp_prot,
+				lane_param->gen_conf.cflag & SERDES_FIRST_LANE,
+				sdev->regs);
+	} else
+		rc = serdes_set_group_protocol(lane_param->grp_prot, sdev->regs);
 	if (rc < 0) {
-		dev_err(sdev->dev, "Invalid greoup protocol ID\n");
+		dev_err(sdev->dev, "Invalid group protocol ID\n");
 		goto out;
 	}
 
@@ -610,7 +602,7 @@ out:
 EXPORT_SYMBOL_GPL(serdes_init_lane);
 
 int serdes_lane_power_up(void *sdev_handle,
-		enum srds_lane_id lane_id)
+		enum srds_lane_id lane_id, int direction)
 {
 	int rc = 0;
 	u32 *reg, val, mask;
@@ -627,27 +619,28 @@ int serdes_lane_power_up(void *sdev_handle,
 		rc = -EINVAL;
 		goto out;
 	}
-
-	/* Power up the Rx portion of the lane */
-	reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
-	val = ~SRDS_LN_GCR_RX_PD_MASK;
-	mask = SRDS_LN_GCR_RX_PD_MASK;
-	srds_update_reg(reg, val, mask);
-
+	if (direction) {
+		/* Power up the Rx portion of the lane */
+		reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
+		val = ~SRDS_LN_GCR_RX_PD_MASK;
+		mask = SRDS_LN_GCR_RX_PD_MASK;
+		srds_update_reg(reg, val, mask);
+	} else {
 	/* Power up the Tx portion of the lane */
-	reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
-	val = ~SRDS_LN_GCR_TX_PD_MASK;
-	mask = SRDS_LN_GCR_TX_PD_MASK;
-	srds_update_reg(reg, val, mask);
-
+		reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
+		val = ~SRDS_LN_GCR_TX_PD_MASK;
+		mask = SRDS_LN_GCR_TX_PD_MASK;
+		srds_update_reg(reg, val, mask);
+	}
 	udelay(50);
 out:
 	return rc;
 }
 EXPORT_SYMBOL_GPL(serdes_lane_power_up);
 
+
 int serdes_lane_power_down(void *sdev_handle,
-		enum srds_lane_id lane_id)
+		enum srds_lane_id lane_id, int direction)
 {
 	int rc = 0;
 	u32 *reg, val, mask;
@@ -663,19 +656,19 @@ int serdes_lane_power_down(void *sdev_handle,
 		rc = -EINVAL;
 		goto out;
 	}
-
-	/* Power down the Rx portion of the lane */
-	reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
-	val = SRDS_LN_GCR_RX_PD_MASK;
-	mask = SRDS_LN_GCR_RX_PD_MASK;
-	srds_update_reg(reg, val, mask);
-
-	/* Power down the Tx portion of the lane */
-	reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
-	val = SRDS_LN_GCR_TX_PD_MASK;
-	mask = SRDS_LN_GCR_TX_PD_MASK;
-	srds_update_reg(reg, val, mask);
-
+	if (direction) {
+		/* Power down the Rx portion of the lane */
+		reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
+		val = SRDS_LN_GCR_RX_PD_MASK;
+		mask = SRDS_LN_GCR_RX_PD_MASK | SRDS_LN_GCR_RRST_B;
+		srds_update_reg(reg, val, mask);
+	} else {
+		/* Power down the Tx portion of the lane */
+		reg = (u32 *)&sdev->regs->lane_csr[lane_id].gcr0;
+		val = SRDS_LN_GCR_TX_PD_MASK;
+		mask = SRDS_LN_GCR_TX_PD_MASK | SRDS_LN_GCR_TRST_B;
+		srds_update_reg(reg, val, mask);
+	}
 	udelay(50);
 out:
 	return rc;

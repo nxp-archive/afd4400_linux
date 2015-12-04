@@ -755,6 +755,11 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 		del_timer(&linerate_timer);
 		set_bit(CPRI_RATE_BITPOS,
 			&framer->cpri_state);
+		if (framer->autoneg_params.mode & RADIO_FRAME_OUTPUT_SEL) {
+			err = cpri_mux_10ms_output(framer->id, framer->cpri_dev->dev_id);
+			if (err)
+				pr_warn("cpri fail to mux 10ms output\n");
+		}
 	}
 	return err;
 }

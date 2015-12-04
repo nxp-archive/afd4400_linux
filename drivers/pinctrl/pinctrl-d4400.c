@@ -930,11 +930,11 @@ static struct d4400_pin_reg d4400_pin_regs[] = {
 	/* D4400_PAD_SPI5_SS0_CPRI_DIAG23 */
 	D4400_PIN_REG(D4400_PAD_SPI5_SS0, 0x0216, 0x3B, 0x60),
 	/* D4400_PAD_SPI5_SS1_ECSPI_5_SS_1 */
-	D4400_PIN_REG(D4400_PAD_SPI5_SS1, 0x0216, NO_MUX, 0x1),
-	/* D4400_PAD_SPI5_SS1_GPIOE_31 */
-	D4400_PIN_REG(D4400_PAD_SPI5_SS1, 0x0216, NO_MUX, 0x12),
+	D4400_PIN_REG(D4400_PAD_SPI5_SS1, 0x0216, 0x10F, 0x1),
+	/* D4400_PAD_SPI5_SS1_GPIOD_31 */
+	D4400_PIN_REG(D4400_PAD_SPI5_SS1, 0x0216, 0x10F, 0x12),
 	/* D4400_PAD_SPI5_SS1_CPRI_DIAG24  */
-	D4400_PIN_REG(D4400_PAD_SPI5_SS1, 0x0216, NO_MUX, 0x60),
+	D4400_PIN_REG(D4400_PAD_SPI5_SS1, 0x0216, 0x10F, 0x60),
 	/* D4400_PAD_SPI6_MOSI_ECSPI_6_MOSI */
 	D4400_PIN_REG(D4400_PAD_SPI6_MOSI, 0x0218, 0xC0, 0x1),
 	/* D4400_PAD_SPI6_MOSI_GPIOE_10 */
@@ -995,18 +995,18 @@ static struct d4400_pin_reg d4400_pin_regs[] = {
 	D4400_PIN_REG(D4400_PAD_SPI7_MISO, 0x0222, 0xBC, 0x60),
 	/* D4400_PAD_SPI7_CLK_ECSPI_7_CLK */
 	D4400_PIN_REG(D4400_PAD_SPI7_CLK, 0x0224, 0x26, 0x1),
-	/* D4400_PAD_SPI7_CLK_GPIOD_16 */
+	/* D4400_PAD_SPI7_CLK_GPIOE_16 */
 	D4400_PIN_REG(D4400_PAD_SPI7_CLK, 0x0224, 0x26, 0x12),
 	/* D4400_PAD_SPI7_MISO_TBGEN_AGC_EN6 */
-	D4400_PIN_REG(D4400_PAD_SPI7_MISO, 0x0224, 0x26, 0x30),
+	D4400_PIN_REG(D4400_PAD_SPI7_CLK, 0x0224, 0x26, 0x30),
 	/* D4400_PAD_SPI7_CLK_CPRI_DIAG32 */
 	D4400_PIN_REG(D4400_PAD_SPI7_CLK, 0x0224, 0x26, 0x60),
 	/* D4400_PAD_SPI7_SS0_ECSPI_7_SS_0 */
 	D4400_PIN_REG(D4400_PAD_SPI7_SS0, 0x0226, 0x19, 0x1),
-	/* D4400_PAD_SPI7_SS0_GPIOD_17 */
+	/* D4400_PAD_SPI7_SS0_GPIOE_17 */
 	D4400_PIN_REG(D4400_PAD_SPI7_SS0, 0x0226, 0x19, 0x12),
 	/* D4400_PAD_SPI7_MISO_TBGEN_AGC_EN7 */
-	D4400_PIN_REG(D4400_PAD_SPI7_MISO, 0x0226, 0x19, 0x30),
+	D4400_PIN_REG(D4400_PAD_SPI7_SS0, 0x0226, 0x19, 0x30),
 	/* D4400_PAD_SPI7_SS0_CPRI_DIAG33 */
 	D4400_PIN_REG(D4400_PAD_SPI7_SS0, 0x0226, 0x19, 0x60),
 	/* D4400_PAD_SPI7_SS1_ECSPI_7_SS_1 */
@@ -1414,15 +1414,15 @@ static struct d4400_pin_reg d4400_pin_regs[] = {
 	/* D4400_PAD_GPIOA2_MDDC_DEBUG_2 */
 	D4400_PIN_REG(D4400_PAD_GPIOA2, 0x0260, 0x15, 0x70),
 	/* D4400_PAD_GPIOA3_GPIOA_3 */
-	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0x43, 0x1),
+	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0xA8, 0x1),
 	/* D4400_PAD_GPIOA3_ECSPI_7_SS2 */
-	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0x43, 0x10),
+	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0xA8, 0x10),
 	/* D4400_PAD_GPIOA3_SOC_OBS3 */
-	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0x43, 0x50),
+	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0xA8, 0x50),
 	/* D4400_PAD_GPIOA3_CPRI_DIAG_71 */
-	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0x43, 0x60),
+	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0xA8, 0x60),
 	/* D4400_PAD_GPIOA3_MDDC_DEBUG_3 */
-	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0x43, 0x70),
+	D4400_PIN_REG(D4400_PAD_GPIOA3, 0x025E, 0xA8, 0x70),
 	/* D4400_PAD_GPIOA4_GPIOA_4 */
 	D4400_PIN_REG(D4400_PAD_GPIOA4, 0x0264, 0x41, 0x1),
 	/* D4400_PAD_GPIOA4_ECSPI6_RDY */
@@ -3760,6 +3760,32 @@ static struct d4400_pinctrl_soc_info d4400_pinctrl_info = {
 	.npin_regs = ARRAY_SIZE(d4400_pin_regs),
 };
 
+static ssize_t set_pinmux(struct device *dev, struct device_attribute *devattr,
+			const char *buf, size_t count)
+{
+	int err;
+	unsigned int val;
+
+	err = kstrtouint(buf, 0, &val);
+	if (err)
+		return err;
+	else
+		d4400_pinmux_hack(val);
+
+	return count;
+}
+
+static DEVICE_ATTR(pinmux,	S_IWUSR, NULL, set_pinmux);
+
+static struct attribute *attributes[] = {
+	&dev_attr_pinmux.attr,
+	NULL
+};
+
+static const struct attribute_group attr_group = {
+	.attrs = attributes,
+};
+
 static int d4400_pinctrl_probe(struct platform_device *pdev)
 {
 	struct d4400_pinctrl *ipctl;
@@ -3810,6 +3836,12 @@ static int d4400_pinctrl_probe(struct platform_device *pdev)
 	}
 
 	dev_info(&pdev->dev, "initialized D4400 pinctrl driver\n");
+
+	ret = sysfs_create_group(&pdev->dev.kobj, &attr_group);
+	if (ret) {
+		dev_err(&pdev->dev, "Error creating d4400 pinmux sysfs files\n");
+		return -EINVAL;
+	}
 
 	return 0;
 }

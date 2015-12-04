@@ -119,17 +119,19 @@ struct lane_id {
 };
 
 
-int phy_softreset(struct phygasket *phy, u8 device,
+/*int phy_softreset(struct phygasket *phy, u8 device,
 				u8 reset, u8 lane);
+*/
 
 void phy_gasket_swap_lanes(struct phygasket *phy, u8 lane,
-	int enable, enum jesd_dev_type dev_type);
+	int enable, enum jesd_complex_type dev_type);
 
-int phy_inverse_lanes(struct phygasket *phy, u8 lane,
+/* int phy_inverse_lanes(struct phygasket *phy, u8 lane,
 				u8 invert, u8 device);
+*/
 
 int phy_gasket_lane_ctrl(struct phygasket *phy,
 	enum phygasket_data_src data_src, u8 lane);
-int do_patter_generator(struct phygasket *phy, struct patgen *pgen);
+/* int do_patter_generator(struct phygasket *phy, struct patgen *pgen); */
 struct phygasket *map_phygasket(struct device_node *phy_node);
 #endif /*PHYGASKET_H_*/

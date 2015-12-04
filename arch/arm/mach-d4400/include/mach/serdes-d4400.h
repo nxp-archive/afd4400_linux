@@ -91,6 +91,7 @@ enum srds_rfclk_sel_freq {
 enum srds_frate_sel_freq_vco {
 	PLL_FREQ_5_GHZ,
 	PLL_FREQ_4_9152_GHZ,
+	PLL_FREQ_3_6864_GHZ,
 	PLL_FREQ_3_072_GHZ,
 	PLL_FREQ_INVAL
 };
@@ -449,12 +450,13 @@ void *get_attached_serdes_dev(struct device_node *serdes_dev_node);
  *
  * @Param sdev_handle
  * @Param lane_id
+ * @Param direction, 1 for rx 0 for tx
  *
  * @Returns 0: On success
  *	Error code: On failure
  */
 /* --------------------------------------------------------------------------*/
-int serdes_lane_power_down(void *sdev_handle, enum srds_lane_id lane_id);
+int serdes_lane_power_down(void *sdev_handle, enum srds_lane_id lane_id, int direction);
 
 /* --------------------------------------------------------------------------*/
 /**
@@ -462,12 +464,26 @@ int serdes_lane_power_down(void *sdev_handle, enum srds_lane_id lane_id);
  *
  * @Param sdev_handle
  * @Param lane_id
+ * @Param direction, 1 for rx 0 for tx
  *
  * @Returns 0: On success
  *	Error code: On failure
  */
 /* --------------------------------------------------------------------------*/
-int serdes_lane_power_up(void *sdev_handle, enum srds_lane_id lane_id);
+int serdes_lane_power_up(void *sdev_handle, enum srds_lane_id lane_id, int direction);
+
+/* --------------------------------------------------------------------------*/
+/**
+ * @Synopsis  Power down the serdes pll
+ *
+ * @Param sdev_handle
+ * @Param pll_id
+ *
+ * @Returns 0: On success
+ *	Error code: On failure
+ */
+/* --------------------------------------------------------------------------*/
+int serdes_pll_power_down(void *sdev_handle, int pll_id);
 
 /* --------------------------------------------------------------------------*/
 /**

@@ -299,21 +299,20 @@ enum cpri_link_rate {
 	RATE7_9830_4M
 };
 
-struct cpri_autoneg_params {
-	__u32 mode;
+enum autoneg_mode_mask {
 /**
  * Framer in RE slave mode
  */
-#define RE_MODE_SLAVE (1 << 0)
+	RE_MODE_SLAVE = (1 << 0),
 /**
  * Framer in RE master mode in daisy chain.
  * Apply to "cp0_frmr1" or "cp1_frmr1" only
  */
-#define	RE_MODE_MASTER (1 << 1)
+	RE_MODE_MASTER = (1 << 1),
 /**
  * Framer in REC mode
  */
-#define	REC_MODE (1 << 2)
+	REC_MODE = (1 << 2),
 /**
  * if (STICK_TO_RATE is set and rate_preferred has value in enum cpri_link_rate)
  * stick to rate_preferred in autoneg until @rate_neg_timeout milliseconds.
@@ -339,19 +338,19 @@ struct cpri_autoneg_params {
  * During autoneg, AxC and CPRI-ethernet needs to be cleared and thus needs
  * re-enabling.
  */
-#define STICK_TO_RATE (1 << 3)
+	STICK_TO_RATE = (1 << 3),
 /**
  * Stick to @tx_prot_ver till @proto_neg_timeout
  * milliseconds if this flag is set, otherwise adapt
  * to the protocal version it received from the framer
  */
-#define STICK_TO_PROTO (1 << 4)
+	STICK_TO_PROTO = (1 << 4),
 /**
  * Stick to @eth_ptr till @ethptr_neg_timeout
  * millseconds if this flag is set, otherwise adapt
  * to the ethernet pointer value from the framer.
  */
-#define STICK_TO_ETHPTR (1 << 5)
+	STICK_TO_ETHPTR = (1 << 5),
 /**
  * Reset the pll and serdes if this flag is set.
  * Also if the CPRI is running in RE mode, the framer
@@ -361,7 +360,7 @@ struct cpri_autoneg_params {
  * CPRI framer is already running, unless you really need to,
  * eg. restart rate autonegotiation.
  */
-#define RESET_LINK	(1 << 6)
+	RESET_LINK = (1 << 6),
 
 /**
  * Enable CPRI serdes loopback
@@ -369,7 +368,15 @@ struct cpri_autoneg_params {
  * together with REC_MODE and RESET_LINK, all 4 framers
  * will be configured at internal serdes loopback mode.
  */
-#define CPRI_SERDES_LOOPBACK (1 << 7)
+	CPRI_SERDES_LOOPBACK = (1 << 7),
+
+/**
+ * Enable this CPRI framer to output the 10ms radio frame
+ * pulse to tbgen. Then tbgen can use this signal as the time reference.
+ * Apply to only one of the 4 framers.
+ */
+	RADIO_FRAME_OUTPUT_SEL = (1 << 8),
+};
 
 /**
  * Steps to be done in autoneg
@@ -379,10 +386,15 @@ struct cpri_autoneg_params {
  * If the one of the steps is not successful and times out,
  * the further steps are skipped.
  */
+enum autoneg_step_mask {
+	RATE_AUTONEG = (1 << 0),
+	PROTO_AUTONEG = (1 << 1),
+	ETHPTR_AUTONEG = (1 << 2),
+};
+
+struct cpri_autoneg_params {
+	__u32 mode;
 	__u32 autoneg_steps;
-#define RATE_AUTONEG (1 << 0)
-#define PROTO_AUTONEG (1 << 1)
-#define ETHPTR_AUTONEG (1 << 2)
 /**
  * Timeout value for three autoneg steps in ms
  */

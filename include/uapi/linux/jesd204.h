@@ -38,304 +38,146 @@
 #ifndef _UAPI_JESD204_H
 #define _UAPI_JESD204_H
 
-#define IQ_RATE_153M		153600
-#define IQ_RATE_122M		122880
-
-/** @brief the state for jesd204
- * a signle state determining enum
- */
 enum jesd_state {
-	JESD_STATE_STANDBY,
-	JESD_STATE_CONFIGURED,
-	JESD_STATE_ENABLED,
-	JESD_STATE_CODE_GRP_SYNC,
-	JESD_STATE_ILAS,
+	/* JESD is not enabled in idle state */
+	JESD_STATE_IDLE,
+	/* JESD is configured in ready state */
 	JESD_STATE_READY,
-	JESD_STATE_SYNC_FAILED,
-	JESD_STATE_LINK_ERROR,
-	JESD_STATE_STOPPED,
-	JESD_STATE_INVALID
+	/* Temporary state used by driver to track SYSREF capture */
+	JESD_STATE_SYSREF_CAPTURE,
+	/* JESD is synced and running */
+	JESD_STATE_RUNNING,
+	/* Temporary state used by driver to track JESD synchronization */
+	JESD_STATE_SYNC_RETRY,
+	/* JESD synchronization failure state */
+	JESD_STATE_SYNC_FAILURE,
 };
 
-enum jesd_dev_type {
-	JESD_DEV_TX,
-	JESD_DEV_RX,
-	JESD_DEV_SRX,
-	JESD_DEV_INVAL,
-};
-struct jesd_dev_params {
-	__u8 delay;
-	__u32 config_flags;
-	__u32 lanes;
-	int ilas_length;
+enum jesd_init_mask {
+	JESD_INIT_SERDES_PLL = (1 << 0),
+	JESD_INIT_SERDES = (1 << 1),
+	JESD_INIT_REGS = (1 << 2),
 };
 
-/* config_flags */
-#define CONF_SCRAMBLING_EN		(1 << 0)
-#define CONF_LANE_SYNC_BOTH_SIDES_EN	(1 << 1)
-#define CONF_BYPASS_AGC			(1 << 2)
-#define CONF_BYPASS_ILAS		(1 << 3)
-#define CONF_USE_OTHER_TRANSPORTS_IDLE	(1 << 4)
-#define CONF_SWAP_IQ			(1 << 5)
-#define CONF_PHY_MS_OCTET_FIRST_EN	(1 << 6)
-#define CONF_PHY_ORDER_MS_BIT_FIRST_EN	(1 << 7)
-#define CONF_STRICT_CGS			(1 << 8)
-#define CONF_RCBUF_UNDERFLOW_PROTECT	(1 << 9)
-#define CONF_PHYGASKET_LOOPBACK_EN	(1 << 16)
-#define CONF_SERDES_LOOPBACK_EN		(1 << 17)
-/** @brief \struct ils params
- */
-/* data_rate */
-#define DATA_RATE_1_2288_G		1228800
-#define DATA_RATE_2_4576_G		2457600
-#define DATA_RATE_3_0720_G		3072000
-#define DATA_RATE_4_9152_G		4915200
-#define DATA_RATE_6_1440_G		6144000
-#define DATA_RATE_9_8304_G		9830400
-
-
-struct ils_params {
-	__u8 device_id;
-	__u8 bank_id;
-	__u8 lane0_id;
-	__u8 lane1_id;
-	__u8 scrambling_scr;
-	__u8 lanes_per_converter_l;
-	__u8 octect_per_frame_f;
-	__u8 frame_per_mf_k;
-	__u8 conv_per_device_m;
-	__u8 ctrl_bits_per_sample;
-	__u8 control_wrds_per_frame;
-	__u8 converter_resolution;
-	__u8 bits_per_converter;
-	__u8 samples_per_cnvrtr_per_frame;
-	__u8 high_density_enable;
-	__u8 subclass_ver;
-	__u8 jesd_ver;
-	__u8 csum_lane_0;
-	__u8 csum_lane_1;
-	unsigned long data_rate;
-};
-/** @brief irq of mask
- */
-union irq_mask {
-	struct {
-		__u32 res0:1;
-		__u32 res1:1;
-		__u32 pof:1;
-		__u32 puf:1;
-		__u32 rcof:1;
-		__u32 rcuf:1;
-		__u32 sfifo:1;
-		__u32 res7:1;
-		__u32 sysref_rose:1;
-		__u32 res9:1;
-		__u32 phy_data_lost:1;
-		__u32 res10:1;
-		__u32 eof:1;
-		__u32 emof:1;
-		__u32 res17:17;
-	} msk;
-	__u32 irq_en;
+enum jesd_power_off_mask {
+/* This field is used only when both JESD transports are used */
+	JESD_POWER_OFF_TRANSPORT0 = (1 << 0),
+/* This field is used only when both JESD transports are used */
+	JESD_POWER_OFF_TRANSPORT1 = (1 << 1),
+/* Power off the serdes related to this JESD block */
+	JESD_POWER_OFF_SERDES = (1 << 2),
+/* Power off the serdes PLL, after all the serdes lanes are powered off */
+	JESD_POWER_OFF_SERDES_PLL = (1 << 3),
 };
 
-/** @brief irq of vector mask
- */
-union irq_vmsk {
-	struct {
-		__u32 cgs:1;
-		__u32 fs:1;
-		__u32 gcs:1;
-		__u32 ils:1;
-		__u32 ild:1;
-		__u32 unex_k:1;
-		__u32 nit_dis:1;
-		__u32 bad_dis:1;
-		__u32 res23:23;
-	} vmsk;
-	__u32 irq_ven;
-};
-/** @brief irq of tx transport instance
- */
-union irq_txuserconf {
-	struct {
-		__u32 reserved0:1;
-		__u32 reserved1:1;
-		__u32 unpacker_uf_err_tx:1;
-		__u32 wcbuf_of_err_tx:1;
-		__u32 wcbuf_uf_err_tx:1;
-		__u32 reserved4:1;
-		__u32 reserved5:1;
-		__u32 sysref_rose_tx:1;
-		__u32 sync_received_tx:1;
-		__u32 reserved22:22;
-	} irq_tx;
-	__u32 irq_txconf;
-};
-/** @brief irq of rx transport instance
- */
-struct irq_rxuserconf {
-	union irq_mask irq_m;
-	union irq_vmsk irq_vm;
-};
-/** @brief \struct isr conf instance
-*/
-struct isrconf {
-	union irq_mask irq_m;
-	union irq_vmsk irq_vm;
-	union irq_txuserconf irq_tx;
-};
-/** @brief \struct for transport tests
- */
-struct test_set {
-	__u8 bipass_8b10:1;
-	__u8 reverse_8b10:1;
-	__u8 tpl:1;
-	__u8 dll:1;
-	__u8 s_rst:1;
-	__u8 lane_ctrl:1;
-};
-/** @brief \struct for transport pattern gen tests
- */
-struct patgen {
-	__u32 rpt_ila:1;
-	__u32 init_cgs:2;
-	__u32 payload:3;
-	__u32 disp:1;
-	__u32 opmf:11;
-};
-/** @brief \struct for transport tx instance for all tests
- */
-struct conf_tx_tests {
-	struct test_set frmr_tst;
-	struct patgen tx_patgen; /*pattern generator in test modes*/
-	__u32 flag; /*for swap*/
-};
-/** @brief \struct for transport defrmr test
- */
-struct test_defrmr {
-	__u8 que_tst_err:1;
-	__u8 rep_data_tst:1;
-	__u8 ils_mode:1;
-	__u8 loopback:1;
-};
-/** @brief \struct for transport rx instance for all tests
- */
-struct conf_rx_tests {
-	struct test_defrmr drfmr_tst;
-	__u32 flags; /*for swap*/
-};
-/** @brief \struct for write register instance of an offset
- */
-struct jesd_reg_val {
-	__u32 offset;
-	__u32 value;
-};
-/** @brief \struct accumulate all instances of write reg with offsets
- * and update the count for number of instances attached.
- */
-struct jesd_reg_write_buf {
-	struct jesd_reg_val *regs;
-	__u32 count;
-};
-/** @brief \struct register read
-*/
-struct jesd_reg_read_buf {
-	__u32 offset;
-	__u32 len;
-	__u32 *buf;
-};
-/** @brief \struct tansport device info
-*/
-struct jesd_transport_dev_info {
-	enum jesd_state state;
-	struct ils_params ils;
-	struct jesd_dev_params init_params;
-};
-/** @brief \struct restart timer inputs
- * this inputs shall be from the tbgen
- */
-struct tbgen_params {
-	__u32 timer_id;
-};
-/** @brief \struct stats for the device transport
- */
-struct transport_stats {
-	__u32 ofpacker;
-	__u32 ufpacker;
-	__u32 ofrcbuf;
-	__u32 ufrcbuf;
-	__u32 ofwcbuf;
-	__u32 ufwcbuf;
-	__u32 ofsfifo;
-	__u32 ufsfifo;
-	__u32 unpacker;
-};
-/** @brief \struct stats for the device transport lanes
- */
-struct lane_stats {
-	__u32 baddis_threshold;
-	__u32 nit_threshold;
-	__u32 uexk_threshold;
-	__u32 frm_sync_error;
-	__u32 cgs_error;
-	__u32 csum_error;
-	__u32 ils_error;
-	__u32 skwor;
-	__u32 sync_failure_count;
-};
-/** @brief \struct stansport stats
-*/
-struct tarns_dev_stats {
-	struct transport_stats *tstats;
-	struct lane_stats *l0stats;
-	struct lane_stats *l1stats;
+
+enum jesd_transport_flag_mask {
+	/* If set, will enable the IQ swap */
+	IQ_SWAP = (1 << 0),
+	/* If set, set the L2SIDES bit for jesd tx reg FRM_CTL */
+	L2SIDES = (1 << 1),
+	/* If set, RCBUF UNDERFLOW PROCECT will be set for jesd rx, required for rate 491msps */
+	RCBUF_UNDERFLOW_PROTECT = (1 << 2),
+	/* If set, bit 22 of jesd tx transport control register will be set */
+	SYNCN_TO_REF = (1 << 3),
+	/* If set, bit 21 of jesd tx transport control register will be set */
+	SYNC_FROM_TBGEN = (1 << 4),
 };
 
-struct auto_sync_params {
-	uint8_t  sync_assert_mask;
-	uint8_t	 error_threshold;
+struct transport_params {
+	__u32 jesd_transport_flag;
+/* clk divider value. 1: full rate, 2 half rate, 4 quarter rate, 8 1/8 rate */
+	__u8 clk_div;
+/* sync delay */
+	__u8 sync_delay;
+/* ils parameters */
+/* Device ID */
+	__u8 DID;
+/* Bank iD */
+	__u8 BID;
+/* Lane 0 ID */
+	__u8 L0ID;
+/* Lane 1 ID */
+	__u8 L1ID;
+/* Scrambling enable, 0 disable, 1 enable */
+	__u8 SCR;
+/* Number of Octects per frame, 2 or 4
+ * Use 2 for dual lane mode and 4 for single lane mode
+ */
+	__u8 F;
+/*
+ * Number of frames per multiframe.
+ */
+	__u8 K;
+/*
+ * Number of converters per device, use 2 only
+ */
+	__u8 M;
+/*
+ * Number of lanes per converter device
+ */
+	__u8 L;
+/*
+ * Number of control bits per sample, use 0 only.
+ */
+	__u8 CS;
+/*
+ * Number of control words per frame clk per link, use 0 only
+ */
+	__u8 CF;
+/*
+ * Converter resolution, use 16 only
+ */
+	__u8 N;
+/*
+ * The total number of bits per converter word, use 16 only
+ */
+	__u8 NP;
+/*
+ * Samples per converter per frame, use 1 only
+ */
+	__u8 S;
+/*
+ * High definition format, use 0 only.
+ */
+	__u8 HD;
+
+/*
+ * Subclass version, 0 or 1.
+ */
+	__u8 SUBCLASSV;
+
+/*
+ * Jesd version, 0 jesd A, 1 jesd B
+ */
+	__u8 JESDV;
 };
 
-/* sync_assert_mask */
-#define SYNC_ASSERT_BAD_DIS		(1 << 0)
-#define SYNC_ASSERT_NIT			(1 << 1)
-#define SYNC_ASSERT_UNEXPECTED_K_CHARS	(1 << 2)
+enum jesd_complex_flag_mask {
+	PHY_GASKET_SWAP = (1 << 0),
+	PHY_GASKET_LOOPBACK = (1 << 1),
+	SERDES_LOOPBACK = (1 << 2)
+};
+
+struct jesd_complex_params {
+	__u32 jesd_complex_flag;
+	struct transport_params trans0_params;
+	struct transport_params trans1_params;
+};
 
 #define JESD204_IOCTL 'j'
-#define JESD_IOCTL_IDX	0x801
 
-#define JESD_DEVICE_INIT	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 1), \
-						struct jesd_dev_params *)
-#define JESD_SET_LANE_PARAMS	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 2), \
-						struct ils_params *)
-#define JESD_SET_ILS_LENGTH	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 3), \
-						unsigned int)
-#define JESD_TX_TEST_MODE	_IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 6), \
-						struct conf_tx_tests *)
-#define JESD_RX_TEST_MODE	_IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 7), \
-						struct conf_rx_tests *)
-#define JESD_FORCE_SYNC		_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 8))
-#define JESD_WRITE_REG		_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 9), \
-						struct jesd_reg_write_buf *)
-#define JESD_READ_REG		_IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 10), \
-						struct jesd_reg_read_buf *)
-#define JESD_DEVICE_STOP	_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 11))
-#define JESD_GET_DEVICE_INFO	_IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 12), \
-					struct jesd_transport_dev_info *)
-#define JESD_GET_STATS		_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 13), \
-						struct tarns_dev_stats *)
-#define JESD_CLEAR_STATS	_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 14))
-#define JESD_GET_LANE_RX_RECEIVED_PARAMS _IOW(JESD204_IOCTL,\
-					(JESD_IOCTL_IDX + 15), \
-					struct ils_params *)
-#define JESD_RX_AUTO_SYNC	_IOW(JESD204_IOCTL, (JESD_IOCTL_IDX + 16), \
-						struct auto_sync_params *)
-#define JESD_GET_DEVICE_STATE   _IOR(JESD204_IOCTL, (JESD_IOCTL_IDX + 17), \
-						enum jesd_state)
-#define JESD_READ_PHYGASKET_REG		_IOR(JESD204_IOCTL,\
-						(JESD_IOCTL_IDX + 18), \
-						struct jesd_reg_read_buf *)
-#define JESD_DEVICE_START	_IO(JESD204_IOCTL, (JESD_IOCTL_IDX + 19))
-/*IOCTL end*/
+#define JESD_INIT_PARAM		_IOW(JESD204_IOCTL, 0, \
+				struct jesd_init_params *)
+
+#define JESD_INIT_HW	_IOW(JESD204_IOCTL, 1, int)
+
+#define JESD_START	_IOW(JESD204_IOCTL, 2, int)
+
+#define JESD_POWER_DOWN	_IOW(JESD204_IOCTL, 3, int)
+
+#define JESD_FLUSH	_IOW(JESD204_IOCTL, 4, int)
+
+#define JESD_CHANGE_SYNC	_IOW(JESD204_IOCTL, 5, int)
+
 #endif /* _UAPI_JESD204_H */

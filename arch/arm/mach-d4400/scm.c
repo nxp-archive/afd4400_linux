@@ -187,6 +187,34 @@ int gcr_jesd_en_termination(void)
 }
 EXPORT_SYMBOL_GPL(gcr_jesd_en_termination);
 
+int cpri_mux_10ms_output(int framer_id, int complex_id)
+{
+	u32 mux;
+	u32 val;
+
+	if (!priv)
+		return -EFAULT;
+
+	if (framer_id == 0 && complex_id == 0)
+		mux = 0x20000000;
+	else if (framer_id == 1 && complex_id == 0)
+		mux = 0x40000000;
+	else if (framer_id == 0 && complex_id == 1)
+		mux = 0x60000000;
+	else if (framer_id == 1 && complex_id == 1)
+		mux = 0x80000000;
+	else
+		return -EINVAL;
+
+	val = scm_reg_read(0);
+	val = (val & 0x1FFFFFFF) | mux;
+	scm_reg_write(val, 0);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cpri_mux_10ms_output);
+
+
 static u32 cpri_conf_val(enum dma_channel_id_t chan_id, u8 cpri_chan,
 			enum cpri_core_info cpri_framert_id,
 			enum dma_comm_type_t comm_type)

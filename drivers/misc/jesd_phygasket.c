@@ -108,8 +108,9 @@ struct phygasket *map_phygasket(struct device_node *phy_node)
 	}
 	return phy;
 }
+EXPORT_SYMBOL(map_phygasket);
 
-
+/*
 int phy_softreset(struct phygasket *phy, u8 device, u8 reset, u8 lane)
 {
 
@@ -127,13 +128,13 @@ int phy_softreset(struct phygasket *phy, u8 device, u8 reset, u8 lane)
 		return -EINVAL;
 	return 0;
 }
-
+*/
 void phy_gasket_swap_lanes(struct phygasket *phy, u8 lane,
-	int enable, enum jesd_dev_type dev_type)
+	int enable, enum jesd_complex_type dev_type)
 {
 	u32 *reg, val, shift;
 
-	if (dev_type == JESD_DEV_TX)
+	if (dev_type == JESD_TX)
 		reg = &phy->pregs->tx_swap;
 	else
 		reg = &phy->pregs->rx_swap;
@@ -146,7 +147,8 @@ void phy_gasket_swap_lanes(struct phygasket *phy, u8 lane,
 
 	iowrite32(val, reg);
 }
-
+EXPORT_SYMBOL(phy_gasket_swap_lanes);
+/*
 int phy_inverse_lanes(struct phygasket *phy, u8 lane, u8 invert, u8 device)
 {
 	if (device == DEVICE_RX)
@@ -158,6 +160,7 @@ int phy_inverse_lanes(struct phygasket *phy, u8 lane, u8 invert, u8 device)
 
 	return 0;
 }
+*/
 
 int phy_gasket_lane_ctrl(struct phygasket *phy,
 	enum phygasket_data_src data_src, u8 lane)
@@ -182,7 +185,8 @@ int phy_gasket_lane_ctrl(struct phygasket *phy,
 
 	return retcode;
 }
-
+EXPORT_SYMBOL(phy_gasket_lane_ctrl);
+/*
 int do_patter_generator(struct phygasket *phy, struct patgen *pgen)
 {
 	int retcode = 0;
@@ -199,7 +203,6 @@ int do_patter_generator(struct phygasket *phy, struct patgen *pgen)
 
 			phy->pregs->tx_patgen = pattern;
 
-		/*start a new pattern generation with GO bit set in patgen*/
 			jset_bit(0, &phy->pregs->tx_patgen);
 
 		} else
@@ -209,6 +212,7 @@ int do_patter_generator(struct phygasket *phy, struct patgen *pgen)
 
 	return retcode;
 }
+*/
 
 static int phygasket_probe(struct platform_device *pdev)
 {
