@@ -165,6 +165,11 @@ struct jesd_complex_params {
 	struct transport_params trans1_params;
 };
 
+struct jesd_complex_state {
+	enum jesd_state transport0_state;
+	enum jesd_state transport1_state;
+};
+
 #define JESD204_IOCTL 'j'
 
 #define JESD_INIT_PARAM		_IOW(JESD204_IOCTL, 0, \
@@ -179,5 +184,8 @@ struct jesd_complex_params {
 #define JESD_FLUSH	_IOW(JESD204_IOCTL, 4, int)
 
 #define JESD_CHANGE_SYNC	_IOW(JESD204_IOCTL, 5, int)
+
+#define JESD_CHECK_STATE	_IOR(JESD204_IOCTL, 6, \
+				struct jesd_complex_state *)
 
 #endif /* _UAPI_JESD204_H */

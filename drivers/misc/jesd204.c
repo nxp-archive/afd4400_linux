@@ -607,17 +607,23 @@ static void jesd_stop(const struct jesd_complex *jdev,
 		serdes_lane_power_down(jdev->serdes_handle, lane1_id, jdev->type);
 }
 
-static int jesd_check_tx_sync(struct jesd_complex *jdev, struct jesd_transport *tdev)
+static int jesd_check_tx_sync(struct jesd_complex *jdev,
+		struct jesd_transport *tdev, int entry)
 {
 
 	struct config_registers_tx *reg_tx;
 	u32 val, val1;
-	int i, fail_user_mode = 0;
+	int i, fail_user_mode = 1;
 	reg_tx = (struct config_registers_tx *)tdev->regs;
 
-	if (atomic_read(&tdev->state) != JESD_STATE_SYNC_RETRY &&
-		atomic_read(&tdev->state) != JESD_STATE_SYSREF_CAPTURE)
-		return 0;
+	if (!entry) {
+		if (atomic_read(&tdev->state) != JESD_STATE_SYNC_RETRY &&
+			atomic_read(&tdev->state) != JESD_STATE_SYSREF_CAPTURE)
+			return 0;
+	} else {
+		if (atomic_read(&tdev->state) != JESD_STATE_RUNNING)
+			return 0;
+	}
 
 	writel(0x2, &reg_tx->tx_diag_sel);
 	val = readl(&reg_tx->tx_diag_data) & 0x3;
@@ -633,34 +639,41 @@ static int jesd_check_tx_sync(struct jesd_complex *jdev, struct jesd_transport *
 		break;
 	case 2:
 		jesd_info("in user data state\n");
+		fail_user_mode = 0;
 		for (i = 0; i < 1000; i++) {
 			val = readl(&reg_tx->tx_diag_data) & 0x3;
 			val1 = readl(&reg_tx->tx_irq_status) & REG_TX_SYNC;
 			if (val != 0x2 || val1) {
 				fail_user_mode = 1;
-				jesd_info("leave user data state\n");
 				break;
 			}
 		}
-		if (!fail_user_mode)
-			atomic_set(&tdev->state, JESD_STATE_RUNNING);
 		break;
 	default:
 		jesd_info("jesd tx in invalid state\n");
 	}
 
-	if (atomic_read(&tdev->state) == JESD_STATE_RUNNING) {
-		jesd_info("synced\n");
-		return 0;
+	if (!entry) {
+		if (!fail_user_mode) {
+			atomic_set(&tdev->state, JESD_STATE_RUNNING);
+			jesd_info("synced\n");
+		} else {
+			jesd_info("not synced\n");
+			atomic_set(&tdev->state, JESD_STATE_SYNC_RETRY);
+			return -EAGAIN;
+		}
 	} else {
-		jesd_info("not synced\n");
-		atomic_set(&tdev->state, JESD_STATE_SYNC_RETRY);
-		return -EAGAIN;
+		if (fail_user_mode) {
+			atomic_set(&tdev->state, JESD_STATE_SYNC_FAILURE);
+			jesd_info(" from running to failure mode\n");
+			return -1;
+		}
 	}
+	return 0;
 }
 
 static int jesd_check_rx_sync(struct jesd_complex *jdev,
-		struct jesd_transport *tdev)
+		struct jesd_transport *tdev, int entry)
 {
 
 	struct config_registers_rx *reg_rx;
@@ -668,9 +681,14 @@ static int jesd_check_rx_sync(struct jesd_complex *jdev,
 	int i, fail_user_mode = 0;
 	reg_rx = (struct config_registers_rx *)tdev->regs;
 
-	if (atomic_read(&tdev->state) != JESD_STATE_SYNC_RETRY &&
-		atomic_read(&tdev->state) != JESD_STATE_SYSREF_CAPTURE)
-		return 0;
+	if (!entry) {
+		if (atomic_read(&tdev->state) != JESD_STATE_SYNC_RETRY &&
+			atomic_read(&tdev->state) != JESD_STATE_SYSREF_CAPTURE)
+			return 0;
+	} else {
+		if (atomic_read(&tdev->state) != JESD_STATE_RUNNING)
+			return 0;
+	}
 
 	lane_mask = readl(&reg_rx->rx_lane_en);
 	for (i = 0; i < 1000; i++) {
@@ -689,13 +707,21 @@ static int jesd_check_rx_sync(struct jesd_complex *jdev,
 	if (readl(&reg_rx->rx_ilsf) == lane_mask)
 		jesd_info("initial lane sync\n");
 
-	if (fail_user_mode) {
-		jesd_info("not synced\n");
-		atomic_set(&tdev->state, JESD_STATE_SYNC_RETRY);
-		return -EAGAIN;
+	if (!entry) {
+		if (!fail_user_mode) {
+			atomic_set(&tdev->state, JESD_STATE_RUNNING);
+			jesd_info("synced\n");
+		} else {
+			jesd_info("not synced\n");
+			atomic_set(&tdev->state, JESD_STATE_SYNC_RETRY);
+			return -EAGAIN;
+		}
 	} else {
-		jesd_info("synced\n");
-		atomic_set(&tdev->state, JESD_STATE_RUNNING);
+		if (fail_user_mode) {
+			atomic_set(&tdev->state, JESD_STATE_SYNC_FAILURE);
+			jesd_info(" from running to failure mode\n");
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -822,16 +848,17 @@ static int jesd_start_ready(unsigned int timeout)
 
 	while (time_before(jiffies, timeout_jiffies)) {
 		all_sync_fail = 0;
-
 		list_for_each_entry(jdev, &jesd_list, list) {
 			for (i = 0; i < 2; i++) {
 				tdev = jdev->tdev[i];
-				if (jdev->type == JESD_TX)
-					ret = jesd_check_tx_sync(jdev, tdev);
-				if (jdev->type == JESD_RX)
-					ret = jesd_check_rx_sync(jdev, tdev);
-				if (ret)
-					all_sync_fail = 1;
+				if (jdev->type == JESD_TX) {
+					if (jesd_check_tx_sync(jdev, tdev, 0))
+						all_sync_fail = 1;
+				}
+				if (jdev->type == JESD_RX) {
+					if (jesd_check_rx_sync(jdev, tdev, 0))
+						all_sync_fail = 1;
+				}
 			}
 		}
 		if (!all_sync_fail)
@@ -855,6 +882,7 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 						unsigned long arg)
 {
 	struct jesd_complex *jdev = (struct jesd_complex *)pfile->private_data;
+	struct jesd_complex_state state;
 	int ret = 0;
 
 	switch (cmd) {
@@ -913,6 +941,20 @@ static long jesd204_ioctl(struct file *pfile, unsigned int cmd,
 
 	case JESD_CHANGE_SYNC:
 		jesd_change_sync(jdev, (unsigned int)arg);
+		break;
+
+	case JESD_CHECK_STATE:
+		if (jdev->type == JESD_TX) {
+			jesd_check_tx_sync(jdev, jdev->tdev[0], 1);
+			jesd_check_tx_sync(jdev, jdev->tdev[1], 1);
+		} else {
+			jesd_check_rx_sync(jdev, jdev->tdev[0], 1);
+			jesd_check_rx_sync(jdev, jdev->tdev[1], 1);
+		}
+		state.transport0_state = atomic_read(&jdev->tdev[0]->state);
+		state.transport1_state = atomic_read(&jdev->tdev[1]->state);
+		if (copy_to_user((void __user *)arg, &state, sizeof(state)))
+			return -EFAULT;
 		break;
 
 	default:
