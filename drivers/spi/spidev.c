@@ -602,7 +602,8 @@ static int spidev_probe(struct spi_device *spi)
 		spidev->devt = MKDEV(SPIDEV_MAJOR, minor);
 		dev = device_create(spidev_class, &spi->dev, spidev->devt,
 				    spidev, "spidev%d.%d",
-				    spi->master->bus_num, spi->chip_select);
+				    0, 0);
+				    /* spi->master->bus_num, spi->chip_select); */
 		status = IS_ERR(dev) ? PTR_ERR(dev) : 0;
 	} else {
 		dev_dbg(&spi->dev, "no minor number available!\n");
@@ -645,7 +646,8 @@ static int spidev_remove(struct spi_device *spi)
 }
 
 static const struct of_device_id spidev_dt_ids[] = {
-	{ .compatible = "rohm,dh2228fv" },
+	//{ .compatible = "rohm,dh2228fv" },
+	{ .compatible = "adi,ad9525" },
 	{},
 };
 

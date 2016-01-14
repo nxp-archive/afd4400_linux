@@ -60,21 +60,6 @@
 				fsl,spi-num-chipselects = <3>;
 			};
 
-			ecspi@B4000 {
-				#address-cells = <1>;
-				#size-cells = <0>;
-				status = "okay";
-				pinctrl-names = "default";
-				pinctrl-0 = <&pinctrl_ecspi5_1>;
-				fsl,spi-num-chipselects = <1>;
-
-					jcpll: ad9525@0 {
-						compatible = "adi,ad9525";
-						spi-max-frequency = <20000000>;
-						reg = <0>;
-						gpio-reset = <&gpioD 31 0>;
-					};
-			};
 			ecspi@B8000 {
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -181,6 +166,22 @@
 				status = "okay";
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_i2c5_1>;
+			};
+
+			i2c6: i2c@E0000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c6_1>;
+			};
+
+			i2c7: i2c@E4000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_i2c7_1>;
 			};
 
 			i2c9: i2c@EC000 {
@@ -308,7 +309,16 @@
                                                 >;
                                         };
                                 };
-
+                                ad9525_gpiospi_pins {
+                                        pinctrl_ad9525_gpiospi_1: ad9525gpiospigrp-1 {
+                                                fsl,pins = <
+                                                        247 0x80000000    /* D4400_PAD_SPI5_MOSI_GPIOE_8 */
+                                                        251 0x80000000    /* D4400_PAD_SPI5_MISO_GPIOE_9 */
+                                                        254 0x80000000    /* D4400_PAD_SPI5_CLK_GPIOD_29 */
+                                                        257 0x80000000    /* D4400_PAD_SPI5_SS0_GPIOD_30 */
+                                                >;
+                                        };
+                                };
 			};
 
 			mdio@084000 {
@@ -374,8 +384,30 @@
 			gpio-led1 = <&gpioE 29  0>;
 			gpio-led2 = <&gpioE 30  0>;
 			pinctrl-names = "default";
-			pinctrl-0 = <&pinctrl_leds_1>, <&pinctrl_rmii_1>;
+                        pinctrl-0 = <&pinctrl_leds_1>, <&pinctrl_rmii_1>,
+                                <&pinctrl_ad9525_gpiospi_1>;
 		};
+
+                spi_gpio {
+                        compatible = "spi-gpio";
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                        gpio-sck = <&gpioD 29 0>;
+                        gpio-miso = <&gpioE 8 0>;
+                        gpio-mosi = <&gpioE 9 0>;
+                        cs-gpios = <&gpioD 30 0>;
+                        num-chipselects = <1>;
+
+                        /* spidev driver */
+                        jcpll_gpio: ad9525_gpio@0 {
+                                compatible = "adi,ad9525";
+                                spi-max-frequency = <20000000>;
+                                reg = <0x0>; /* Ending chip select: 0-one cs, 1-two cs, etc.  See spi.c/of_register_spi_devices() */
+                                /* spi-cpha; */
+                                /*spi-cpol; */
+                                /* spi-cs-high; */
+                        };
+                };
 
                 xcvr_if: xcvr_if@1 {
 			compatible = "fsl,xcvr-interface";
@@ -400,8 +432,11 @@
 				eeprom-addr = <0x54>;
 				eeprom-pagesize = <16>;
 				eeprom-bytesize = <256>;
-				ipmi-mfg-str = "Freescale";
-				ipmi-name-str = "FSL D4400 4T4R Reference Board";
+				ipmi-mfg-str = "Freescale", "NXP";
+				ipmi-name-str =
+					"FSL D4400 4T4R Reference Board",
+					"NXP D4400-4T4R21 System",
+					"NXP D4400-21RRH2W5 2.5W System";
 			};
 
 			xcvr-roc2 {
@@ -424,8 +459,11 @@
 				eeprom-addr = <0x54>;
 				eeprom-pagesize = <16>;
 				eeprom-bytesize = <256>;
-				ipmi-mfg-str = "Freescale";
-				ipmi-name-str = "FSL D4400 4T4R Reference Board";
+				ipmi-mfg-str = "Freescale", "NXP";
+				ipmi-name-str =
+					"FSL D4400 4T4R Reference Board",
+					"NXP D4400-4T4R21 System",
+					"NXP D4400-21RRH2W5 2.5W System";
 			};
                 };
         };
