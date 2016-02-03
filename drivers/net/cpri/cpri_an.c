@@ -74,7 +74,6 @@ static int linkrate_autoneg_reset(struct cpri_framer *framer,
 	struct serdes_pll_params pll_param;
 	struct serdes_lane_params lane_param;
 	int serdes_init;
-	int count = 0;
 	int i;
 	struct device *dev = framer->cpri_dev->dev;
 	u32 line_rate[7] = {0, 1228800, 2457600, 3072000, 4915200,
@@ -119,7 +118,7 @@ static int linkrate_autoneg_reset(struct cpri_framer *framer,
 	gcr_config_cpri_line_rate(2, linerate, SET_LINE_RATE);
 	gcr_linkrate_autoneg_reset(2);
 
-retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
+	serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 	if ((serdes_init != -EALREADY) && (serdes_init != 0)) {
 		dev_err(dev, "CPRI init pll fail!");
 		return -EINVAL;
@@ -161,26 +160,10 @@ retry:  serdes_init = serdes_init_pll(framer->serdes_handle, &pll_param);
 		return -EINVAL;
 	}
 
-	/* Enable JCPLL in tracking mode if CPRI framer is RE slave,
-	 * otherwise charge pump output mid voltage.
-	 */
-	if (framer->autoneg_params.mode & REC_MODE)
-		qixis_jcpll_freq_fixed();
-	else {
+	if (!(framer->autoneg_params.mode & REC_MODE)) {
 		serdes_jcpll_enable(framer->serdes_handle, &lane_param,
 			&pll_param);
 		d4400_rev_clk_select(SERDES_PLL_1, REV_CLK_DIV_1);
-		qixis_jcpll_freq_track();
-
-		if (!qixis_jcpll_locked()) {
-			count++;
-			if (count == SERDES_PLL_LOCK_RETRY_CNT) {
-				dev_err(dev, "Jcpll failed to lock");
-				return -ETIME;
-			}
-			mdelay(1);
-			goto retry;
-		}
 	}
 
 	/* Enable all framers clock */
