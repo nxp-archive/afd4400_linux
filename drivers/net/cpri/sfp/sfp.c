@@ -417,6 +417,42 @@ void sfp_set_tx_enable(struct sfp_dev *sfp, unsigned value)
 }
 EXPORT_SYMBOL(sfp_set_tx_enable);
 
+void cpri_framer_handle_sfp_pin_changes(struct cpri_framer *framer,
+					unsigned changed, unsigned state)
+{
+	struct sfp_dev *sfp = framer->sfp_dev;
+
+	if (changed & SFP_STATE_PRS) {
+		if (!(state & SFP_STATE_PRS)) {
+			DEBUG(DEBUG_SFP, "sfp module removed\n");
+		} else if (sfp->valid) {
+			DEBUG(DEBUG_SFP, "sfp module inserted\n");
+		} else {
+			DEBUG(DEBUG_SFP, "unknown module inserted\n");
+		}
+	} else if (state & SFP_STATE_PRS) {
+		if (changed & SFP_STATE_RXLOS) {
+			DEBUG(DEBUG_SFP, "RX signal %s\n",
+				(state & SFP_STATE_RXLOS) ? "lost" : "OK");
+		}
+		if (changed & SFP_STATE_TXFAULT) {
+			DEBUG(DEBUG_SFP, "TX fault %s\n",
+				(state & SFP_STATE_TXFAULT) ? "occured" :
+								"cleared");
+		}
+	}
+
+	if (framer->cpri_enabled_monitor & SFP_MONITOR) {
+		if ((changed & SFP_STATE_PRS) && !(state & SFP_STATE_PRS))
+			atomic_inc(&framer->err_cnt[SFP_PRESENCE_BITPOS]);
+		if ((changed & SFP_STATE_RXLOS) && (state & SFP_STATE_RXLOS))
+			atomic_inc(&framer->err_cnt[SFP_RXLOS_BITPOS]);
+		if ((changed & SFP_STATE_TXFAULT) && (state & SFP_STATE_TXFAULT))
+			atomic_inc(&framer->err_cnt[SFP_TXFAULT_BITPOS]);
+	}
+
+	/* TODO - handle state changes intelligently */
+}
 int sfp_check_gpios(struct sfp_dev *sfp)
 {
 	int state = 0;

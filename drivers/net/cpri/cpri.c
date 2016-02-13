@@ -110,43 +110,6 @@ static int cpri_open(struct inode *inode, struct file *fp)
 	return rc;
 }
 
-void cpri_framer_handle_sfp_pin_changes(struct cpri_framer *framer,
-					unsigned changed, unsigned state)
-{
-	struct sfp_dev *sfp = framer->sfp_dev;
-
-	if (changed & SFP_STATE_PRS) {
-		if (!(state & SFP_STATE_PRS)) {
-			DEBUG(DEBUG_SFP, "sfp module removed\n");
-		} else if (sfp->valid) {
-			DEBUG(DEBUG_SFP, "sfp module inserted\n");
-		} else {
-			DEBUG(DEBUG_SFP, "unknown module inserted\n");
-		}
-	} else if (state & SFP_STATE_PRS) {
-		if (changed & SFP_STATE_RXLOS) {
-			DEBUG(DEBUG_SFP, "RX signal %s\n",
-				(state & SFP_STATE_RXLOS) ? "lost" : "OK");
-		}
-		if (changed & SFP_STATE_TXFAULT) {
-			DEBUG(DEBUG_SFP, "TX fault %s\n",
-				(state & SFP_STATE_TXFAULT) ? "occured" :
-								"cleared");
-		}
-	}
-
-	if (framer->cpri_enabled_monitor & SFP_MONITOR) {
-		if ((changed & SFP_STATE_PRS) && !(state & SFP_STATE_PRS))
-			atomic_inc(&framer->err_cnt[SFP_PRESENCE_BITPOS]);
-		if ((changed & SFP_STATE_RXLOS) && (state & SFP_STATE_RXLOS))
-			atomic_inc(&framer->err_cnt[SFP_RXLOS_BITPOS]);
-		if ((changed & SFP_STATE_TXFAULT) && (state & SFP_STATE_TXFAULT))
-			atomic_inc(&framer->err_cnt[SFP_TXFAULT_BITPOS]);
-	}
-
-	// TODO - handle state changes intelligently
-}
-
 static int cpri_release(struct inode *inode, struct file *fp)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)fp->private_data;
@@ -162,6 +125,15 @@ static const struct file_operations cpri_fops = {
 	.open = cpri_open,
 	.unlocked_ioctl = cpri_ioctl,
 	.release = cpri_release,
+};
+
+static const struct file_operations cpri_hdlc_fops = {
+	.owner = THIS_MODULE,
+	.open = cpri_hdlc_open,
+	.unlocked_ioctl = cpri_hdlc_ioctl,
+	.read = cpri_hdlc_read,
+	.write = cpri_hdlc_write,
+	.release = cpri_hdlc_release,
 };
 
 /* CPRI SFP interrupt handler.
@@ -241,7 +213,7 @@ static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 	u32 mask;
 
 	mask = IEVENT_ETH_MASK | IEVENT_HDLC_MASK | IEVENT_VSS_THRESHOLD_MASK;
-	events = cpri_read(&framer->regs->cpri_tevent) & mask;
+	events = cpri_read(&framer->regs->cpri_tevent);
 
 	/* Handle tx ethernet event - Called function will disable the
 	 * the interrupt and schedules for bottom half. Interrupt will
@@ -252,6 +224,13 @@ static irqreturn_t cpri_txcontrol(int irq, void *cookie)
 				&framer->regs->cpri_tctrltiminginten,
 				ETH_EVENT_EN_MASK, ~ETH_EVENT_EN_MASK);
 		cpri_eth_handle_tx(framer);
+	}
+
+	if (events & IEVENT_HDLC_MASK) {
+		cpri_reg_write(&framer->regs_lock,
+				&framer->regs->cpri_tctrltiminginten,
+				HDLC_EVENT_EN_MASK, ~HDLC_EVENT_EN_MASK);
+		cpri_hdlc_tx_cleanup(framer);
 	}
 
 	/* Clear events */
@@ -274,12 +253,8 @@ static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 	u32 mask;
 
 	mask = IEVENT_ETH_MASK | IEVENT_HDLC_MASK | IEVENT_VSS_THRESHOLD_MASK;
-	events = cpri_read(&framer->regs->cpri_revent) & mask;
+	events = cpri_read(&framer->regs->cpri_revent);
 
-	/* Handle rx ethernet event - Called function will disable the
-	 * the interrupt and schedules for bottom half. Interrupt will
-	 * be enabled once the rx packets are processed
-	 */
 	if (events & IEVENT_ETH_MASK) {
 		cpri_reg_write(&framer->regs_lock,
 				&framer->regs->cpri_rctrltiminginten,
@@ -287,11 +262,16 @@ static irqreturn_t cpri_rxcontrol(int irq, void *cookie)
 		cpri_eth_handle_rx(framer);
 	}
 
+	if (events & IEVENT_HDLC_MASK) {
+		cpri_reg_write(&framer->regs_lock,
+				&framer->regs->cpri_rctrltiminginten,
+				HDLC_EVENT_EN_MASK, ~HDLC_EVENT_EN_MASK);
+		cpri_hdlc_handle_rx(framer);
+	}
 	/* Clear events */
 	cpri_reg_write(&framer->regs_lock,
 			&framer->regs->cpri_revent,
 				events, events);
-
 	return IRQ_HANDLED;
 }
 
@@ -299,22 +279,26 @@ static int cpri_register_framer_irqs(struct cpri_framer *framer)
 {
 	int err;
 
-	err = request_irq(framer->irq_rx_c, cpri_rxcontrol, 0,
+	err = request_threaded_irq(framer->irq_rx_c, NULL,
+			cpri_rxcontrol, IRQF_ONESHOT,
 			"cpri rxcontrol interrupt", framer);
 	if (err < 0)
 		goto out;
 
-	err = request_irq(framer->irq_tx_c , cpri_txcontrol, 0,
+	err = request_threaded_irq(framer->irq_tx_c , NULL,
+			cpri_txcontrol, IRQF_ONESHOT,
 			"cpri txcontrol interrupt", framer);
 	if (err < 0)
 		goto irq_rxcontrol;
 
-	err = request_irq(framer->irq_rx_t, cpri_rxtiming, 0,
+	err = request_threaded_irq(framer->irq_rx_t, NULL,
+			cpri_rxtiming, IRQF_ONESHOT,
 			"cpri rxtiming interrupt", framer);
 	if (err < 0)
 		goto irq_txcontrol;
 
-	err = request_irq(framer->irq_tx_t, cpri_txtiming, 0,
+	err = request_threaded_irq(framer->irq_tx_t, NULL,
+			cpri_txtiming, IRQF_ONESHOT,
 			"cpri txtiming interrupt", framer);
 	if (err < 0)
 		goto irq_rxtiming;
@@ -610,6 +594,17 @@ static int cpri_probe(struct platform_device *pdev)
 	struct device *sysfs_dev;
 	unsigned char dev_name[20];
 	unsigned char framer_name[20];
+	unsigned char framer_hdlc_name[20];
+	int framer_zalloc_cnt = 0;
+	int framer_iomap_cnt = 0;
+	int framer_devreg_cnt = 0;
+	int framer_cdev_cnt = 0;
+	int framer_sysfsdev_cnt = 0;
+	int framer_grp_cnt = 0;
+	int framer_cdev_cnt1 = 0;
+	int framer_sysfsdev_cnt1 = 0;
+	int framer_irq_cnt = 0;
+	int framer_eth_cnt = 0;
 
 	if (!np || !of_device_is_available(np)) {
 		rc = -ENODEV;
@@ -620,8 +615,7 @@ static int cpri_probe(struct platform_device *pdev)
 
 	/* Allocate cpri device structure */
 	cpri_dev = kzalloc(sizeof(struct cpri_dev), GFP_KERNEL);
-	if (cpri_dev == NULL) {
-		dev_err(dev, "cpri_dev alloc fail");
+	if (!cpri_dev) {
 		rc = -ENOMEM;
 		goto err_out;
 	}
@@ -671,15 +665,15 @@ static int cpri_probe(struct platform_device *pdev)
 		}
 
 		sprintf(framer_name, "%s_" FRMR_NAME "%d", dev_name, framer_id);
+		sprintf(framer_hdlc_name, "%s_" FRMR_NAME "%d_hdlc", dev_name, framer_id);
 
 		/* Allocate space for a framer device */
 		framer = kzalloc(sizeof(struct cpri_framer), GFP_KERNEL);
-		if (framer == NULL) {
-			dev_err(dev, "%s: failed to allocate framer memory",
-				framer_name);
+		if (!framer) {
 			rc = -ENOMEM;
-			goto err_reg;
+			goto err_fzalloc;
 		}
+		framer_zalloc_cnt++;
 
 		/* Populate framer structure */
 		framer_index = cpri_dev->framers++;
@@ -693,18 +687,17 @@ static int cpri_probe(struct platform_device *pdev)
 
 		framer->regs = of_iomap(child, 0);
 		if (!framer->regs) {
-			dev_err(dev, "%s: failed to map framer reg addr",
-				framer_name);
 			rc = -ENOMEM;
-			goto err_fmem;
+			goto err_fiomap;
 		}
+		framer_iomap_cnt++;
 
 		rc = of_property_read_u32(child, "max-axcs",
 			(u32 *)&framer->max_axcs);
 		if (rc) {
 			dev_err(dev, "%s: error %d reading max-axcs",
 				framer_name, rc);
-			goto err_map;
+			goto err_fiomap;
 		}
 
 		rc = of_property_read_u32(child, "memblk-size",
@@ -712,17 +705,19 @@ static int cpri_probe(struct platform_device *pdev)
 		if (rc) {
 			dev_err(dev, "%s: error %d reading memblk-size",
 				framer_name, rc);
-			goto err_map;
+			goto err_fiomap;
 		}
 
 		framer->dev.parent = &pdev->dev;
 		dev_set_name(&framer->dev, "framer%d", framer_id);
+
 		rc = device_register(&framer->dev);
 		if (rc) {
 			dev_err(dev, "%s: error %d registering device",
 				framer_name, rc);
-			goto err_map;
+			goto err_fdevreg;
 		}
+		framer_devreg_cnt++;
 		dev_set_drvdata(&framer->dev, framer);
 
 		/* Create cdev for each framer */
@@ -734,8 +729,9 @@ static int cpri_probe(struct platform_device *pdev)
 		if (rc < 0) {
 			dev_err(dev, "Error %d while adding %s",
 				rc, framer_name);
-			goto err_rdev;
+			goto err_faddcdev;
 		}
+		framer_cdev_cnt++;
 		/* Create sysfs device */
 		sysfs_dev = device_create(cpri_class, &framer->dev,
 				framer->dev_t, NULL, framer_name);
@@ -743,22 +739,51 @@ static int cpri_probe(struct platform_device *pdev)
 			rc = PTR_ERR(sysfs_dev);
 			dev_err(dev, "Error %d while creating %s",
 				rc, dev_name);
-			goto err_cdev;
+			goto err_fdevcreate;
 		}
+		framer_sysfsdev_cnt++;
 
 		rc = sysfs_create_group(&framer->dev.kobj, &attr_group);
 		if (rc < 0) {
 			dev_err(dev, "Error %d while creating group %s",
 				rc, dev_name);
-			goto err_devc;
+			goto err_fcreategrp;
 		}
+		framer_grp_cnt++;
 
+		/* Create hdlc cdev for each framer */
+		framer->hdlc_dev_t = MKDEV(cpri_major, cpri_minor + framer_id +
+				cpri_dev->dev_id * MAX_FRAMERS_PER_COMPLEX +
+				MAX_FRAMERS_PER_COMPLEX * MAX_CPRI_COMPLEXES);
+		cdev_init(&framer->hdlc_cdev, &cpri_hdlc_fops);
+		framer->hdlc_cdev.owner = THIS_MODULE;
+		rc = cdev_add(&framer->hdlc_cdev, framer->hdlc_dev_t, 1);
+		if (rc < 0) {
+			dev_err(dev, "Error %d while adding %s",
+				rc, framer_hdlc_name);
+			goto err_faddcdev1;
+		}
+		framer_cdev_cnt1++;
+
+		/* Create sysfs device */
+		sysfs_dev = device_create(cpri_class, &framer->dev,
+				framer->hdlc_dev_t, NULL, framer_hdlc_name);
+		if (IS_ERR(sysfs_dev)) {
+			rc = PTR_ERR(sysfs_dev);
+			dev_err(dev, "Error %d while creating %s",
+				rc, dev_name);
+			goto err_fdevcreate1;
+		}
+		framer_sysfsdev_cnt1++;
+
+		framer->pdev = pdev;
 		spin_lock_init(&framer->regs_lock);
 		spin_lock_init(&framer->err_en_lock);
 		spin_lock_init(&framer->rx_cw_lock);
 		spin_lock_init(&framer->tx_cw_lock);
-		sema_init(&framer->axc_sem, 1);
+		mutex_init(&framer->axc_mutex);
 		init_timer(&framer->link_monitor_timer);
+		cpri_hdlc_of_init(framer);
 
 		/* Enable clock for framer register access */
 		if (framer->id == 0)
@@ -770,8 +795,9 @@ static int cpri_probe(struct platform_device *pdev)
 		cpri_mask_irq_events(framer);
 		if (process_framer_irqs(child, framer) < 0) {
 			dev_err(dev, "framer events not supported");
-			goto err_sysfs;
+			goto err_firq;
 		}
+		framer_irq_cnt++;
 
 		framer->sfp_dev_node = of_parse_phandle(child,
 					"sfp-handle", 0);
@@ -781,13 +807,15 @@ static int cpri_probe(struct platform_device *pdev)
 		framer->sfp_dev = get_attached_sfp_dev(framer->sfp_dev_node);
 		if (framer->sfp_dev == NULL) {
 			dev_err(dev, "get_attached_sfp_dev fail");
-			goto err_irqs;
+			goto err_firq;
 		}
 		sfp_set_attached_framer(framer->sfp_dev, framer);
 		if (cpri_eth_init(pdev, framer, child) < 0) {
 			dev_err(dev, "ethernet init failed");
-			goto err_reg;
+			goto err_feth;
 		}
+		framer_eth_cnt++;
+
 		dev_info(dev, "%s attached to sfp%d", framer->name,
 			framer->sfp_dev->id);
 	}
@@ -795,7 +823,7 @@ static int cpri_probe(struct platform_device *pdev)
 	/* Setup cpri err interrupts */
 	if (cpri_register_irq(cpri_dev) < 0) {
 		dev_err(dev, "cpri dev irq init failure");
-		goto err_reg;
+		goto err_feth;
 	}
 	/* Add to the list of cpri devices - this is required
 	 * as the probe is called for multiple cpri complexes
@@ -803,7 +831,6 @@ static int cpri_probe(struct platform_device *pdev)
 	spin_lock(&priv->cpri_list_lock);
 	list_add_tail(&cpri_dev->list, &priv->cpri_dev_list);
 	spin_unlock(&priv->cpri_list_lock);
-
 	dev_set_drvdata(dev, cpri_dev);
 
 #ifndef CONFIG_BOARD_4T4R
@@ -816,42 +843,41 @@ static int cpri_probe(struct platform_device *pdev)
 
 	return 0;
 
-err_irqs:
-	free_irq(framer->irq_rx_t, framer);
-	free_irq(framer->irq_tx_t, framer);
-	free_irq(framer->irq_rx_c, framer);
-	free_irq(framer->irq_tx_c, framer);
-err_sysfs:
-	sysfs_remove_group(&framer->dev.kobj, &attr_group);
-err_devc:
-	device_destroy(cpri_class, framer->dev_t);
-err_cdev:
-	cdev_del(&framer->cdev);
-err_rdev:
-	device_unregister(&framer->dev);
-err_map:
-	iounmap(framer->regs);
-err_fmem:
-	kfree(framer);
-	cpri_dev->framers--;
-err_reg:
-	for (i = 0; i < cpri_dev->framers; i++) {
-		framer = cpri_dev->framer[i];
-		cpri_eth_deinit(pdev, framer);
-		if (framer->sfp_dev)
-			sfp_set_attached_framer(framer->sfp_dev, NULL);
-		free_irq(framer->irq_rx_t, framer);
-		free_irq(framer->irq_tx_t, framer);
-		free_irq(framer->irq_rx_c, framer);
-		free_irq(framer->irq_tx_c, framer);
-		del_timer(&framer->link_monitor_timer);
-		sysfs_remove_group(&framer->dev.kobj, &attr_group);
-		device_destroy(cpri_class, framer->dev_t);
-		cdev_del(&framer->cdev);
-		device_unregister(&framer->dev);
-		iounmap(framer->regs);
-		kfree(framer);
+err_feth:
+	for (i = 0; i < framer_eth_cnt; i++)
+		cpri_eth_deinit(pdev, cpri_dev->framer[i]);
+err_firq:
+	for (i = 0; i < framer_irq_cnt; i++) {
+		free_irq(cpri_dev->framer[i]->irq_rx_t, framer);
+		free_irq(cpri_dev->framer[i]->irq_tx_t, framer);
+		free_irq(cpri_dev->framer[i]->irq_rx_c, framer);
+		free_irq(cpri_dev->framer[i]->irq_tx_c, framer);
 	}
+err_fdevcreate1:
+	for (i = 0; i < framer_sysfsdev_cnt1; i++)
+		device_destroy(cpri_class, cpri_dev->framer[i]->hdlc_dev_t);
+err_faddcdev1:
+	for (i = 0; i < framer_cdev_cnt1; i++)
+		cdev_del(&cpri_dev->framer[i]->hdlc_cdev);
+err_fcreategrp:
+	for (i = 0; i < framer_grp_cnt; i++)
+		sysfs_remove_group(&cpri_dev->framer[i]->dev.kobj, &attr_group);
+err_fdevcreate:
+	for (i = 0; i < framer_sysfsdev_cnt; i++)
+		device_destroy(cpri_class, cpri_dev->framer[i]->dev_t);
+err_faddcdev:
+	for (i = 0; i < framer_cdev_cnt; i++)
+		cdev_del(&cpri_dev->framer[i]->cdev);
+err_fdevreg:
+	for (i = 0; i < framer_devreg_cnt; i++)
+		device_unregister(&cpri_dev->framer[i]->dev);
+err_fiomap:
+	for (i = 0; i < framer_iomap_cnt; i++)
+		iounmap(cpri_dev->framer[i]->regs);
+err_fzalloc:
+	for (i = 0; i < framer_zalloc_cnt; i++)
+		kfree(cpri_dev->framer[i]);
+err_reg:
 	iounmap(cpri_dev->regs);
 err_mem:
 	kfree(cpri_dev);
@@ -889,8 +915,10 @@ static int cpri_remove(struct platform_device *pdev)
 		free_irq(framer->irq_rx_c, framer);
 		free_irq(framer->irq_tx_c, framer);
 		del_timer(&framer->link_monitor_timer);
-		sysfs_remove_group(&framer->cdev.kobj, &attr_group);
+		sysfs_remove_group(&framer->dev.kobj, &attr_group);
 		device_destroy(cpri_class, framer->dev_t);
+		device_destroy(cpri_class, framer->hdlc_dev_t);
+		cdev_del(&framer->hdlc_cdev);
 		cdev_del(&framer->cdev);
 		device_unregister(&framer->dev);
 		iounmap(framer->regs);
@@ -932,7 +960,7 @@ static int __init cpri_mod_init(void)
 
 	/* Register our major, and accept a dynamic number. */
 	err = alloc_chrdev_region(&devno, 0,
-				MAX_CPRI_COMPLEXES * MAX_FRAMERS_PER_COMPLEX,
+				MAX_CPRI_COMPLEXES * MAX_FRAMERS_PER_COMPLEX * 2,
 				DRIVER_NAME);
 	if (err < 0) {
 		pr_err("cpri: can't get major number: %d\n", err);

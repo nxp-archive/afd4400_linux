@@ -222,6 +222,10 @@ static void cpri_init_framer(struct cpri_framer *framer,
 				TX_FAST_CM_PTR_MASK,
 				(u32)autoneg_params->eth_ptr);
 
+	cpri_reg_set_val(&regs->cpri_cmconfig,
+			TX_SLOW_CM_PTR_MASK,
+			(u32)autoneg_params->hdlc_rate);
+
 	/* Setup init proto version */
 	if ((rate < RATE5_4915_2M) || (autoneg_params->tx_prot_ver == VER_1)) {
 		tproto_ver = VER_1;
@@ -448,6 +452,71 @@ void cpri_clear_monitor(struct cpri_framer *framer,
 	spin_unlock(&framer->err_en_lock);
 }
 
+static void hdlc_setup_timer_expiry_hndlr(unsigned long ptr)
+{
+	struct cpri_framer *framer = (struct cpri_framer *)ptr;
+
+	set_bit(HDLC_TIMEREXP_BITPOS,
+		&framer->timer_expiry_events);
+}
+
+static int cpri_hdlc_autoneg(struct cpri_framer *framer)
+{
+	struct cpri_autoneg_params *param = &(framer->autoneg_params);
+	struct timer_list hdlc_setup_timer;
+	struct cpri_framer_regs *regs = framer->regs;
+	u8 tx_hdlc_rate;
+	u32 cmconfig;
+	struct cpri_autoneg_output *result = &(framer->autoneg_output);
+
+	/* Init hdlc rate expiry timer */
+	init_timer(&hdlc_setup_timer);
+	hdlc_setup_timer.function = hdlc_setup_timer_expiry_hndlr;
+	hdlc_setup_timer.data = (unsigned long) framer;
+
+	clear_bit(HDLC_TIMEREXP_BITPOS, &framer->timer_expiry_events);
+
+	/* Setup hdlc rate expiry timer */
+	hdlc_setup_timer.expires = jiffies + (param->hdlc_neg_timeout) * HZ / 1000;
+	add_timer(&hdlc_setup_timer);
+
+	tx_hdlc_rate = param->hdlc_rate;
+	cpri_reg_set_val(&regs->cpri_cmconfig,
+			TX_SLOW_CM_PTR_MASK, (u32)tx_hdlc_rate);
+
+	while (!test_bit(HDLC_TIMEREXP_BITPOS,
+		&framer->timer_expiry_events)) {
+		cmconfig = cpri_read(&regs->cpri_cmstatus);
+
+		if (cmconfig & RX_SLOW_CM_PTR_VALID_MASK) {
+			if (!(param->mode & STICK_TO_HDLC_RATE)) {
+				tx_hdlc_rate = (cmconfig & RX_SLOW_CM_PTR_MASK) >> 8;
+				cpri_reg_set_val(&regs->cpri_cmconfig,
+					TX_SLOW_CM_PTR_MASK, tx_hdlc_rate);
+				break;
+			} else if (tx_hdlc_rate ==
+				(cmconfig & RX_SLOW_CM_PTR_MASK) >> 8)
+				break;
+		}
+		schedule_timeout_interruptible(msecs_to_jiffies(1));
+	}
+
+	del_timer(&hdlc_setup_timer);
+	if (test_bit(HDLC_TIMEREXP_BITPOS,
+		&framer->timer_expiry_events)) {
+		DEBUG(DEBUG_AUTONEG, "Slow C&M autoneg failed\n");
+		result->common_hdlc_rate = HDLC_INVALID;
+		return -ETIME;
+	} else {
+		result->common_hdlc_rate = tx_hdlc_rate;
+		set_bit(CPRI_HDLC_BITPOS,
+			&framer->cpri_state);
+		DEBUG(DEBUG_AUTONEG, "Slow C&M autoneg success, hdlc = %d\n",
+			result->common_hdlc_rate);
+		return 0;
+	}
+}
+
 static void eth_setup_timer_expiry_hndlr(unsigned long ptr)
 {
 	struct cpri_framer *framer = (struct cpri_framer *)ptr;
@@ -502,6 +571,7 @@ static int cpri_cm_autoneg(struct cpri_framer *framer)
 	del_timer(&eth_setup_timer);
 	if (test_bit(ETHPTR_TIMEREXP_BITPOS,
 		&framer->timer_expiry_events)) {
+		result->common_eth_ptr = -1;
 		DEBUG(DEBUG_AUTONEG, "C&M autoneg failed\n");
 		return -ETIME;
 	} else {
@@ -577,6 +647,7 @@ static int cpri_proto_autoneg(struct cpri_framer *framer)
 	del_timer(&proto_setup_timer);
 	if (test_bit(PROTVER_TIMEREXP_BITPOS,
 		&framer->timer_expiry_events)) {
+		result->common_prot_ver = VER_INVALID;
 		DEBUG(DEBUG_AUTONEG, "protocol autoneg failed");
 		return -ETIME;
 	} else {
@@ -643,7 +714,8 @@ static int check_linesync(struct cpri_framer *framer,
 		result->common_rate = rate;
 		DEBUG(DEBUG_AUTONEG, "rate autoneg success, %s Mbps\n",
 			rate_name[rate - 1]);
-	}
+	} else
+		result->common_rate = RATE_INVALID;
 	return err;
 }
 
@@ -764,6 +836,10 @@ static int process_autoneg_cmd(struct cpri_framer *framer)
 		clear_bit(CPRI_ETHPTR_BITPOS,
 			&framer->cpri_state);
 
+	if (cmd & HDLC_AUTONEG)
+		clear_bit(CPRI_HDLC_BITPOS,
+			&framer->cpri_state);
+
 	if (cmd & RATE_AUTONEG) {
 		retval = cpri_rate_autoneg(framer);
 		if (retval)
@@ -782,6 +858,11 @@ static int process_autoneg_cmd(struct cpri_framer *framer)
 			goto out;
 	}
 
+	if (cmd & HDLC_AUTONEG) {
+		retval = cpri_hdlc_autoneg(framer);
+		if (retval)
+			goto out;
+	}
 out:
 	return retval;
 }

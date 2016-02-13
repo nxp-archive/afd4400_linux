@@ -526,10 +526,7 @@ static int cpri_axc_ctrl(struct cpri_framer *framer,
 	int i;
 	int err = 0;
 
-
-	if (down_interruptible(&framer->axc_sem))
-		return -EINTR;
-
+	mutex_lock(&framer->axc_mutex);
 	for (i = 0; i < axc_cnt; i++) {
 		if (axc_info[i].flags & AXC_DAISY_CHAINED)
 			program_aux_interface(framer, &axc_info[i]);
@@ -561,10 +558,9 @@ static int cpri_axc_ctrl(struct cpri_framer *framer,
 		} else
 			err = -EINVAL;
 	}
-
 	cpri_reg_set(&regs->cpri_tcr, 1);
 	cpri_reg_set(&regs->cpri_rcr, 1);
-	up(&framer->axc_sem);
+	mutex_unlock(&framer->axc_mutex);
 	return err;
 }
 
@@ -579,21 +575,13 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	int i;
 	int err = 0;
 	int riqs, tiqs;
-	struct axc_cmd_regs *cmd_regs = NULL;
+	struct axc_cmd_regs *cmd_regs;
 
-	cmd_regs = kmalloc(sizeof(struct axc_cmd_regs), GFP_KERNEL);
+	cmd_regs = kzalloc(sizeof(struct axc_cmd_regs), GFP_KERNEL);
+	if (!cmd_regs)
+		return -ENOMEM;
 
-	if (cmd_regs == NULL) {
-		dev_err(dev, "System memory exhausted!\n");
-		err = -ENOMEM;
-		goto out1;
-	}
-	memset(cmd_regs, 0, sizeof(struct axc_cmd_regs));
-
-	if (down_interruptible(&framer->axc_sem)) {
-		err = -EINTR;
-		goto out2;
-	}
+	mutex_lock(&framer->axc_mutex);
 	/* Clear it once */
 	check_axc_conflict(framer, NULL, 1);
 
@@ -601,7 +589,7 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	for (i = 0; i < axc_cnt; i++) {
 		if (check_axc_conflict(framer, &axc_info[i], 0)) {
 			err = -EINVAL;
-			goto out3;
+			goto out;
 		}
 	}
 
@@ -620,7 +608,7 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	if (i == 10) {
 		dev_err(dev, "fail to disable riqs/tiqs bit");
 		err = -EIO;
-		goto out3;
+		goto out;
 	}
 
 	/* Disable all AxCs before mapping */
@@ -657,11 +645,9 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	cpri_write(framer->max_axcs, &regs->cpri_tgenmode);
 	cpri_reg_set_val(&regs->cpri_map_config, AXC_MODE_MASK, 1);
 
-out3:
-	up(&framer->axc_sem);
-out2:
+out:
+	mutex_unlock(&framer->axc_mutex);
 	kfree(cmd_regs);
-out1:
 	return err;
 }
 

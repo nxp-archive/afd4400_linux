@@ -90,4 +90,15 @@ void src_cpri_hwrst(int enable);
 
 void cpri_cw130_config(struct cpri_framer *framer, u32 enable_mask);
 int cpri_mux_10ms_output(int framer_id, int complex_id);
+void cpri_hdlc_tx_cleanup(struct cpri_framer *framer);
+int cpri_hdlc_handle_rx(struct cpri_framer *framer);
+int cpri_hdlc_open(struct inode *inode, struct file *fp);
+int cpri_hdlc_release(struct inode *inode, struct file *fp);
+ssize_t cpri_hdlc_read(struct file *file,
+		char __user *buf, size_t count, loff_t *ppos);
+ssize_t cpri_hdlc_write(struct file *file, const char __user *buf,
+		size_t count, loff_t *ppos);
+long cpri_hdlc_ioctl(struct file *fp, unsigned int cmd,
+			unsigned long arg);
+void cpri_hdlc_of_init(struct cpri_framer *framer);
 #endif /* __CPRI_H */

@@ -25,6 +25,7 @@
 #include <linux/sfp.h>
 #include <linux/gcr.h>
 #include <linux/cpri_eth.h>
+#include <linux/cpri_hdlc.h>
 #include <mach/src.h>
 
 #define DRIVER_NAME		"cpri"
@@ -91,15 +92,18 @@ struct cpri_framer {
 	char name[16];
 	struct device dev;
 	struct device_node *cpri_node;
+	struct platform_device *pdev;
 	struct cpri_framer_regs __iomem *regs;
 	struct cpri_dev *cpri_dev;
 	struct cdev cdev;
 	dev_t dev_t;
+	struct cdev hdlc_cdev;
+	dev_t hdlc_dev_t;
 	spinlock_t regs_lock;
 	spinlock_t err_en_lock;
 	spinlock_t rx_cw_lock;
 	spinlock_t tx_cw_lock;
-	struct semaphore axc_sem;
+	struct mutex axc_mutex;
 	struct device_node *sfp_dev_node;
 	struct sfp_dev *sfp_dev;
 	struct of_phandle_args serdesspec;
@@ -124,6 +128,7 @@ struct cpri_framer {
 	u32 axc_memblk_size;
 	/* Ethernet data structures per framer */
 	struct cpri_eth_priv *eth_priv;
+	struct cpri_hdlc_priv hdlc_priv;
 	/* The timer to poll the link status */
 	struct timer_list link_monitor_timer;
 	/* misc */
@@ -421,6 +426,7 @@ struct axc_cmd_regs {
 #define RATE_TIMEREXP_BITPOS		0
 #define PROTVER_TIMEREXP_BITPOS		1
 #define ETHPTR_TIMEREXP_BITPOS		2
+#define HDLC_TIMEREXP_BITPOS		3
 
 #define IEVENT_SFP_TXFAULT			(1 << 1)
 #define IEVENT_SFP_LOS				(1 << 2)
@@ -485,10 +491,15 @@ struct axc_cmd_regs {
 
 /* CPRI Control and Management Configuration (CPRIn_CM_CONFIG) */
 #define TX_FAST_CM_PTR_MASK			0x3F
+#define TX_SLOW_CM_PTR_MASK			0x700
 
 /* CPRI Control and Management Status (CPRIn_CM_STATUS) */
 #define RX_FAST_CM_PTR_VALID_MASK		0x40
 #define RX_FAST_CM_PTR_MASK			0x3F
+
+/* CPRI Control and Management Status (CPRIn_CM_STATUS) */
+#define RX_SLOW_CM_PTR_VALID_MASK		0x800
+#define RX_SLOW_CM_PTR_MASK			0x700
 
 /* CPRI Receive Delay (CPRIn_RX_DELAY) */
 #define RX_ALIGN_DELAY_MASK			0x7F0000

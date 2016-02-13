@@ -968,7 +968,7 @@ static void cpri_eth_tx_cleanup(unsigned long data)
 
 		CPRI_ETH_BD_TO_LE(&txbde_le, txbde);/* passing b-endian */
 
-		if (BD_LSTATUS_SSHIFT(txbde_le.lstatus) && CPRI_ETH_BD_TX_READY)
+		if (BD_LSTATUS_SSHIFT(txbde_le.lstatus) & CPRI_ETH_BD_TX_READY)
 			/* Tx DMA will clear this bit after Tx complete */
 			break;
 		skb = tx_bd->tx_skbuff[skb_dirtytx];
@@ -1113,6 +1113,11 @@ static int cpri_eth_clean_rx_ring(struct net_device *ndev, int budget)
 				}
 				cpri_eth_stats_incr_val(
 					&priv->stats.rx_bytes, pkt_len);
+
+				dma_sync_single_for_cpu(&priv->ofdev->dev,
+					rx_bd->rxbuf_paddr[rx_bd->skb_currx],
+					pkt_len, DMA_FROM_DEVICE);
+
 				memcpy(skb_put(skb, pkt_len),
 					rx_bd->rxbuf[rx_bd->skb_currx],
 					pkt_len);

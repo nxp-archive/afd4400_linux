@@ -290,13 +290,25 @@ enum cpri_prot_ver {
 	VER_INVALID
 };
 
+enum cpri_hdlc_rate {
+	HDLC_NONE,
+	HDLC_240K,
+	HDLC_480K,
+	HDLC_960K,
+	HDLC_1920K,
+	HDLC_2400K,
+	HDLC_HIGHEST,
+	HDLC_INVALID,
+};
+
 enum cpri_link_rate {
 	RATE2_1228_8M = 1,
 	RATE3_2457_6M,
 	RATE4_3072_0M,
 	RATE5_4915_2M,
 	RATE6_6144_0M,
-	RATE7_9830_4M
+	RATE7_9830_4M,
+	RATE_INVALID,
 };
 
 enum autoneg_mode_mask {
@@ -352,6 +364,12 @@ enum autoneg_mode_mask {
  */
 	STICK_TO_ETHPTR = (1 << 5),
 /**
+ * Stick to @eth_ptr till @ethptr_neg_timeout
+ * millseconds if this flag is set, otherwise adapt
+ * to the ethernet pointer value from the framer.
+ */
+	STICK_TO_HDLC_RATE = (1 << 6),
+/**
  * Reset the pll and serdes if this flag is set.
  * Also if the CPRI is running in RE mode, the framer
  * that sets this flag will output the recovered clk
@@ -360,7 +378,7 @@ enum autoneg_mode_mask {
  * CPRI framer is already running, unless you really need to,
  * eg. restart rate autonegotiation.
  */
-	RESET_LINK = (1 << 6),
+	RESET_LINK = (1 << 7),
 
 /**
  * Enable CPRI serdes loopback
@@ -368,14 +386,14 @@ enum autoneg_mode_mask {
  * together with REC_MODE and RESET_LINK, all 4 framers
  * will be configured at internal serdes loopback mode.
  */
-	CPRI_SERDES_LOOPBACK = (1 << 7),
+	CPRI_SERDES_LOOPBACK = (1 << 8),
 
 /**
  * Enable this CPRI framer to output the 10ms radio frame
  * pulse to tbgen. Then tbgen can use this signal as the time reference.
  * Apply to only one of the 4 framers.
  */
-	RADIO_FRAME_OUTPUT_SEL = (1 << 8),
+	RADIO_FRAME_OUTPUT_SEL = (1 << 9),
 };
 
 /**
@@ -390,6 +408,7 @@ enum autoneg_step_mask {
 	RATE_AUTONEG = (1 << 0),
 	PROTO_AUTONEG = (1 << 1),
 	ETHPTR_AUTONEG = (1 << 2),
+	HDLC_AUTONEG = (1 << 3),
 };
 
 struct cpri_autoneg_params {
@@ -401,6 +420,7 @@ struct cpri_autoneg_params {
 	unsigned int rate_neg_timeout; /*!< per rate */
 	unsigned int proto_neg_timeout;
 	unsigned int ethptr_neg_timeout;
+	unsigned int hdlc_neg_timeout;
 /**
  * Refer to flag STICK_TO_RATE for detail
  */
@@ -412,13 +432,19 @@ struct cpri_autoneg_params {
  * Valid ethernet pointer ranges from 20 to 63
  */
 	unsigned int eth_ptr;
+/**
+ * CPRI HDLC rate
+ */
+	enum cpri_hdlc_rate hdlc_rate;
+
 	__u32 tx_scr_seed;
 };
 
 struct cpri_autoneg_output {
 	enum cpri_link_rate common_rate;
-	__u8 common_eth_ptr;
+	int common_eth_ptr;
 	enum cpri_prot_ver common_prot_ver;
+	enum cpri_hdlc_rate common_hdlc_rate;
 	unsigned int rx_scramble_seed;
 };
 
@@ -525,6 +551,7 @@ enum cpri_state_bitpos {
 	CPRI_RATE_BITPOS = 0,
 	CPRI_PROTVER_BITPOS,
 	CPRI_ETHPTR_BITPOS,
+	CPRI_HDLC_BITPOS,
 	CPRI_SFP_PRESENT_BITPOS,
 /**
  * This bit is used by driver internally
@@ -547,6 +574,42 @@ struct cpri_axc_map_offset {
 	__u8 map_rx_offset_x;
 	__u8 map_rx_offset_z;
 };
+
+struct cpri_hdlc_stats {
+	unsigned long rx_crc_err;
+	unsigned long rx_mii_err;
+	unsigned long rx_ple_err;
+	unsigned long rx_overflow_err;
+	unsigned long rx_abort_err;
+	unsigned long rx_wrapped_err;
+	unsigned long rx_packets;
+	unsigned long rx_bytes;
+	unsigned long tx_packets;
+	unsigned long tx_bytes;
+	unsigned long tx_dropped;
+};
+
+struct cpri_hdlc_config {
+	/* If 1, set bit 4 LENGTH_CHECK in CPRI_Lx_HDLC_CONFIG_1 reg */
+	unsigned int enable_hdlc_rx_hw_len_chk:1;
+	/* If 1, the HDLC driver will fileter small packet */
+	unsigned int enable_hdlc_rx_sw_len_chk:1;
+	/* If 1, set bit 0 CRC_ENABLE CPRI_Lx_HDLC_CONFIG_2 */
+	unsigned int enable_hdlc_tx_crc_chk:1;
+	/* If 1, set bit 1 RX_CRC_EN CPRI_Lx_HDLC_CONFIG_3 */
+	unsigned int enable_hdlc_rx_crc_chk:1;
+	/* If enable_hdlc_rx_swlength_chk = 1, this field indicate any hdlc rx
+	*  packet smaller than this size in bytes will be filtered by driver.
+	*  Use negative number to pass all sized packet.
+	*/
+	int hdlc_min_rx;
+	/* Set the timeout value in second for HDLC rx and tx in blocking mode.
+	*  Use negative number to set the timeout value to be infinite.
+	*/
+	long timeout;
+};
+/* This defines one HDLC TX packet */
+#define CPRI_HDLC_RX_PACKET_LEN_MAX	1024
 
 #define CPRI_MAGIC 'C'
 
@@ -599,4 +662,14 @@ struct cpri_axc_map_offset {
 
 #define CPRI_CW130_CONFIG                       _IOR(CPRI_MAGIC, 23, \
 						int)
+
+#define CPRI_HDLC_MAGIC 'H'
+
+#define CPRI_HDLC_READ_STATUS			_IOR(CPRI_HDLC_MAGIC, 1, \
+						struct cpri_hdlc_stats)
+
+#define CPRI_HDLC_CLEAR_STATUS			_IO(CPRI_HDLC_MAGIC, 2)
+
+#define CPRI_HDLC_SET_CONFIG			_IOW(CPRI_HDLC_MAGIC, 3, \
+						struct cpri_hdlc_config)
 #endif /* _UAPI_CPRI_H */

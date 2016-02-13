@@ -506,15 +506,13 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	break;
 
 	case CPRI_AXC_OFFSET_REGS:
-	if (copy_from_user(&axc_map_offset,
+		if (copy_from_user(&axc_map_offset,
 			(struct cpri_axc_map_offset *) ioargp,
 			sizeof(struct cpri_axc_map_offset)) != 0) {
-		err = -EFAULT;
-		goto out;
-	}
-
-	cpri_config_axc_offset(framer, &axc_map_offset);
-
+			err = -EFAULT;
+			goto out;
+		}
+		cpri_config_axc_offset(framer, &axc_map_offset);
 	break;
 
 	case CPRI_CW130_CONFIG:
@@ -528,9 +526,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 		break;
 	}
-
 	return 0;
-
 out:
 	DEBUG(DEBUG_IOCTL, "IOCTL failure, err = %d\n", err);
 	return err;
