@@ -54,7 +54,8 @@ obj-$(CONFIG_LANDSHARK)		+= landshark.o
 obj-$(CONFIG_VSPA)		+= vspa.o
 obj-$(CONFIG_AD9525)		+= ad9525.o
 obj-y				+= qixis.o
-obj-$(CONFIG_D4400_SYS)         += fsl-d4400-sys.o util-d4400.o
+obj-$(CONFIG_D4400_SYS)         += fsl-d4400-sys.o util-d4400.o ipmi-mrec-d4400.o
+
 obj-$(CONFIG_XCVR)		+= xcvr.o xcvr_if.o ipmi-eeprom-util.o
 obj-$(CONFIG_TBGEN)		+= tbgen.o
 obj-$(CONFIG_GCR_DEV)		+= gcr.o

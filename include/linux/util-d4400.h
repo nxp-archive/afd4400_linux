@@ -20,9 +20,11 @@
 /* Name string is matched against board name.  Only
  * part of the substring needs to match.
  */
+#define D4400_UNKNOWN_NAME_STR	"UNKNOWN"
 #define D4400_EVB_NAME_STR	"EVB"
 #define D4400_RDB_NAME_STR	"RDB"
 #define D4400_4T4R_NAME_STR	"4T4R"
+#define D4400_21RRH_NAME_STR	"21RRH"
 
 /* Name string is matched against revision name.  Only
  * part of the substring needs to match.
@@ -34,19 +36,20 @@
 #define REVE_STR	"REV E"
 
 enum board_type {
-        FSL_BOARD_TYPE_UNKNOWN = -1,
-        FSL_BOARD_TYPE_D4400EVB = 0,
-        FSL_BOARD_TYPE_D4400RDB = 1,
-        FSL_BOARD_TYPE_D44004T4R = 2,
+	BOARD_TYPE_UNKNOWN = -1,
+	BOARD_TYPE_D4400_EVB = 0,
+	BOARD_TYPE_D4400_RDB = 1,
+	BOARD_TYPE_D4400_4T4R = 2,
+	BOARD_TYPE_D4400_21RRH = 3,
 };
 
 enum board_rev {
-        FSL_BOARD_REV_UNKNOWN = -1,
-        FSL_BOARD_REVA = 0,
-        FSL_BOARD_REVB = 1,
-        FSL_BOARD_REVC = 2,
-        FSL_BOARD_REVD = 3,
-        FSL_BOARD_REVE = 4,
+	BOARD_REV_UNKNOWN = -1,
+	BOARD_REVA = 0,
+	BOARD_REVB = 1,
+	BOARD_REVC = 2,
+	BOARD_REVD = 3,
+	BOARD_REVE = 4,
 };
 
 int fsl_get_board_type(char *name_str);

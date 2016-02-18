@@ -41,16 +41,6 @@
 				fsl,spi-num-chipselects = <3>;
 			};
 
-			ecspi@A8000 {
-				#address-cells = <1>;
-				#size-cells = <0>;
-				status = "okay";
-				pinctrl-names = "default";
-				pinctrl-0 = <&pinctrl_ecspi2_1>;
-				fsl,spi-num-chipselects = <2>;
-
-			};
-
 			ecspi@AC000 {
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -60,14 +50,9 @@
 				fsl,spi-num-chipselects = <3>;
 			};
 
-			ecspi@B8000 {
-				#address-cells = <1>;
-				#size-cells = <0>;
-				status = "okay";
-				pinctrl-names = "default";
-				pinctrl-0 = <&pinctrl_ecspi6_1>;
-				fsl,spi-num-chipselects = <4>;
-			};
+			/* spi-gpio is used in place of ecspi5 due
+			 * to miso/mosi signal swap in 4t4r board.
+			 */
 
 			ecspi@BC000 {
 				#address-cells = <1>;
@@ -199,15 +184,8 @@
 				system_eeprom: eeprom@54 {
 					reg = <0x54>;
 					compatible = "system_eeprom";
-					pagesize = <16>;
-					bytesize = <256>;
-				};
-
-				xcvr_eeprom: eeprom@54 {
-					reg = <0x54>;
-					compatible = "xcvr_eeprom";
-					pagesize = <16>;
-					bytesize = <256>;
+					pagesize = <128>;
+					bytesize = <65536>;
 				};
 
                                 ir36021@78 {
@@ -309,6 +287,98 @@
                                                 >;
                                         };
                                 };
+
+				pa_control {
+					pinctrl_pa_con1: pacongrp-1 {
+                                                fsl,pins = <
+							/* Alarm */
+							506 0x80000000     /* D4400_PAD_GPIOA4_GPIOA_4 */
+							512 0x80000000     /* D4400_PAD_GPIOA5_GPIOA_5 */
+
+							/* PSU EN */
+							661 0x80000000     /* D4400_PAD_GPIOB4_GPIOB_4 */
+							667 0x80000000     /* D4400_PAD_GPIOB5_GPIOB_5 */
+
+							/* OBS_SEL */
+							783 0x80000000     /* D4400_PAD_GPIOB24_GPIOB_24 */
+							790 0x80000000     /* D4400_PAD_GPIOB25_GPIOB_25 */
+							797 0x80000000     /* D4400_PAD_GPIOB26_GPIOB_26 */
+							804 0x80000000     /* D4400_PAD_GPIOB27_GPIOB_27 */
+
+							/* TX_EN, TRX_SW */
+							847 0x80000000     /* D4400_PAD_GPIOC1_GPIOC_1 */
+							863 0x80000000     /* D4400_PAD_GPIOC3_GPIOC_3 */
+							910 0x80000000     /* D4400_PAD_GPIOC9_GPIOC_9 */
+							926 0x80000000     /* D4400_PAD_GPIOC11_GPIOC_11 */
+
+							/* Spare1 */
+							206 0x80000000     /* D4400_PAD_SPI2_CLK_GPIOD_24 */
+							/* Spare2 */
+							209 0x80000000     /* D4400_PAD_SPI2_SS0_GPIOD_25 */
+
+							/* SS2 */
+							/* Conflicts with spi7 ss2 */
+							//495 0x80000000     /* D4400_PAD_GPIOA2_GPIOA_2 */
+
+							/* LNA_CTL */
+							/* LNA signals are currently unused and conflicts
+							 * with ADI ROC1 cs-gpios gpioC16/18/19.
+							 */
+							//966 0x80000000     /* D4400_PAD_GPIOC16_GPIOC_16 */
+							//974 0x80000000     /* D4400_PAD_GPIOC17_GPIOC_17 */
+							//982 0x80000000     /* D4400_PAD_GPIOC18_GPIOC_18 */
+							//989 0x80000000     /* D4400_PAD_GPIOC19_GPIOC_19 */
+                                                >;
+					};
+
+					pinctrl_pa_con2: pacongrp-2 {
+                                                fsl,pins = <
+							/* Alarm */
+							518 0x80000000     /* D4400_PAD_GPIOA6_GPIOA_6 */
+							524 0x80000000     /* D4400_PAD_GPIOA7_GPIOA_7 */
+
+							/* PSU EN */
+							673 0x80000000     /* D4400_PAD_GPIOB6_GPIOB_6 */
+							679 0x80000000     /* D4400_PAD_GPIOB7_GPIOB_7 */
+
+							/* OBS SEL */
+							811 0x80000000     /* D4400_PAD_GPIOB28_GPIOB_28 */
+							818 0x80000000     /* D4400_PAD_GPIOB29_GPIOB_29 */
+							825 0x80000000     /* D4400_PAD_GPIOB30_GPIOB_30 */
+							832 0x80000000     /* D4400_PAD_GPIOB31_GPIOB_31 */
+
+							/* TX_EN, TRX_SW */
+							878 0x80000000     /* D4400_PAD_GPIOC5_GPIOC_5 */
+							894 0x80000000     /* D4400_PAD_GPIOC7_GPIOC_7 */
+							942 0x80000000     /* D4400_PAD_GPIOC13_GPIOC_13 */
+							958 0x80000000     /* D4400_PAD_GPIOC15_GPIOC_15 */
+
+							/* Spare1 SPI4 */
+							238 0x80000000     /* D4400_PAD_SPI4_CLK_GPIOD_28 */
+
+							/* Spare2 SPI4 */
+							/* Conflicts with spi5-clk because spi5 is spi-gpio
+							 * which sets spi5-clk mux to gpioD29.  So gpioD29
+							 * cannot be used here as gpio spare.
+							 */
+							//241 0x80000000     /* D4400_PAD_SPI4_SS0_GPIOD_29 */
+
+							/* SS2 */
+							/* Conflicts with spi8 ss2 */
+							//501 0x80000000     /* D4400_PAD_GPIOA3_GPIOA_3 */
+
+							/* LNA_CTL */
+							/* LNA signals are currently unused and conflicts
+							 * with ADI ROC2 cs-gpios gpioC20/22/23.
+							 */
+							//996 0x80000000     /* D4400_PAD_GPIOC20_GPIOC_20 */
+							//1003 0x80000000    /* D4400_PAD_GPIOC21_GPIOC_21 */
+							//1010 0x80000000    /* D4400_PAD_GPIOC22_GPIOC_22 */
+							//1017 0x80000000    /* D4400_PAD_GPIOC23_GPIOC_23 */
+                                                >;
+					};
+				};
+
                                 ad9525_gpiospi_pins {
                                         pinctrl_ad9525_gpiospi_1: ad9525gpiospigrp-1 {
                                                 fsl,pins = <
@@ -383,9 +453,51 @@
 			eeprom-handle =<&system_eeprom>;
 			gpio-led1 = <&gpioE 29  0>;
 			gpio-led2 = <&gpioE 30  0>;
+			pa_con1 = <&gpioA 4 0>, /* PA_ALARM1_B */
+				<&gpioA 5 0>,	/* PA_ALARM2_B */
+				<&gpioB 4 0>,	/* PA_PSU_EN1 */
+				<&gpioB 5 0>,	/* PA_PSU_EN2 */
+				<&gpioB 24 0>,	/* PA_OBS_SEL1A */
+				<&gpioB 25 0>,	/* PA_OBS_SEL1B */
+				<&gpioB 26 0>,	/* PA_OBS_SEL2A */
+				<&gpioB 27 0>,	/* PA_OBS_SEL2B */
+				<&gpioC 1 0>,	/* PA_TX_EN1 */
+				<&gpioC 3 0>,	/* PA_TX_EN2 */
+				<&gpioC 9 0>,	/* PA_TRX_SW1 */
+				<&gpioC 11 0>,	/* PA_TRX_SW2 */
+				<&gpioD 24 0>;	/* PA_SPARE1 */
+				//<&gpioD 25 0>;	/* PA_SPARE2 */
+				//<&gpioA 2 0>,		/* PA_SS2 */
+				//<&gpioC 16 0>,	/* PA_LNA_CTL_1A */
+				//<&gpioC 17 0>,	/* PA_LNA_CTL_1B */
+				//<&gpioC 18 0>,	/* PA_LNA_CTL_2A */
+				//<&gpioC 19 0>;	/* PA_LNA_CTL_2B */
+
+			pa_con2 = <&gpioA 6 0>, /* PA_ALARM1_B */
+				<&gpioA 7 0>,	/* PA_ALARM2_B */
+				<&gpioB 6 0>,	/* PA_PSU_EN1*/
+				<&gpioB 7 0>,	/* PA_PSU_EN2 */
+				<&gpioB 28 0>,	/* PA_OBS_SEL1A */
+				<&gpioB 29 0>,	/* PA_OBS_SEL1B */
+				<&gpioB 30 0>,	/* PA_OBS_SEL2A */
+				<&gpioB 31 0>,	/* PA_OBS_SEL2B */
+				<&gpioC 5 0>,	/* PA_TX_EN1 */
+				<&gpioC 7 0>,	/* PA_TX_EN2 */
+				<&gpioC 13 0>,	/* PA_TRX_SW1 */
+				<&gpioC 15 0>,	/* PA_TRX_SW2 */
+				<&gpioD 28 0>;	/* PA_SPARE1 */
+				//<&gpioD 29 0>;	/* PA_SPARE2 */
+				//<&gpioA 3 0>,		/* PA_SS2 */
+				//<&gpioC 20 0>,	/* PA_LNA_CTL_1A */
+				//<&gpioC 21 0>,	/* PA_LNA_CTL_1B */
+				//<&gpioC 22 0>,	/* PA_LNA_CTL_2A */
+				//<&gpioC 23 0>;	/* PA_LNA_CTL_2B */
+
 			pinctrl-names = "default";
                         pinctrl-0 = <&pinctrl_leds_1>, <&pinctrl_rmii_1>,
-                                <&pinctrl_ad9525_gpiospi_1>;
+                                <&pinctrl_ad9525_gpiospi_1>,
+				<&pinctrl_pa_con1>,
+				<&pinctrl_pa_con2>;
 		};
 
                 spi_gpio {
@@ -402,9 +514,11 @@
                         jcpll_gpio: ad9525_gpio@0 {
                                 compatible = "adi,ad9525";
                                 spi-max-frequency = <20000000>;
-                                reg = <0x0>; /* Ending chip select: 0-one cs, 1-two cs, etc.  See spi.c/of_register_spi_devices() */
+                                reg = <0x0>;	/* Ending chip select:
+						 * 0-one cs, 1-two cs, etc.
+						 */
                                 /* spi-cpha; */
-                                /*spi-cpol; */
+                                /* spi-cpol; */
                                 /* spi-cs-high; */
                         };
                 };
@@ -428,15 +542,12 @@
 				tx-reset = <5>;
 				rx-reset = <3>;
 
-				eeprom-handle =<&xcvr_eeprom>;
-				eeprom-addr = <0x54>;
-				eeprom-pagesize = <16>;
-				eeprom-bytesize = <256>;
+				eeprom-handle =<&system_eeprom>;
 				ipmi-mfg-str = "Freescale", "NXP";
 				ipmi-name-str =
 					"FSL D4400 4T4R Reference Board",
 					"NXP D4400-4T4R21 System",
-					"NXP D4400-21RRH2W5 2.5W System";
+					"NXP D4400-21RRH2W5 System";
 			};
 
 			xcvr-roc2 {
@@ -455,15 +566,12 @@
 				tx-reset = <6>;
 				rx-reset = <4>;
 
-				eeprom-handle =<&xcvr_eeprom>;
-				eeprom-addr = <0x54>;
-				eeprom-pagesize = <16>;
-				eeprom-bytesize = <256>;
+				eeprom-handle =<&system_eeprom>;
 				ipmi-mfg-str = "Freescale", "NXP";
 				ipmi-name-str =
 					"FSL D4400 4T4R Reference Board",
 					"NXP D4400-4T4R21 System",
-					"NXP D4400-21RRH2W5 2.5W System";
+					"NXP D4400-21RRH2W5 System";
 			};
                 };
         };

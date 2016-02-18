@@ -114,7 +114,6 @@ static struct xcvr_i2c_eeprom *xcvrif_get_eeprom_info(
 	struct device_node *eeprom_node;
 	struct i2c_client *eeprom_client;
 	struct xcvr_i2c_eeprom *eeprom;
-	u32 addr;
 	u32 pagesize;
 	u32 bytesize;
 	u32 addrlen;
@@ -133,24 +132,13 @@ static struct xcvr_i2c_eeprom *xcvrif_get_eeprom_info(
 		goto out;
 	}
 
-	if (of_property_read_u32(pdev->dev.of_node, "eeprom-addr",
-		&addr)) {
-		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: eeprom-addr property not found\n",
-			id);
+	if (of_property_read_u32(eeprom_node, "bytesize", &bytesize)) {
+		pr_err(XCVRIF_MOD_NAME ": bytesize property not found\n");
 		goto out;
 	}
 
-	if (of_property_read_u32(pdev->dev.of_node, "eeprom-bytesize",
-		&bytesize)) {
-		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: eeprom-bytesize property not found\n",
-			id);
-		goto out;
-	}
-
-	if (of_property_read_u32(pdev->dev.of_node, "eeprom-pagesize",
-		&pagesize)) {
-		pr_err(XCVRIF_MOD_NAME ": IPMI Xcvr%i: eeprom-bytesize property not found\n",
-			id);
+	if (of_property_read_u32(eeprom_node, "pagesize", &pagesize)) {
+		pr_err(XCVRIF_MOD_NAME ": pagesize property not found\n");
 		goto out;
 	}
 
@@ -173,11 +161,10 @@ static struct xcvr_i2c_eeprom *xcvrif_get_eeprom_info(
 		goto out;
 	}
 	eeprom->client = eeprom_client;
-	eeprom->addr = addr;
+	eeprom->addr = eeprom_client->addr;
 	eeprom->pagesize = pagesize;
 	eeprom->bytesize = bytesize;
 	eeprom->addrlen = addrlen;
-
 	return eeprom;
 out:
 	return NULL;
@@ -398,9 +385,36 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 	struct ipmi_info *ipmi = NULL;
 
 	memset(ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
+
+	/* First try to read IPMI data with eeprom data retrieved from
+	 * dts file.
+	 */
 	ret = eeprom_read(eeprom, ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
-	if (ret)
-		goto out0;
+	if (ret) {
+		/* If the addrlen is >1, then try addrlen=1 in case the
+		 * eeprom is 256 byte.
+		 */
+		if (eeprom->addrlen > 1) {
+			/* Retry with 1 byte addr, assume 256 byte size */
+			eeprom->addrlen = 1;
+			eeprom->pagesize = 16;
+			eeprom->bytesize = 256;
+		} else if (eeprom->addrlen == 1) {
+			/* Retry with 2 byte addr, assume 64KB byte size */
+			eeprom->addrlen = 2;
+			eeprom->pagesize = 128;
+			eeprom->bytesize = 65536;
+		} else
+			goto out0;
+
+		/* Retry reading IPMI */
+		ret = eeprom_read(eeprom, ipmi_rawbuf, 0,
+			IPMI_EEPROM_DATA_SIZE);
+		if (ret)
+			goto out0;
+		pr_info(XCVRIF_MOD_NAME ": Eeprom retry success, set to %i byte size\n",
+			eeprom->bytesize);
+	}
 
 	ipmi = kzalloc(sizeof(struct ipmi_info), GFP_KERNEL);
 	if (!ipmi) {
@@ -416,11 +430,10 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 			id);
 		goto out1;
 	}
-	pr_info(XCVRIF_MOD_NAME " IPMI Xcvr%i board mfg :  %s\n",
-		id, ipmi->board.mfg_str);
-	pr_info(XCVRIF_MOD_NAME " IPMI Xcvr%i board name:  %s\n",
-		id, ipmi->board.name_str);
+	pr_info(XCVRIF_MOD_NAME " IPMI Xcvr%i board mfg/name: %s / %s\n",
+		id, ipmi->board.mfg_str, ipmi->board.name_str);
 
+	/* Try matching the MFG string */
 	matched = xcvrif_ipmi_match_str(pdev, "ipmi-mfg-str",
 		ipmi->board.mfg_str);
 	if (!matched) {
@@ -428,6 +441,7 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 			id);
 		goto out1;
 	}
+	/* Try matching the NAME string */
 	matched = xcvrif_ipmi_match_str(pdev, "ipmi-name-str",
 		ipmi->board.name_str);
 	if (!matched) {
@@ -435,6 +449,10 @@ static struct ipmi_info *xcvrif_verify_ipmi_info(int id,
 			id);
 		goto out1;
 	}
+	/* TODO: Decode multi-record.  Currently no meaningful mrec
+	 * data exists for tranceiver card.
+	 */
+
 	return ipmi;
 
 out1:

@@ -19,6 +19,7 @@
 #include <linux/ipmi-eeprom-util.h>
 #include <linux/util-d4400.h>
 #include <uapi/linux/fsl-d4400-sys.h>
+#include <linux/ipmi-mrec-d4400.h>
 
 /* d4400_sys_dev->debug */
 #define DEBUG_D4400_SYS_DEV_MESSAGES		(1<<0)

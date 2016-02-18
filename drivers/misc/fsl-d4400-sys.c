@@ -38,6 +38,8 @@
 #include <linux/slab.h>
 #include <linux/of_i2c.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/of_irq.h>
+#include <linux/interrupt.h>
 
 #include <mach/src.h>
 #include <linux/fsl-d4400-sys.h>
@@ -57,7 +59,43 @@ static struct ipmi_info *d4400_sys_verify_ipmi_info(
 	struct d4400_sys_i2c_eeprom *eeprom);
 
 static const char * const board_names[] = {
-	"UNKNOWN", "D4400_EVB", "D4400_RDB", "D4400_4T4R",
+	"UNKNOWN",	/* BOARD_TYPE_UNKNOWN+1 */
+	"D4400_EVB",	/* BOARD_TYPE_D4400_EVB+1 */
+	"D4400_RDB",	/* BOARD_TYPE_D4400_RDB+1 */
+	"D4400_4T4R",	/* BOARD_TYPE_D4400_4T4R+1 */
+	"D4400_21RRH"	/* BOARD_TYPE_D4400_21RRH+1 */
+};
+
+/* Default IPMI data:
+ *  Mfg str:  "Freescale"
+ *  Name str: "FSL D4400 4T4R Reference Board"
+ *  Serial:   "1001"
+ *  Part num: "REV A"
+ *  No multirecord version
+ */
+static const u8 default_ipmi_4t4r_v1_0[] = {
+  0x01, 0x00, 0x00, 0x01, 0x00, 0x0a, 0x00, 0xf4, 0x01, 0x09, 0x19, 0x00,
+  0x00, 0x00, 0xc9, 0x46, 0x72, 0x65, 0x65, 0x73, 0x63, 0x61, 0x6c, 0x65,
+  0xde, 0x46, 0x53, 0x4c, 0x20, 0x44, 0x34, 0x34, 0x30, 0x30, 0x20, 0x34,
+  0x54, 0x34, 0x52, 0x20, 0x52, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63,
+  0x65, 0x20, 0x42, 0x6f, 0x61, 0x72, 0x64, 0xc4, 0x31, 0x30, 0x30, 0x31,
+  0xc5, 0x52, 0x45, 0x56, 0x20, 0x41, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x5d, 0xc0, 0x02, 0x04, 0xff,
+  0x3b, 0x00, 0x00, 0x01, 0x00, 0xc3, 0x82, 0x08, 0xc4, 0xef, 0x34, 0x08,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00
 };
 
 static const char *d4400_sys_board_type_name(void)
@@ -90,7 +128,7 @@ out:
 int d4400_sys_board_type(void)
 {
 	if (!d4400_sys_data)
-		return FSL_BOARD_TYPE_UNKNOWN;
+		return BOARD_TYPE_UNKNOWN;
 
 	return d4400_sys_data->brd_info.board_type;
 }
@@ -99,7 +137,7 @@ EXPORT_SYMBOL(d4400_sys_board_type);
 int d4400_sys_board_rev(void)
 {
 	if (!d4400_sys_data)
-		return FSL_BOARD_REV_UNKNOWN;
+		return BOARD_REV_UNKNOWN;
 
 	return d4400_sys_data->brd_info.board_rev;
 }
@@ -126,7 +164,8 @@ int d4400_sys_leds_set_clear(unsigned int set, unsigned int clear)
 		return -ENODEV;
 
 	switch (d4400_sys_data->brd_info.board_type) {
-	case FSL_BOARD_TYPE_D44004T4R:
+	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_21RRH:
 		{
 			struct fsl_4t4r_board *brd_4t4r =
 				(struct fsl_4t4r_board *)d4400_sys_data->brd;
@@ -158,6 +197,65 @@ int d4400_sys_set_reboot_method(unsigned int method)
 }
 EXPORT_SYMBOL(d4400_sys_set_reboot_method);
 
+
+static int pa_set_clear(int pa, u32 set, u32 clear,
+	struct fsl_4t4r_board *brd_4t4r)
+{
+	int ret = 0;
+	int i;
+	u32 *pa_sig;
+	int *pa_pins;
+
+	if ((pa == PA1) && (pa == PA2)) {
+		pa_sig = &brd_4t4r->pac[pa].sig;
+		pa_pins = brd_4t4r->pac[pa].pins;
+	} else
+		return -EINVAL;
+
+	if (set) {
+		/* Set some bits */
+		for (i = 0; i < PA_PINCNT; ++i) {
+			if (set & (1 << i)) {
+				gpio_direction_output(pa_pins[i], 1);
+				*pa_sig |= (1 << i);
+			}
+		}
+	}
+	if (clear) {
+		/* Clear some bits */
+		for (i = 0; i < PA_PINCNT; ++i) {
+			if (clear & (1 << i)) {
+				gpio_direction_output(pa_pins[i], 0);
+				*pa_sig &= ~(1 << i);
+			}
+		}
+	}
+	return ret;
+}
+
+static int d4400_sys_pa_set_clear(int pa, unsigned int set, unsigned int clear)
+{
+	u8 ret = 0;
+
+	if (!d4400_sys_data)
+		return -ENODEV;
+
+	switch (d4400_sys_data->brd_info.board_type) {
+	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_21RRH:
+		{
+			struct fsl_4t4r_board *brd_4t4r =
+				(struct fsl_4t4r_board *)d4400_sys_data->brd;
+			ret = pa_set_clear(pa, set, clear, brd_4t4r);
+		}
+		break;
+	default:
+		break;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(d4400_sys_pa_set_clear);
+
 static int d4400_sys_xcvr_present(int xcvr_id)
 {
 	u8 ret = 0;
@@ -168,7 +266,8 @@ static int d4400_sys_xcvr_present(int xcvr_id)
 	mutex_lock(&d4400_sys_data->lock);
 
 	switch (d4400_sys_data->brd_info.board_type) {
-	case FSL_BOARD_TYPE_D44004T4R:
+	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_21RRH:
 
 		/* Two transceivers available, each bit position
 		 * represents a transceiver.
@@ -187,15 +286,16 @@ static int board_ipmi_4t4r(struct ipmi_info *ipmi,
 	struct fsl_4t4r_board *brd_4t4r)
 {
 	int ret = 0;
-	int i;
 	u32 recordver = 0;
-	struct ipmi_mrec_fsl_board_info *brd_info;
 	struct ipmi_multirecord *mrec = &ipmi->multirec;
 
 	/* Default values if nothing found */
-	brd_4t4r->ipmi_mrec_recordver = 0;
+	brd_4t4r->ipmi_mrec_ver = 0;
 	brd_4t4r->freqband_MHz = 2100;	/* 2.1GHz */
 	brd_4t4r->features = 0;
+	brd_4t4r->max_pa_watts = 0;
+	brd_4t4r->max_tx = 4;
+	brd_4t4r->max_rx = 4;
 
 	/* Get IPMI mrec board info if available */
 	if (mrec->num_rec == 0)
@@ -204,39 +304,10 @@ static int board_ipmi_4t4r(struct ipmi_info *ipmi,
 		 */
 		return 0;
 
-	/* Look for record version first.  Then decode the other
-	 * multirec type based on record version.
-	 */
-	for (i = 0; i < mrec->num_rec; ++i) {
-		if (mrec->rechdr[i]->type_id == IPMI_MREC_TID_FSL_RECORDVER) {
-			u8 *d = mrec->rechdr[i]->data;
-			recordver = d[0] | (d[1]<<8) | (d[2]<<16) | (d[3]<<24);
-			brd_4t4r->ipmi_mrec_recordver = recordver;
-		}
-	}
-
-	/* Look for other data only if record version was found */
-	for (i = 0; (i < mrec->num_rec) && (recordver); ++i) {
-
-		switch (mrec->rechdr[i]->type_id) {
-		case IPMI_MREC_TID_FSL_RECORDVER:
-			/* Already processed */
-			break;
-		case IPMI_MREC_TID_FSL_CALDATA:
-		case IPMI_MREC_TID_FSL_CALDATA_PTR:
-			/* Nothing to do for now */
-			break;
-
-		case IPMI_MREC_TID_FSL_BOARDINFO:
-			/* TODO: In future, make the decode of board info
-			 * conditional based upon record version.
-			 */
-			brd_info = (struct ipmi_mrec_fsl_board_info *)
-				mrec->rechdr[i]->data;
-			brd_4t4r->freqband_MHz = brd_info->freqband_MHz;
-			brd_4t4r->features = brd_info->features;
-		}
-	}
+	/* Decode multirecord info if it exists */
+	ret = d4400_mrec_decode(mrec, &recordver, brd_4t4r);
+	if (!ret)
+		brd_4t4r->ipmi_mrec_ver = recordver;
 	return ret;
 }
 
@@ -247,6 +318,11 @@ static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
 	struct device *dev = d4400_sys->dev;
 	struct pinctrl *pinctrl;
 	struct fsl_4t4r_board *brd_4t4r = NULL;
+	int i;
+	int pa;
+	const char *dtsnode_str[PA_CON_MAX] = { "pa_con1", "pa_con2" };
+	int pin;
+	struct pa_con *pac;
 
 	brd_4t4r = kzalloc(
 		sizeof(struct fsl_4t4r_board), GFP_KERNEL);
@@ -289,6 +365,27 @@ static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
 		gpio_direction_output(brd_4t4r->gpio_led2, 0);
 	}
 
+	/* PA signals */
+	for (pa = 0; pa < PA_CON_MAX; ++pa) {
+		pac = &brd_4t4r->pac[pa];
+		memset(pac, 0, sizeof(struct pa_con));
+
+		for (i = 0; i < PA_PINCNT; ++i) {
+			pin = pac->pins[i] = of_get_named_gpio(
+				dev_node, dtsnode_str[pa], i);
+			if (!gpio_is_valid(pin)) {
+				dev_err(dev, "4T4R brd PA%d control signal %d is not valid %i\n",
+					pa, pin, i);
+				ret = -EINVAL;
+				goto out_err;
+			}
+			gpio_request(pin, "pa_con_signal");
+			if ((i == PA_ALARM1_B) || (i == PA_ALARM2_B))
+				gpio_direction_input(pin);
+			else
+				gpio_direction_output(pin, 0);
+		}
+	}
 	/* Get IPMI info */
 	if (d4400_sys->ipmi)
 		ret = board_ipmi_4t4r(d4400_sys->ipmi, brd_4t4r);
@@ -305,6 +402,14 @@ static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
 out:
 	return 0;
 out_err:
+	for (pa = 0; pa < PA_CON_MAX; ++pa) {
+		/* Release gpio */
+		for (i = 0; i < PA_PINCNT; ++i)  {
+			pin = brd_4t4r->pac[pa].pins[i];
+			if (pin)
+				gpio_free(pin);
+		}
+	}
 	kfree(brd_4t4r);
 	return ret;
 }
@@ -316,7 +421,8 @@ static int d4400_sys_setup_board(struct d4400_sys_dev *d4400_sys)
 	mutex_lock(&d4400_sys->lock);
 
 	switch (d4400_sys_data->brd_info.board_type) {
-	case FSL_BOARD_TYPE_D44004T4R:
+	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_21RRH:
 		ret = board_setup_4t4r(d4400_sys);
 		break;
 	default:
@@ -351,16 +457,26 @@ static int generate_ipmi_info_str(char *buf)
 
 	/* System specific info */
 	switch (d4400_sys_data->brd_info.board_type) {
-	case FSL_BOARD_TYPE_D44004T4R:
+	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_21RRH:
 		{
 			struct fsl_4t4r_board *brd_4t4r;
 			brd_4t4r = d4400_sys_data->brd;
 			sprintf(p, "\tFreq band: %i MHz\n",
 				brd_4t4r->freqband_MHz);
 			p += strlen(p);
-			sprintf(p, "Multirec ver: %0i.%0i\n",
-				(brd_4t4r->ipmi_mrec_recordver>>16) & 0xff,
-				brd_4t4r->ipmi_mrec_recordver & 0xff);
+			sprintf(p, "\tMultirec ver: %i%i.%i%i\n",
+				(brd_4t4r->ipmi_mrec_ver>>24) & 0xff,
+				(brd_4t4r->ipmi_mrec_ver>>16) & 0xff,
+				(brd_4t4r->ipmi_mrec_ver>>8) & 0xff,
+				brd_4t4r->ipmi_mrec_ver & 0xff);
+			p += strlen(p);
+			sprintf(p, "\tMax Tx/Rx: %i  %i\n",
+				brd_4t4r->max_tx, brd_4t4r->max_rx);
+			p += strlen(p);
+			sprintf(p, "\tPA watts: %i.%i\n",
+				brd_4t4r->max_pa_watts >> 4 & 0xfff,
+				brd_4t4r->max_pa_watts & 0x0f);
 			p += strlen(p);
 			break;
 		}
@@ -422,7 +538,8 @@ static ssize_t show_leds(struct device *dev,
 	mutex_lock(&d4400_sys_data->lock);
 
 	switch (d4400_sys_data->brd_info.board_type) {
-	case FSL_BOARD_TYPE_D44004T4R:
+	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_21RRH:
 		{
 			struct fsl_4t4r_board *brd_4t4r =
 				(struct fsl_4t4r_board *)d4400_sys_data->brd;
@@ -453,6 +570,116 @@ static ssize_t set_leds(struct device *dev, struct device_attribute *attr,
 	d4400_sys_leds_set_clear(val, ~val);
 	mutex_unlock(&d4400_sys_data->lock);
 
+	return count;
+}
+
+/* Show PA signals include alarm state */
+static ssize_t show_pa(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	int ret = 0;
+	char *p = buf;
+
+	int pa;
+	u32 pa_sig = 0;
+	int *pa_pins;
+
+	mutex_lock(&d4400_sys_data->lock);
+
+	/* TODO: Implement optional parameters:
+	 *  <#1> <#2> <#3>
+	 *   #1: pa #, 1 or 2
+	 *   #2: signal #, 0-31
+	 * If the required parameters are not present, then
+	 * all PA control signals are displayed.
+	 */
+
+	switch (d4400_sys_data->brd_info.board_type) {
+	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_21RRH:
+		{
+			struct fsl_4t4r_board *brd_4t4r =
+				(struct fsl_4t4r_board *)d4400_sys_data->brd;
+
+			for (pa = 0; pa < PA_CON_MAX; ++pa) {
+				pa_sig = brd_4t4r->pac[pa].sig;
+				pa_pins = brd_4t4r->pac[pa].pins;
+
+				/* Update gpio inputs */
+				pa_sig &= ~(1 << PA_ALARM1_B);
+				if (gpio_get_value_cansleep(pa_pins[PA_ALARM1_B]))
+					pa_sig |= (1 << PA_ALARM1_B);
+				pa_sig &= ~(1 << PA_ALARM2_B);
+				if (gpio_get_value_cansleep(pa_pins[PA_ALARM2_B]))
+					pa_sig |= (1 << PA_ALARM2_B);
+
+				/* Update */
+				brd_4t4r->pac[pa].sig = pa_sig;
+
+				sprintf(p, "   PA%d: x%08x   ",
+					pa, pa_sig);
+				p += strlen(p);
+			}
+			sprintf(p, "\n");
+			p += strlen(p);
+		}
+		break;
+	default:
+		goto out_err;
+		break;
+	}
+	mutex_unlock(&d4400_sys_data->lock);
+	return strlen(buf);
+
+out_err:
+	mutex_unlock(&d4400_sys_data->lock);
+	printk("\n   Parameters: <#1> <#2> <#3>\n");
+	printk("     #1: PA #, 0 or 1\n");
+	printk("     #2: 0-clear bits, 1-set bits\n");
+	printk("     #3: 32-bit value (hex)\n");
+	return ret;
+}
+
+/* Set PA signals */
+static ssize_t set_pa(struct device *dev, struct device_attribute *attr,
+		       const char *buf, size_t count)
+{
+	int ret = 0;
+	int pa, clearset;
+	u32 val32;
+
+	mutex_lock(&d4400_sys_data->lock);
+
+	/* Required parameters:
+	 *  <#1> <#2> <#3>
+	 *   #1: pa #, 1 or 2
+	 *   #2: set or clear bits, 0-to clear / nonzero-to set
+	 *   #3: 32-bit value.  For setting, any bits set will have
+	 *      the corresponding gpio set.  For clearing, any bits
+	 *      set will have the corresponding gpio cleared.
+	 */
+	if (sscanf(buf, "%d %d %x", &pa, &clearset, &val32) != 3) {
+		ret = -EINVAL;
+		goto out_err;
+	}
+	if ((pa != 0) && (pa != 1)) {
+		ret = -EINVAL;
+		goto out_err;
+	}
+	if (clearset)
+		ret = d4400_sys_pa_set_clear(pa, val32, 0);
+	else
+		ret = d4400_sys_pa_set_clear(pa, 0, val32);
+	mutex_unlock(&d4400_sys_data->lock);
+	goto out;
+
+out_err:
+	mutex_unlock(&d4400_sys_data->lock);
+	printk("\n   Parameters: <#1> <#2> <#3>\n");
+	printk("     #1: PA #, 0 or 1\n");
+	printk("     #2: 0-clear bits, 1-set bits\n");
+	printk("     #3: 32-bit value (hex)\n");
+out:
 	return count;
 }
 
@@ -531,6 +758,7 @@ static DEVICE_ATTR(leds,  S_IWUSR | S_IRUGO, show_leds,            set_leds);
 static DEVICE_ATTR(reboot, S_IWUSR | S_IRUGO, show_reboot,         set_reboot);
 static DEVICE_ATTR(debug, S_IWUSR | S_IRUGO, show_debug,           set_debug);
 static DEVICE_ATTR(ipmi_info, S_IRUGO, show_ipmi_info,             NULL);
+static DEVICE_ATTR(pa,    S_IWUSR | S_IRUGO, show_pa,              set_pa);
 
 static struct attribute *d4400_sys_attributes[] = {
 	&dev_attr_board_type.attr,
@@ -541,6 +769,7 @@ static struct attribute *d4400_sys_attributes[] = {
 	&dev_attr_reboot.attr,
 	&dev_attr_debug.attr,
 	&dev_attr_ipmi_info.attr,
+	&dev_attr_pa.attr,
 	NULL
 };
 
@@ -572,7 +801,7 @@ static long d4400_sys_ioctl(struct file *filp, unsigned int cmd,
 	switch (cmd) {
 
 	/* Return board type and revision */
-	case FSL_D4400_SYS_BOARD_INFO:
+	case NXP_D4400_SYS_BOARD_INFO:
 		if (copy_to_user((struct d4400_sys_board_info *)ioargp,
 				&d4400_sys_data->brd_info,
 				sizeof(struct d4400_sys_board_info))) {
@@ -582,7 +811,7 @@ static long d4400_sys_ioctl(struct file *filp, unsigned int cmd,
 		break;
 
 	/* Check presence of a transceiver */
-	case FSL_D4400_SYS_XCVR_PRESENT:
+	case NXP_D4400_SYS_XCVR_PRESENT:
 		if (copy_from_user(&temp, (u32 *)ioargp, sizeof(u32))) {
 			err = -EFAULT;
 			goto out;
@@ -593,12 +822,12 @@ static long d4400_sys_ioctl(struct file *filp, unsigned int cmd,
 		break;
 
 	/* Set / Clear the software LEDs */
-	case FSL_D4400_SYS_LEDS_SET_CLEAR:
+	case NXP_D4400_SYS_LEDS_SET_CLEAR:
 		err = d4400_sys_leds_set_clear((arg>>8)&0xFF, arg&0xFF);
 		break;
 
 	/* Set reboot method */
-	case FSL_D4400_SYS_SET_REBOOT_METHOD:
+	case NXP_D4400_SYS_SET_REBOOT_METHOD:
 		err = d4400_sys_set_reboot_method(arg);
 		break;
 	default:
@@ -607,7 +836,7 @@ static long d4400_sys_ioctl(struct file *filp, unsigned int cmd,
 	if (!err)
 		return 0;
 out:
-	pr_err("FSL D4400 System Driver: ioctl() error %d\n", err);
+	pr_err("NXP D4400 System Driver: ioctl() error %d\n", err);
 	return err;
 }
 
@@ -683,10 +912,36 @@ static struct ipmi_info *d4400_sys_verify_ipmi_info(
 	struct ipmi_info *ipmi = NULL;
 
 	memset(ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
-	ret = eeprom_read(eeprom, ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
-	if (ret)
-		goto out0;
 
+	/* First try to read IPMI data with eeprom data retrieved from
+	 * dts file.
+	 */
+	ret = eeprom_read(eeprom, ipmi_rawbuf, 0, IPMI_EEPROM_DATA_SIZE);
+	if (ret) {
+		/* If the addrlen is >1, then try addrlen=1 in case the
+		 * eeprom is 256 byte.
+		 */
+		if (eeprom->addrlen > 1) {
+			/* Retry with 1 byte addr, assume 256 byte size */
+			eeprom->addrlen = 1;
+			eeprom->pagesize = 16;
+			eeprom->bytesize = 256;
+		} else if (eeprom->addrlen == 1) {
+			/* Retry with 2 byte addr, assume 64KB byte size */
+			eeprom->addrlen = 2;
+			eeprom->pagesize = 128;
+			eeprom->bytesize = 65536;
+		} else
+			goto out0;
+
+		/* Retry reading IPMI */
+		ret = eeprom_read(eeprom, ipmi_rawbuf, 0,
+			IPMI_EEPROM_DATA_SIZE);
+		if (ret)
+			goto out0;
+		pr_info(D4400_SYS_MOD_NAME ": Eeprom retry success, set to %i byte size\n",
+			eeprom->bytesize);
+	}
 	ipmi = kzalloc(sizeof(struct ipmi_info), GFP_KERNEL);
 	if (!ipmi) {
 		pr_err(D4400_SYS_MOD_NAME ": IPMI: Failed to allocate %d bytes for IPMI info\n",
@@ -696,13 +951,14 @@ static struct ipmi_info *d4400_sys_verify_ipmi_info(
 
 	/* Create IPMI info */
 	ret = ipmi_create(ipmi_rawbuf, ipmi);
-	if (ret)
-		goto out1;
-
-	pr_info(D4400_SYS_MOD_NAME " IPMI board mfg :  %s\n",
-		ipmi->board.mfg_str);
-	pr_info(D4400_SYS_MOD_NAME " IPMI board name:  %s\n",
-		ipmi->board.name_str);
+	if (ret) {
+		pr_warn(D4400_SYS_MOD_NAME ": IPMI decode failure, using defaults\n");
+		ret = ipmi_create((u8 *)default_ipmi_4t4r_v1_0, ipmi);
+		if (ret)
+			goto out1;
+	}
+	pr_info(D4400_SYS_MOD_NAME " IPMI board mfg/name: %s / %s\n",
+		ipmi->board.mfg_str, ipmi->board.name_str);
 
 	return ipmi;
 out1:
@@ -767,7 +1023,6 @@ static struct d4400_sys_i2c_eeprom *get_eeprom_info(
 	eeprom->pagesize = pagesize;
 	eeprom->bytesize = bytesize;
 	eeprom->addrlen = addrlen;
-
 	return eeprom;
 out:
 	return NULL;
@@ -841,8 +1096,8 @@ static int __init d4400_sys_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, d4400_sys_data);
 
 	/* Set default in case IPMI data is not found */
-	d4400_sys_data->brd_info.board_type = FSL_BOARD_TYPE_UNKNOWN;
-	d4400_sys_data->brd_info.board_rev = FSL_BOARD_REV_UNKNOWN;
+	d4400_sys_data->brd_info.board_type = BOARD_TYPE_UNKNOWN;
+	d4400_sys_data->brd_info.board_rev = BOARD_REV_UNKNOWN;
 
 	/* Get system eeprom info */
 	d4400_sys_data->eeprom = get_eeprom_info(pdev);
@@ -882,6 +1137,29 @@ static int __exit d4400_sys_remove(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct d4400_sys_dev *d4400_sys_data = dev_get_drvdata(&pdev->dev);
+	int pa;
+
+	switch (d4400_sys_data->brd_info.board_type) {
+	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_21RRH:
+		{
+			struct fsl_4t4r_board *brd_4t4r =
+				(struct fsl_4t4r_board *)d4400_sys_data->brd;
+			int i, pin;
+
+			for (pa = 0; pa < PA_CON_MAX; ++pa) {
+				/* Release gpio */
+				for (i = 0; i < PA_PINCNT; ++i)  {
+					pin = brd_4t4r->pac[pa].pins[i];
+					if (pin)
+						gpio_free(pin);
+				}
+			}
+		}
+		break;
+	default:
+		break;
+	}
 
 	sysfs_remove_group(&pdev->dev.kobj, &attr_group);
 	device_destroy(d4400_sys_data->class, d4400_sys_data->devt);
@@ -921,7 +1199,7 @@ static void __exit d4400_sys_exit(void)
 module_init(d4400_sys_init);
 module_exit(d4400_sys_exit);
 
-MODULE_DESCRIPTION("FSL DFE D4400 system driver");
+MODULE_DESCRIPTION("NXP DFE D4400 system driver");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:" DRIVER_NAME);
 

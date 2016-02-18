@@ -228,9 +228,24 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_i2c10_1>;
 
-				xcvr_eeprom: eeprom@50 {
+				xcvr_roc1_eeprom: eeprom@50 {
 					reg = <0x50>;
 					compatible = "xcvr_eeprom";
+					pagesize = <16>;
+					bytesize = <256>;
+				};
+				xcvr_roc2_eeprom: eeprom@52 {
+					reg = <0x52>;
+					compatible = "xcvr_eeprom";
+					pagesize = <16>;
+					bytesize = <256>;
+				};
+				xcvr_wb_eeprom: eeprom@51 {
+					reg = <0x51>;
+					compatible = "xcvr_eeprom";
+					pagesize = <128>;
+					bytesize = <65536>;
+
 				};
 			};
 
@@ -497,10 +512,7 @@
 				tx-reset = <3>;
 				rx-reset = <5>;
 
-				eeprom-handle =<&xcvr_eeprom>;
-				eeprom-addr = <0x50>;
-				eeprom-pagesize = <16>;
-				eeprom-bytesize = <256>;
+				eeprom-handle =<&xcvr_roc1_eeprom>;
 				ipmi-mfg-str = "Analog Devices";
 				ipmi-name-str = "9368-2R1a,9525R0,9368-1R1a",
 					"9368-2R1a,9525,9368-1R1a";
@@ -522,10 +534,7 @@
 				tx-reset = <4>;
 				rx-reset = <6>;
 
-				eeprom-handle =<&xcvr_eeprom>;
-				eeprom-addr = <0x52>;
-				eeprom-pagesize = <16>;  /* One byte address */
-				eeprom-bytesize = <256>;
+				eeprom-handle =<&xcvr_roc2_eeprom>;
 				ipmi-mfg-str = "Analog Devices";
 				ipmi-name-str = "9368-2R1a,9525R0,9368-1R1a",
 					"9368-2R1a,9525,9368-1R1a";
@@ -561,10 +570,7 @@
 					<&gpioD 24 0>,
 					<&gpioD 25 0>;
 
-				eeprom-handle =<&xcvr_eeprom>;
-				eeprom-addr = <0x51>;
-				eeprom-pagesize = <128>;
-				eeprom-bytesize = <65536>;
+				eeprom-handle =<&xcvr_wb_eeprom>;
 				ipmi-mfg-str = "Freescale";
 				ipmi-name-str = "FSL Wideband transceiver R1.00";
 			};

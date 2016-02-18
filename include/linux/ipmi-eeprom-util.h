@@ -165,12 +165,9 @@ struct ipmi_info {
 #define IPMI_MREC_TID_MANAGEMENT_AREC	0x03 /* Management access record */
 #define IPMI_MREC_TID_BASE_COMPAT_REC	0x04 /* Base compatibility record */
 #define IPMI_MREC_TID_EXT_COMPAT_REC	0x05 /* Extended compatibility record */
-
-/* Freescale OEM multi-record type ID */
-#define IPMI_MREC_TID_FSL_RECORDVER	0xc0 /* Record version */
-#define IPMI_MREC_TID_FSL_CALDATA	0xc1 /* Calibration data */
-#define IPMI_MREC_TID_FSL_CALDATA_PTR	0xc2 /* Calibration data pointer */
-#define IPMI_MREC_TID_FSL_BOARDINFO	0xc3 /* Board information */
+/* NOTE: Additional NXP multi-record type ID can be found
+ * in file ipmi-mrec-d4400.h.
+ */
 
 int ipmi_create(u8 *ipmi_rawbuf, struct ipmi_info *ipmi);
 void ipmi_free(struct ipmi_info *ipmi);

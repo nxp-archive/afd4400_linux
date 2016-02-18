@@ -14,64 +14,68 @@
 
 int fsl_get_board_type(char *name_str)
 {
-	enum board_type type = FSL_BOARD_TYPE_UNKNOWN;
+	enum board_type type = BOARD_TYPE_UNKNOWN;
 
 	if (strstr(name_str, D4400_EVB_NAME_STR) != NULL)
-		type = FSL_BOARD_TYPE_D4400EVB;
+		type = BOARD_TYPE_D4400_EVB;
 	else if (strstr(name_str, D4400_RDB_NAME_STR) != NULL)
-		type = FSL_BOARD_TYPE_D4400RDB;
+		type = BOARD_TYPE_D4400_RDB;
 	else if (strstr(name_str, D4400_4T4R_NAME_STR) != NULL)
-		type = FSL_BOARD_TYPE_D44004T4R;
+		type = BOARD_TYPE_D4400_4T4R;
+	else if (strstr(name_str, D4400_21RRH_NAME_STR) != NULL)
+		type = BOARD_TYPE_D4400_21RRH;
 
 	return type;
 }
 
 int fsl_get_board_rev(char *partnum_str)
 {
-	enum board_rev rev = FSL_BOARD_REV_UNKNOWN;
+	enum board_rev rev = BOARD_REV_UNKNOWN;
 
 	if (strstr(partnum_str, REVA_STR) != NULL)
-		rev = FSL_BOARD_REVA;
+		rev = BOARD_REVA;
 	else if (strstr(partnum_str, REVB_STR) != NULL)
-		rev = FSL_BOARD_REVB;
+		rev = BOARD_REVB;
 	else if (strstr(partnum_str, REVC_STR) != NULL)
-		rev = FSL_BOARD_REVC;
+		rev = BOARD_REVC;
 	else if (strstr(partnum_str, REVD_STR) != NULL)
-		rev = FSL_BOARD_REVD;
+		rev = BOARD_REVD;
 	else if (strstr(partnum_str, REVE_STR) != NULL)
-		rev = FSL_BOARD_REVE;
+		rev = BOARD_REVE;
 
 	return rev;
 }
 
 enum board_type ipmi_get_board_type(char *name_str)
 {
-	enum board_type type = FSL_BOARD_TYPE_UNKNOWN;
+	enum board_type type = BOARD_TYPE_UNKNOWN;
 
 	if (strstr(name_str, D4400_EVB_NAME_STR) != NULL)
-		type = FSL_BOARD_TYPE_D4400EVB;
+		type = BOARD_TYPE_D4400_EVB;
 	else if (strstr(name_str, D4400_RDB_NAME_STR) != NULL)
-		type = FSL_BOARD_TYPE_D4400RDB;
+		type = BOARD_TYPE_D4400_RDB;
 	else if (strstr(name_str, D4400_4T4R_NAME_STR) != NULL)
-		type = FSL_BOARD_TYPE_D44004T4R;
+		type = BOARD_TYPE_D4400_4T4R;
+	else if (strstr(name_str, D4400_21RRH_NAME_STR) != NULL)
+		type = BOARD_TYPE_D4400_21RRH;
 
 	return type;
 }
 
 enum board_rev ipmi_get_board_rev(char *partnum_str)
 {
-	enum board_rev rev = FSL_BOARD_REV_UNKNOWN;
+	enum board_rev rev = BOARD_REV_UNKNOWN;
 
 	if (strstr(partnum_str, REVA_STR) != NULL)
-		rev = FSL_BOARD_REVA;
+		rev = BOARD_REVA;
 	else if (strstr(partnum_str, REVB_STR) != NULL)
-		rev = FSL_BOARD_REVB;
+		rev = BOARD_REVB;
 	else if (strstr(partnum_str, REVC_STR) != NULL)
-		rev = FSL_BOARD_REVC;
+		rev = BOARD_REVC;
 	else if (strstr(partnum_str, REVD_STR) != NULL)
-		rev = FSL_BOARD_REVD;
+		rev = BOARD_REVD;
 	else if (strstr(partnum_str, REVE_STR) != NULL)
-		rev = FSL_BOARD_REVE;
+		rev = BOARD_REVE;
 
 	return rev;
 }
