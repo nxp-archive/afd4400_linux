@@ -500,14 +500,14 @@
 				<&pinctrl_pa_con2>;
 		};
 
-                spi_gpio {
+		/* Spi gpio used in place of ecspi5 due to miso/mosi
+		 * signal swap on 4T4R POC.  Signals gpio-sck, gpio-miso,
+		 * gpio-mosi, and cs-gpios are added as dynamic overlays.
+		 */
+                spi_gpio: spi_gpio@5 {
                         compatible = "spi-gpio";
                         #address-cells = <1>;
                         #size-cells = <0>;
-                        gpio-sck = <&gpioD 29 0>;
-                        gpio-miso = <&gpioE 8 0>;
-                        gpio-mosi = <&gpioE 9 0>;
-                        cs-gpios = <&gpioD 30 0>;
                         num-chipselects = <1>;
 
                         /* spidev driver */

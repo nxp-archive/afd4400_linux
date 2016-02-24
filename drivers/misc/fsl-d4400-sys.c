@@ -40,6 +40,7 @@
 #include <linux/pinctrl/consumer.h>
 #include <linux/of_irq.h>
 #include <linux/interrupt.h>
+#include <linux/overlay_ext.h>
 
 #include <mach/src.h>
 #include <linux/fsl-d4400-sys.h>
@@ -96,6 +97,44 @@ static const u8 default_ipmi_4t4r_v1_0[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00
+};
+
+/* Spi gpio overlays: Swapped here means that miso/mosi, controled as
+ * gpios, are swapped as compared to the spi module.
+ */
+struct property spigpio_swapped_prop[] = {
+	{ .name = "gpio-sck",          .value = "&gpioD \n 1D \n 0",
+		.length = 3, ._flags = PROP_STR },
+	{ .name = "gpio-miso",         .value = "&gpioE \n 8 \n 0",
+		.length = 3, ._flags = PROP_STR },
+	{ .name = "gpio-mosi",         .value = "&gpioE \n 9 \n 0",
+		.length = 3, ._flags = PROP_STR },
+	{ .name = "cs-gpios",          .value = "&gpioD \n 1E \n 0",
+		.length = 3, ._flags = PROP_STR },
+	{}
+};
+struct property spigpio_normal_prop[] = {
+	{ .name = "gpio-sck",          .value = "&gpioD \n 1D \n 0",
+		.length = 3, ._flags = PROP_STR },
+	{ .name = "gpio-miso",         .value = "&gpioE \n 9 \n 0",
+		.length = 3, ._flags = PROP_STR },
+	{ .name = "gpio-mosi",         .value = "&gpioE \n 8 \n 0",
+		.length = 3, ._flags = PROP_STR },
+	{ .name = "cs-gpios",          .value = "&gpioD \n 1E \n 0",
+		.length = 3, ._flags = PROP_STR },
+	{}
+};
+struct fragment_node frag_spigpio[] = {
+	{
+		.target = "&spi_gpio",
+		.np_array = NULL,
+		/* Property array is dynamically set based upon
+		 * board type.  Default to correct spi signal
+		 * configuration.
+		*/
+		.ov_prop_array = spigpio_normal_prop,
+	},
+	{}
 };
 
 static const char *d4400_sys_board_type_name(void)
@@ -386,7 +425,7 @@ static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
 				gpio_direction_output(pin, 0);
 		}
 	}
-	/* Get IPMI info */
+	/* Get IPMI multirecord info */
 	if (d4400_sys->ipmi)
 		ret = board_ipmi_4t4r(d4400_sys->ipmi, brd_4t4r);
 
@@ -420,6 +459,22 @@ static int d4400_sys_setup_board(struct d4400_sys_dev *d4400_sys)
 
 	mutex_lock(&d4400_sys->lock);
 
+	/* Spi gpio signal overlay */
+	frag_spigpio[0].ov_prop_array = spigpio_normal_prop;
+
+	if ((d4400_sys_data->brd_info.board_type == BOARD_TYPE_D4400_4T4R) &&
+		(d4400_sys_data->brd_info.board_rev == BOARD_REVA))
+		/* 4T4R POC revA have miso/mosi swapped */
+		frag_spigpio[0].ov_prop_array = spigpio_swapped_prop;
+
+	ret = ov_load(frag_spigpio);
+	if (ret < 0) {
+		pr_err(D4400_SYS_MOD_NAME ": failed to create spi overlay with err %x\n",
+				ret);
+		goto out;
+	}
+
+	/* Setup the board */
 	switch (d4400_sys_data->brd_info.board_type) {
 	case BOARD_TYPE_D4400_4T4R:
 	case BOARD_TYPE_D4400_21RRH:
@@ -428,7 +483,7 @@ static int d4400_sys_setup_board(struct d4400_sys_dev *d4400_sys)
 	default:
 		break;
 	}
-
+out:
 	mutex_unlock(&d4400_sys->lock);
 	return ret;
 }
@@ -836,7 +891,7 @@ static long d4400_sys_ioctl(struct file *filp, unsigned int cmd,
 	if (!err)
 		return 0;
 out:
-	pr_err("NXP D4400 System Driver: ioctl() error %d\n", err);
+	pr_err(D4400_SYS_MOD_NAME ": ioctl() error %d\n", err);
 	return err;
 }
 
