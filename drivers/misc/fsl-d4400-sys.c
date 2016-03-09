@@ -45,6 +45,7 @@
 #include <mach/src.h>
 #include <linux/fsl-d4400-sys.h>
 #include <mach/mach-d4400.h>
+#include <linux/platform_data/ina2xx.h>
 
 #define DRIVER_NAME "d4400-sys"
 #define D4400_SYS_MOD_NAME "d4400-sys"
@@ -98,6 +99,13 @@ static const u8 default_ipmi_4t4r_v1_0[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00
 };
+
+/* Current/power monitoring ina220 device for 4T4R21 revC */
+#define INA220_I2C_BUSNUM	6 /* i2c9 */
+static struct ina2xx_platform_data ina220 = {
+	.shunt_uohms = 1000, /* 0.001 Ohms */
+};
+static const unsigned short ina2xx_i2c[] = { 0x41, I2C_CLIENT_END };
 
 /* Spi gpio overlays: Swapped here means that miso/mosi, controled as
  * gpios, are swapped as compared to the spi module.
@@ -456,6 +464,8 @@ out_err:
 static int d4400_sys_setup_board(struct d4400_sys_dev *d4400_sys)
 {
 	int ret = 0;
+	struct i2c_adapter *i2c_adap;
+	struct i2c_board_info i2c_info;
 
 	mutex_lock(&d4400_sys->lock);
 
@@ -472,6 +482,18 @@ static int d4400_sys_setup_board(struct d4400_sys_dev *d4400_sys)
 		pr_err(D4400_SYS_MOD_NAME ": failed to create spi overlay with err %x\n",
 				ret);
 		goto out;
+	}
+
+	/* Look for i2c devices */
+	i2c_adap = i2c_get_adapter(INA220_I2C_BUSNUM);
+	if (i2c_adap) {
+		memset(&i2c_info, 0, sizeof(struct i2c_board_info));
+		strlcpy(i2c_info.type, "ina220", I2C_NAME_SIZE);
+		i2c_info.platform_data  = &ina220;
+
+		i2c_new_probed_device(i2c_adap, &i2c_info,
+			   ina2xx_i2c, NULL);
+		i2c_put_adapter(i2c_adap);
 	}
 
 	/* Setup the board */
