@@ -752,12 +752,13 @@ static int read_event(struct vspa_device *vspadev,
 		IF_DEBUG(DEBUG_SPM) {
 			int i;
 			uint32_t *st = src_ptr;
-			pr_info("vspa%d: evt_read SPM %08X %04X %d\n",
-				vspadev->id, ptr->data1, start, src_len);
+			pr_info("vspa%d: evt_read SPM: vaddr %p; data1: %08X; start: %04X; src_len: %d; src_ptr: %p\n",
+				vspadev->id, src_ptr, ptr->data1, start, src_len, src_ptr);
 			for (i = src_len/4; i>0; i--)
 				pr_info("[%2d] %08X\n", i, *st++);
 		}
 	}
+
 
 	length = event_size[type];
 	evt->control  = ptr->control;
@@ -772,7 +773,7 @@ static int read_event(struct vspa_device *vspadev,
 	evt->buf_size = src_len;
 
 	IF_DEBUG(DEBUG_EVENT) {
-		pr_info("vspa%d: evt_read %2d %2d %2d %2d %08X %08X\n",
+		pr_info("vspa%d: evt_read Type:%2d Err:%2d pkt_size:%2d buf_size:%2d d0:%08X d1:%08X\n",
 			vspadev->id, type, evt->err, evt->pkt_size,
 			 evt->buf_size, ptr->data0, ptr->data1);
 		if (src_len) {
@@ -818,14 +819,17 @@ static int read_event(struct vspa_device *vspadev,
 	len = evt_rd->buf_len;
 	if (length > len)
 		length = len;
-	err = copy_to_user(evt_rd->buf_ptr, evt, length);
 
+	err = copy_to_user(evt_rd->buf_ptr, evt, length);
 	/* copy the data buffer contents if needed */
 	len -= length;
 	if (err == 0 && src_len > 0 && len > 0) {
 		if (src_len > len)
 			src_len = len;
 		length += src_len;
+		IF_DEBUG(DEBUG_EVENT) {
+			pr_info("DAT: Copying %d bytes from src:%p to dest:%p\n", src_len, src_ptr, &(evt_rd->buf_ptr->data[0]));
+		}
 		err = copy_to_user(&(evt_rd->buf_ptr->data[0]), src_ptr, src_len);
 	}
 
@@ -899,6 +903,7 @@ static void spm_update(struct vspa_device *vspadev, uint32_t flags)
 			if (size >= size_max)
 				size = size_max - 1;
 			err = 0; // TODO flags ??
+			if (size == 0) size = 1;
 			event_enqueue(vspadev, VSPA_EVENT_SPM, 0, err,
 				      vspadev->spm_buf_vaddr[ptr],
 				      (ptr << 16) | (size << 2));
@@ -2135,7 +2140,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 		if (flags & VSPA_FLAG_REPORT_CMD_REPLY)
 			flags |= VSPA_FLAG_EXPECT_CMD_REPLY;
 		if ((dmabuf[2] > 0 && dmabuf[3] == 0) ||
-		    (dmabuf[3] & (align_bytes - 1)) ||
+		    //(dmabuf[3] & (align_bytes - 1)) || /* TODO: Fix this the right way*/
 		    (dmabuf[5] & (align_bytes - 1))) {
 			ERR("%d: buffers must be AXI aligned\n", vspadev->id);
 			err = -EINVAL;
