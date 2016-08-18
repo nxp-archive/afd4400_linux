@@ -753,9 +753,7 @@ static int sfp_probe(struct i2c_client *client,
 	int use_smbus = 0, err = 0;
 	unsigned write_max;
 	u8 device_name[10];
-#ifdef CONFIG_BOARD_4T4R
 	struct pinctrl *pinctrl;
-#endif
 
 	/* Getting the device node from i2c client */
 	node = client->dev.of_node;
@@ -839,9 +837,8 @@ static int sfp_probe(struct i2c_client *client,
 	 * gpio signals may be coming from I/O expander in which
 	 * no pin muxing on ASIC is required.
 	 */
-#ifdef CONFIG_BOARD_4T4R
+	/* Enable GPIO pins in case they are used ifor the SFP */
 	pinctrl = devm_pinctrl_get_select_default(dev);
-#endif
 
 	/* Configure transceiver pins */
 	err = sfp_config_gpios(sfp);
@@ -850,6 +847,7 @@ static int sfp_probe(struct i2c_client *client,
 		if (err == -EPROBE_DEFER)
 			goto err_clients;
 	} else {
+		sfp_set_tx_enable(sfp, 0); /* Disable SFP TX */
 		/* gpio read is must for interrupt to unmask interrupt */
 		gpio_get_value_cansleep(sfp->prs);
 		gpio_get_value_cansleep(sfp->rxlos);

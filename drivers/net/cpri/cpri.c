@@ -76,7 +76,8 @@ struct cpri_framer *get_attached_cpri_dev(struct device_node **sfp_dev_node)
 
 		for (i = 0; i < cpri_dev->framers; i++) {
 			framer = cpri_dev->framer[i];
-			if (*sfp_dev_node == framer->sfp_dev_node) {
+			if (NULL != framer->sfp_dev_node &&
+			    *sfp_dev_node == framer->sfp_dev_node) {
 				node = framer->sfp_dev_node;
 				break;
 			}
@@ -140,7 +141,6 @@ static const struct file_operations cpri_hdlc_fops = {
  * Read the interrupt gpio pins to clear
  * the interrupt.
  */
-#ifndef CONFIG_BOARD_4T4R
 static void handle_sfp_irq(struct work_struct *work)
 {
 	struct cpri_priv *priv =
@@ -156,11 +156,11 @@ static void handle_sfp_irq(struct work_struct *work)
 			sfp = framer->sfp_dev;
 			/*TODO: pca9555 is not accessible from i2c5 node */
 			/* This is to unmask the interrupt line gpio 15 */
-			sfp_check_gpios(sfp);
+			if (sfp)
+				sfp_check_gpios(sfp);
 		}
 	}
 }
-#endif
 
 /* CPRI rx timing interrupt handler
  * Right now we are not doing anything
@@ -464,13 +464,11 @@ static irqreturn_t cpri_err_handler(int irq, void *cookie)
 	return IRQ_HANDLED;
 }
 
-#ifndef CONFIG_BOARD_4T4R
 static irqreturn_t cpri_sfp_int_handler(int irq, void *cookie)
 {
 	schedule_delayed_work(&priv->sfp_irq_wq, 0);
 	return IRQ_HANDLED;
 }
-#endif
 
 /***************************** Sysfs *******************************/
 
@@ -509,7 +507,6 @@ static const struct attribute_group attr_group = {
 
 /************************* Probe / Remove **************************/
 
-#ifndef CONFIG_BOARD_4T4R
 static int cpri_init_sfp_irq(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -520,8 +517,8 @@ static int cpri_init_sfp_irq(struct platform_device *pdev)
 	priv->sfp_int = of_get_named_gpio(np,
 			"sfp-plug-int", 0);
 	if (priv->sfp_int < 0) {
-		dev_err(dev, "Fail to get SFP i2c expander int gpio#");
-		goto out1;
+		dev_err(dev, "No I2C expander gpio defined for SFP interrupt");
+		goto out0;
 	}
 
 	ret = gpio_request(priv->sfp_int, "sfp-int");
@@ -543,15 +540,17 @@ static int cpri_init_sfp_irq(struct platform_device *pdev)
 		dev_err(dev, "request_irq fail");
 		goto out2;
 	}
+
+	schedule_delayed_work(&priv->sfp_irq_wq, HZ);
 	return 0;
 
 out2:
 	gpio_free(priv->sfp_int);
 out1:
 	dev_err(dev, "%s failed", __func__);
+out0:
 	return -EFAULT;
 }
-#endif
 
 static int cpri_register_irq(struct cpri_dev *cpdev)
 {
@@ -577,6 +576,10 @@ static int cpri_register_irq(struct cpri_dev *cpdev)
 	}
 
 	return err;
+}
+
+static void framer_release(struct device *dev)
+{
 }
 
 static int cpri_probe(struct platform_device *pdev)
@@ -651,17 +654,17 @@ static int cpri_probe(struct platform_device *pdev)
 		rc = of_property_read_u32(child, "framer-id", &framer_id);
 		if (rc) {
 			dev_err(dev, "Failed to get framer id");
-			goto err_reg;
+			goto err_framer;
 		}
 		if (framer_id != cpri_dev->framers) {
 			dev_err(dev, "Framer id %d should be %d",
 					framer_id, cpri_dev->framers);
-			goto err_reg;
+			goto err_framer;
 		}
 		if (framer_id >= MAX_FRAMERS_PER_COMPLEX) {
 			dev_err(dev, "Framer id %d exceeds MAX_FRAMERS_PER_COMPLEX",
 					framer_id);
-			goto err_reg;
+			goto err_framer;
 		}
 
 		sprintf(framer_name, "%s_" FRMR_NAME "%d", dev_name, framer_id);
@@ -671,7 +674,7 @@ static int cpri_probe(struct platform_device *pdev)
 		framer = kzalloc(sizeof(struct cpri_framer), GFP_KERNEL);
 		if (!framer) {
 			rc = -ENOMEM;
-			goto err_fzalloc;
+			goto err_framer;
 		}
 		framer_zalloc_cnt++;
 
@@ -688,7 +691,7 @@ static int cpri_probe(struct platform_device *pdev)
 		framer->regs = of_iomap(child, 0);
 		if (!framer->regs) {
 			rc = -ENOMEM;
-			goto err_fiomap;
+			goto err_framer;
 		}
 		framer_iomap_cnt++;
 
@@ -697,7 +700,7 @@ static int cpri_probe(struct platform_device *pdev)
 		if (rc) {
 			dev_err(dev, "%s: error %d reading max-axcs",
 				framer_name, rc);
-			goto err_fiomap;
+			goto err_framer;
 		}
 
 		rc = of_property_read_u32(child, "memblk-size",
@@ -705,17 +708,18 @@ static int cpri_probe(struct platform_device *pdev)
 		if (rc) {
 			dev_err(dev, "%s: error %d reading memblk-size",
 				framer_name, rc);
-			goto err_fiomap;
+			goto err_framer;
 		}
 
 		framer->dev.parent = &pdev->dev;
+		framer->dev.release = framer_release;
 		dev_set_name(&framer->dev, "framer%d", framer_id);
 
 		rc = device_register(&framer->dev);
 		if (rc) {
 			dev_err(dev, "%s: error %d registering device",
 				framer_name, rc);
-			goto err_fdevreg;
+			goto err_framer;
 		}
 		framer_devreg_cnt++;
 		dev_set_drvdata(&framer->dev, framer);
@@ -729,7 +733,7 @@ static int cpri_probe(struct platform_device *pdev)
 		if (rc < 0) {
 			dev_err(dev, "Error %d while adding %s",
 				rc, framer_name);
-			goto err_faddcdev;
+			goto err_framer;
 		}
 		framer_cdev_cnt++;
 		/* Create sysfs device */
@@ -739,7 +743,7 @@ static int cpri_probe(struct platform_device *pdev)
 			rc = PTR_ERR(sysfs_dev);
 			dev_err(dev, "Error %d while creating %s",
 				rc, dev_name);
-			goto err_fdevcreate;
+			goto err_framer;
 		}
 		framer_sysfsdev_cnt++;
 
@@ -747,7 +751,7 @@ static int cpri_probe(struct platform_device *pdev)
 		if (rc < 0) {
 			dev_err(dev, "Error %d while creating group %s",
 				rc, dev_name);
-			goto err_fcreategrp;
+			goto err_framer;
 		}
 		framer_grp_cnt++;
 
@@ -761,7 +765,7 @@ static int cpri_probe(struct platform_device *pdev)
 		if (rc < 0) {
 			dev_err(dev, "Error %d while adding %s",
 				rc, framer_hdlc_name);
-			goto err_faddcdev1;
+			goto err_framer;
 		}
 		framer_cdev_cnt1++;
 
@@ -772,7 +776,7 @@ static int cpri_probe(struct platform_device *pdev)
 			rc = PTR_ERR(sysfs_dev);
 			dev_err(dev, "Error %d while creating %s",
 				rc, dev_name);
-			goto err_fdevcreate1;
+			goto err_framer;
 		}
 		framer_sysfsdev_cnt1++;
 
@@ -795,7 +799,7 @@ static int cpri_probe(struct platform_device *pdev)
 		cpri_mask_irq_events(framer);
 		if (process_framer_irqs(child, framer) < 0) {
 			dev_err(dev, "framer events not supported");
-			goto err_firq;
+			goto err_framer;
 		}
 		framer_irq_cnt++;
 
@@ -804,26 +808,31 @@ static int cpri_probe(struct platform_device *pdev)
 		/* The sfp driver should be init first
 		 * otherwise it will return NULL
 		 */
-		framer->sfp_dev = get_attached_sfp_dev(framer->sfp_dev_node);
-		if (framer->sfp_dev == NULL) {
-			dev_err(dev, "get_attached_sfp_dev fail");
-			goto err_firq;
+		if (framer->sfp_dev_node != NULL) {
+			framer->sfp_dev = get_attached_sfp_dev(framer->sfp_dev_node);
+			if (framer->sfp_dev == NULL) {
+				dev_err(dev, "get_attached_sfp_dev fail");
+				goto err_framer;
+			}
+			sfp_set_attached_framer(framer->sfp_dev, framer);
 		}
-		sfp_set_attached_framer(framer->sfp_dev, framer);
 		if (cpri_eth_init(pdev, framer, child) < 0) {
 			dev_err(dev, "ethernet init failed");
-			goto err_feth;
+			goto err_framer;
 		}
 		framer_eth_cnt++;
 
-		dev_info(dev, "%s attached to sfp%d", framer->name,
-			framer->sfp_dev->id);
-	}
+		if (framer->sfp_dev)
+			dev_info(dev, "%s attached to sfp%d", framer->name,
+				framer->sfp_dev->id);
+		else
+			dev_info(dev, "%s not attached to a sfp", framer->name);
+	 }
 
 	/* Setup cpri err interrupts */
 	if (cpri_register_irq(cpri_dev) < 0) {
 		dev_err(dev, "cpri dev irq init failure");
-		goto err_feth;
+		goto err_framer;
 	}
 	/* Add to the list of cpri devices - this is required
 	 * as the probe is called for multiple cpri complexes
@@ -833,51 +842,37 @@ static int cpri_probe(struct platform_device *pdev)
 	spin_unlock(&priv->cpri_list_lock);
 	dev_set_drvdata(dev, cpri_dev);
 
-#ifndef CONFIG_BOARD_4T4R
 	/* Only the CPRI complex 1 has this SFP gpio interrupt entry */
 	if (cpri_dev->dev_id == 0)
 		cpri_init_sfp_irq(pdev);
-	else
-		schedule_delayed_work(&priv->sfp_irq_wq, HZ);
-#endif
 
 	return 0;
 
-err_feth:
+err_framer:
 	for (i = 0; i < framer_eth_cnt; i++)
 		cpri_eth_deinit(pdev, cpri_dev->framer[i]);
-err_firq:
 	for (i = 0; i < framer_irq_cnt; i++) {
-		free_irq(cpri_dev->framer[i]->irq_rx_t, framer);
-		free_irq(cpri_dev->framer[i]->irq_tx_t, framer);
-		free_irq(cpri_dev->framer[i]->irq_rx_c, framer);
-		free_irq(cpri_dev->framer[i]->irq_tx_c, framer);
+		free_irq(cpri_dev->framer[i]->irq_rx_t, cpri_dev->framer[i]);
+		free_irq(cpri_dev->framer[i]->irq_tx_t, cpri_dev->framer[i]);
+		free_irq(cpri_dev->framer[i]->irq_rx_c, cpri_dev->framer[i]);
+		free_irq(cpri_dev->framer[i]->irq_tx_c, cpri_dev->framer[i]);
 	}
-err_fdevcreate1:
 	for (i = 0; i < framer_sysfsdev_cnt1; i++)
 		device_destroy(cpri_class, cpri_dev->framer[i]->hdlc_dev_t);
-err_faddcdev1:
 	for (i = 0; i < framer_cdev_cnt1; i++)
 		cdev_del(&cpri_dev->framer[i]->hdlc_cdev);
-err_fcreategrp:
 	for (i = 0; i < framer_grp_cnt; i++)
 		sysfs_remove_group(&cpri_dev->framer[i]->dev.kobj, &attr_group);
-err_fdevcreate:
 	for (i = 0; i < framer_sysfsdev_cnt; i++)
 		device_destroy(cpri_class, cpri_dev->framer[i]->dev_t);
-err_faddcdev:
 	for (i = 0; i < framer_cdev_cnt; i++)
 		cdev_del(&cpri_dev->framer[i]->cdev);
-err_fdevreg:
 	for (i = 0; i < framer_devreg_cnt; i++)
 		device_unregister(&cpri_dev->framer[i]->dev);
-err_fiomap:
 	for (i = 0; i < framer_iomap_cnt; i++)
 		iounmap(cpri_dev->framer[i]->regs);
-err_fzalloc:
 	for (i = 0; i < framer_zalloc_cnt; i++)
 		kfree(cpri_dev->framer[i]);
-err_reg:
 	iounmap(cpri_dev->regs);
 err_mem:
 	kfree(cpri_dev);

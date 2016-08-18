@@ -176,7 +176,10 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 
 	case CPRI_GET_STATE:
-		if (gpio_get_value_cansleep(sfp->prs))
+		if (sfp == NULL)
+			set_bit(CPRI_SFP_PRESENT_BITPOS,
+				&framer->cpri_state);
+		else if (gpio_get_value_cansleep(sfp->prs))
 			clear_bit(CPRI_SFP_PRESENT_BITPOS,
 				&framer->cpri_state);
 		else
@@ -333,6 +336,11 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 
 
 	case SFP_READ_REG:
+		if (!sfp) {
+			err = -ENODEV;
+			goto out;
+		}
+
 		if (copy_from_user(&sfp_rreg, (struct sfp_reg_read_buf *)ioargp,
 				sizeof(struct sfp_reg_read_buf)) != 0) {
 			err = -EFAULT;
@@ -345,7 +353,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
+		sfp_raw_read(sfp, sfp_buf, sfp_rreg.start_offset,
 			sfp_rreg.count, SFP_MEM_EEPROM);
 
 		if (copy_to_user(sfp_rreg.reg_buff, sfp_buf,
@@ -359,6 +367,11 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SFP_READ_DIAG_REG:
+		if (!sfp) {
+			err = -ENODEV;
+			goto out;
+		}
+
 		if (copy_from_user(&sfp_rreg, (struct sfp_reg_read_buf *)ioargp,
 				sizeof(struct sfp_reg_read_buf)) != 0) {
 			err = -EFAULT;
@@ -371,7 +384,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		sfp_raw_read(framer->sfp_dev, sfp_buf, sfp_rreg.start_offset,
+		sfp_raw_read(sfp, sfp_buf, sfp_rreg.start_offset,
 			sfp_rreg.count, SFP_MEM_DIAG);
 
 		if (copy_to_user(sfp_rreg.reg_buff, sfp_buf,
@@ -385,6 +398,11 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SFP_WRITE_REG:
+		if (!sfp) {
+			err = -ENODEV;
+			goto out;
+		}
+
 		if (copy_from_user(&sfp_wreg,
 				(struct sfp_reg_write_buf *) ioargp,
 				sizeof(struct sfp_reg_write_buf)) != 0) {
@@ -409,7 +427,7 @@ long cpri_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 		}
 
 		for (i = 0; i < count; i++) {
-			sfp_raw_write(framer->sfp_dev,
+			sfp_raw_write(sfp,
 				&(sfp_wregset + i)->value,
 				(sfp_wregset + i)->offset, 1, SFP_MEM_DIAG);
 		}

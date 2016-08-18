@@ -5,4 +5,5 @@ cpri_driver-objs := cpri.o \
 		cpri_eth.o \
 		cpri_axc.o \
 		cpri_cw.o \
-		cpri_hdlc.o
+		cpri_hdlc.o \
+		sfp_stub.o

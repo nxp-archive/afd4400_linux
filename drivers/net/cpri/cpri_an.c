@@ -681,7 +681,8 @@ static int check_linesync(struct cpri_framer *framer,
 	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK |
 		RX_LOS_MASK | RX_STATE_MASK);
 
-	sfp_set_tx_enable(framer->sfp_dev, 1);
+	if (framer->sfp_dev)
+		sfp_set_tx_enable(framer->sfp_dev, 1);
 
 	while (!test_bit(RATE_TIMEREXP_BITPOS, &framer->timer_expiry_events)) {
 		line_sync_acheived = cpri_reg_get_val(
