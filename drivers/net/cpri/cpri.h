@@ -103,7 +103,6 @@ struct cpri_framer {
 	spinlock_t err_en_lock;
 	spinlock_t rx_cw_lock;
 	spinlock_t tx_cw_lock;
-	struct mutex axc_mutex;
 	struct device_node *sfp_dev_node;
 	struct sfp_dev *sfp_dev;
 	struct of_phandle_args serdesspec;

@@ -834,7 +834,6 @@ static int cpri_probe(struct platform_device *pdev)
 		spin_lock_init(&framer->err_en_lock);
 		spin_lock_init(&framer->rx_cw_lock);
 		spin_lock_init(&framer->tx_cw_lock);
-		mutex_init(&framer->axc_mutex);
 		init_timer(&framer->link_monitor_timer);
 		cpri_hdlc_of_init(framer);
 

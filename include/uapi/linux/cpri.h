@@ -492,6 +492,10 @@ struct axc_info {
  * If set, enable CPRInT/RACPRMSB bit 12
  */
 #define AXC_OVERSAMPLING_2X	(1 << 12)
+/**
+ * If set, this AxC runs at 1.92msps sample rate (half of the chip rate)
+ */
+#define AXC_1P92MSPS	(1 << 29)
 	__u32 flags;
 /**
  * AxC offset from word 1 in basic frame in bit
@@ -514,7 +518,6 @@ struct axc_info {
 #define MEMBLK0	(1 << 0)
 #define MEMBLK1	(1 << 1)
 	unsigned int memblk_sel;
-
 };
 
 struct rx_cw_params {

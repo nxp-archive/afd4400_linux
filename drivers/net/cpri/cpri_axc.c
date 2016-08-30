@@ -10,9 +10,6 @@
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
  *
- * The code in this file realizes a subset of the CPRI IP block mapping
- * capability, namely K=1. For K>1 needs more advanced mapping and will
- * be added later if needed.
  */
 #include <linux/types.h>
 #include <linux/platform_device.h>
@@ -39,6 +36,7 @@
 #include <linux/cpri_axc.h>
 #include "cpri.h"
 
+static DEFINE_MUTEX(axc_mutex);
 void clear_axc_map_tx_rx_table(struct cpri_framer *framer)
 {
 	int loop;
@@ -97,13 +95,21 @@ static int iq_bits_per_bf(struct cpri_framer *framer)
  * That means AXC_TBL_WRITE_MASK needs to be set for t/rcma reg.
  */
 static void map_axc_tx_rx_table(struct cpri_framer *framer,
-		const struct axc_cmd_regs *cmd_regs) {
+		const struct axc_cmd_regs *cmd_regs)
+{
 
 	int loop;
 	struct cpri_framer_regs __iomem *regs = framer->regs;
 	u32 val;
 
 	for (loop = 0; loop < 3072; loop++) {
+		/*
+		if (cmd_regs->rcmd0[loop] || cmd_regs->rcmd1[loop] ||
+			cmd_regs->tcmd0[loop] || cmd_regs->tcmd1[loop])
+			printk("%s: loop=%d, rcmd0=%x, rcmd1=%x, tcmd0=%x, tcmd1=%x\n",
+			framer->name, loop, cmd_regs->rcmd0[loop], cmd_regs->rcmd1[loop],
+			cmd_regs->tcmd0[loop], cmd_regs->tcmd1[loop]);
+		*/
 		cpri_write(cmd_regs->rcmd0[loop], &regs->cpri_rcmd0);
 		cpri_write(cmd_regs->rcmd1[loop], &regs->cpri_rcmd1);
 		cpri_write(cmd_regs->tcmd0[loop], &regs->cpri_tcmd0);
@@ -113,7 +119,6 @@ static void map_axc_tx_rx_table(struct cpri_framer *framer,
 		cpri_write(val, &regs->cpri_rcma);
 		cpri_write(val, &regs->cpri_tcma);
 	}
-
 }
 
 /* Program the AUX interface.
@@ -278,15 +283,15 @@ static inline int pos_in_subseg(int bit_pos)
  * supports K=1 only, but DFE can handle K > 1
  * The driver will be updated later if it's needed
  */
-static void fill_map_table(struct axc_info axc, struct axc_cmd_regs *cmd_regs)
+static void fill_map_table(const struct axc_info *axc, struct axc_cmd_regs *cmd_regs)
 {
 	int bits_to_map, remaining_bits;
 	int current_pos;
 	int val;
 	int seg, sub_seg, subseg_offset;
 
-	remaining_bits = axc.container_size;
-	current_pos = axc.container_offset;
+	remaining_bits = axc->container_size;
+	current_pos = axc->container_offset;
 
 	while (remaining_bits) {
 		seg = find_seg_tomap(current_pos);
@@ -302,16 +307,16 @@ static void fill_map_table(struct axc_info axc, struct axc_cmd_regs *cmd_regs)
 		current_pos += bits_to_map;
 
 		val = ((bits_to_map / 2) << 11) | ((subseg_offset / 2) << 6)
-				| (axc.id << 1) | 1;
+				| (axc->id << 1) | 1;
 
-		if (axc.flags & AXC_DIR_RX) {
+		if (axc->flags & AXC_DIR_RX) {
 			if (sub_seg == 0)
 				cmd_regs->rcmd0[seg] |= val;
 			else if (sub_seg == 1)
 				cmd_regs->rcmd0[seg] |= (val << 16);
 			else
 				cmd_regs->rcmd1[seg] = val;
-		} else if (axc.flags & AXC_DIR_TX) {
+		} else if (axc->flags & AXC_DIR_TX) {
 			if (sub_seg == 0)
 				cmd_regs->tcmd0[seg] |= val;
 			else if (sub_seg == 1)
@@ -358,15 +363,13 @@ static int check_axc_overlap(const struct axc_info *axc0,
 	return err;
 }
 
-/* Check for any AxC error */
-#define MAX_POSSIBLE_AXC	48
 static int check_axc_conflict(struct cpri_framer *framer,
 		struct axc_info *axc, int clear)
 {
 	int bits_per_bf;
 	struct device *dev = framer->cpri_dev->dev;
-	static struct axc_info *axc_info_tx[MAX_POSSIBLE_AXC];
-	static struct axc_info *axc_info_rx[MAX_POSSIBLE_AXC];
+	static struct axc_info *axc_info_tx[24];
+	static struct axc_info *axc_info_rx[24];
 	static int memblk_tx0, memblk_tx1, memblk_rx0, memblk_rx1;
 	struct axc_info **axc_info_his;
 	int i;
@@ -374,14 +377,12 @@ static int check_axc_conflict(struct cpri_framer *framer,
 	int ret;
 
 	if (clear) {
-		for (i = 0; i < framer->max_axcs; i++) {
-			axc_info_rx[i] = NULL;
-			axc_info_tx[i] = NULL;
-			memblk_tx0 = 0;
-			memblk_rx0 = 0;
-			memblk_tx1 = 0;
-			memblk_rx1 = 0;
-		}
+		memset(axc_info_tx, 0, sizeof(struct axc_info *) * 24);
+		memset(axc_info_rx, 0, sizeof(struct axc_info *) * 24);
+		memblk_tx0 = 0;
+		memblk_rx0 = 0;
+		memblk_tx1 = 0;
+		memblk_rx1 = 0;
 		return 0;
 	}
 
@@ -483,6 +484,7 @@ static int check_axc_conflict(struct cpri_framer *framer,
 		goto out;
 	}
 
+
 	/* Checks if one AxC steps on other AxC */
 	for (i = 0; i < framer->max_axcs; i++) {
 		if (axc_info_his[i] == NULL)
@@ -493,17 +495,17 @@ static int check_axc_conflict(struct cpri_framer *framer,
 			goto out;
 		} else {
 			ret = check_axc_overlap(axc, axc_info_his[i]);
-				if (ret & 1) {
-					dev_err(dev, "%s AxC%d and %s AxC%d overlap in basic frame",
-						axc_dir, axc->id,
-						axc_dir, axc_info_his[i]->id);
-					goto out;
-				} else if (ret & 2) {
-					dev_err(dev, "%s AxC%d and %s AxC%d in memory buffer",
-						axc_dir, axc->id,
-						axc_dir, axc_info_his[i]->id);
-					goto out;
-				}
+			if (ret & 1) {
+				dev_err(dev, "%s AxC%d and %s AxC%d overlap in basic frame",
+					axc_dir, axc->id,
+					axc_dir, axc_info_his[i]->id);
+				goto out;
+			} else if (ret & 2) {
+				dev_err(dev, "%s AxC%d and %s AxC%d in memory buffer",
+					axc_dir, axc->id,
+					axc_dir, axc_info_his[i]->id);
+				goto out;
+			}
 		}
 	}
 
@@ -526,7 +528,6 @@ static int cpri_axc_ctrl(struct cpri_framer *framer,
 	int i;
 	int err = 0;
 
-	mutex_lock(&framer->axc_mutex);
 	for (i = 0; i < axc_cnt; i++) {
 		if (axc_info[i].flags & AXC_DAISY_CHAINED)
 			program_aux_interface(framer, &axc_info[i]);
@@ -560,7 +561,6 @@ static int cpri_axc_ctrl(struct cpri_framer *framer,
 	}
 	cpri_reg_set(&regs->cpri_tcr, 1);
 	cpri_reg_set(&regs->cpri_rcr, 1);
-	mutex_unlock(&framer->axc_mutex);
 	return err;
 }
 
@@ -575,13 +575,16 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	int i;
 	int err = 0;
 	int riqs, tiqs;
+	unsigned int k = 1;
 	struct axc_cmd_regs *cmd_regs;
+	unsigned long end_jiffies;
+	int bits_per_bf[] = {0, 256, 512, 640, 1024, 1280, 2048};
 
 	cmd_regs = kzalloc(sizeof(struct axc_cmd_regs), GFP_KERNEL);
 	if (!cmd_regs)
 		return -ENOMEM;
 
-	mutex_lock(&framer->axc_mutex);
+	mutex_lock(&axc_mutex);
 	/* Clear it once */
 	check_axc_conflict(framer, NULL, 1);
 
@@ -589,7 +592,16 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	for (i = 0; i < axc_cnt; i++) {
 		if (check_axc_conflict(framer, &axc_info[i], 0)) {
 			err = -EINVAL;
+			mutex_unlock(&axc_mutex);
 			goto out;
+		}
+	}
+	mutex_unlock(&axc_mutex);
+
+	for (i = 0; i < axc_cnt; i++) {
+		if (axc_info[i].flags & AXC_1P92MSPS) {
+			k = 2;
+			break;
 		}
 	}
 
@@ -597,18 +609,19 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	cpri_reg_clear(&regs->cpri_rcr, 1);
 
 	/* Wait for rx/tx AxCs to be disabled */
-	for (i = 0; i < 10; i++) {
+	end_jiffies = jiffies + msecs_to_jiffies(200);
+	while (1) {
+		if (time_after(jiffies, end_jiffies)) {
+			dev_err(dev, "fail to disable riqs/tiqs bit");
+			err = -EIO;
+			goto out;
+		}
 		riqs = cpri_read(&regs->cpri_rstatus) & 0x1;
 		tiqs = cpri_read(&regs->cpri_tstatus) & 0x1;
 		if (!riqs && !tiqs)
 			break;
 		else
 			msleep_interruptible(20);
-	}
-	if (i == 10) {
-		dev_err(dev, "fail to disable riqs/tiqs bit");
-		err = -EIO;
-		goto out;
 	}
 
 	/* Disable all AxCs before mapping */
@@ -623,9 +636,16 @@ static int cpri_axc_map(struct cpri_framer *framer,
 
 	/* Program the sw mapping table */
 	for (i = 0; i < axc_cnt; i++) {
-		if (!(axc_info[i].flags & AXC_DAISY_CHAINED))
-			fill_map_table(axc_info[i], cmd_regs);
+		if (!(axc_info[i].flags & AXC_DAISY_CHAINED)) {
+			fill_map_table(&axc_info[i], cmd_regs);
+			if ((k == 2) && !(axc_info[i].flags & AXC_1P92MSPS)) {
+				axc_info[i].container_offset +=
+					bits_per_bf[framer->autoneg_output.common_rate];
+				fill_map_table(&axc_info[i], cmd_regs);
+			}
+		}
 	}
+
 	/* Program the hardware mapping table */
 	map_axc_tx_rx_table(framer, cmd_regs);
 
@@ -634,9 +654,8 @@ static int cpri_axc_map(struct cpri_framer *framer,
 			program_axc_conf_reg(framer, &axc_info[i]);
 	}
 
-	/* Set k1, k2 value and map mode */
-	cpri_reg_set_val(&regs->cpri_map_tbl_config, AXC_K0_MASK, 1);
-	cpri_reg_set_val(&regs->cpri_map_tbl_config, AXC_K1_MASK, 1);
+	cpri_reg_set_val(&regs->cpri_map_tbl_config, AXC_K0_MASK, k);
+	cpri_reg_set_val(&regs->cpri_map_tbl_config, AXC_K1_MASK, k);
 	cpri_reg_clear(&regs->cpri_map_k_select_rx1, MASK_ALL);
 	cpri_reg_clear(&regs->cpri_map_k_select_tx1, MASK_ALL);
 	cpri_reg_clear(&regs->cpri_map_k_select_rx2, MASK_ALL);
@@ -646,7 +665,6 @@ static int cpri_axc_map(struct cpri_framer *framer,
 	cpri_reg_set_val(&regs->cpri_map_config, AXC_MODE_MASK, 1);
 
 out:
-	mutex_unlock(&framer->axc_mutex);
 	kfree(cmd_regs);
 	return err;
 }
