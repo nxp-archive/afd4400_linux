@@ -899,11 +899,11 @@ static void spm_update(struct vspa_device *vspadev, uint32_t flags)
 			size_max = ptr > vspadev->spm_addr ?
 					(vspadev->spm_buf_bytes >> 2) - ptr :
 					vspadev->spm_addr - ptr;
-			size = (vspadev->spm_buf_vaddr[ptr] >> 16) & 0xFF;
+			size = ((vspadev->spm_buf_vaddr[ptr] >> 16) & 0xFF) + 1;
 			if (size >= size_max)
 				size = size_max - 1;
 			err = 0; // TODO flags ??
-			if (size == 0) size = 1;
+			//if (size == 0) size = 1;
 			event_enqueue(vspadev, VSPA_EVENT_SPM, 0, err,
 				      vspadev->spm_buf_vaddr[ptr],
 				      (ptr << 16) | (size << 2));
@@ -2140,7 +2140,7 @@ static ssize_t vspa_write(struct file *fp, const char __user *buf,
 		if (flags & VSPA_FLAG_REPORT_CMD_REPLY)
 			flags |= VSPA_FLAG_EXPECT_CMD_REPLY;
 		if ((dmabuf[2] > 0 && dmabuf[3] == 0) ||
-		    //(dmabuf[3] & (align_bytes - 1)) || /* TODO: Fix this the right way*/
+		    (dmabuf[3] & (align_bytes - 1)) || 
 		    (dmabuf[5] & (align_bytes - 1))) {
 			ERR("%d: buffers must be AXI aligned\n", vspadev->id);
 			err = -EINVAL;
