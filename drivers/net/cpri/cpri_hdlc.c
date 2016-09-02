@@ -1,9 +1,9 @@
 /*
  * drivers/net/cpri/cpri_hdlc.c
  * CPRI device driver - HDLC MAC
- * Author: NXP semiconductor, Inc.
+ * Author: Freescale semiconductor, Inc.
  *
- * Copyright 2016 NXP Semiconductor, Inc.
+ * Copyright 2016 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute  it and/or modify it
  * under  the terms of  the GNU General  Public License as published by the
