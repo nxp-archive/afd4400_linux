@@ -543,11 +543,12 @@
 				rx-reset = <3>;
 
 				eeprom-handle =<&system_eeprom>;
-				ipmi-mfg-str = "Freescale", "NXP";
+				ipmi-mfg-str = "Freescale", "NXP", "Custom";
 				ipmi-name-str =
 					"FSL D4400 4T4R Reference Board",
 					"NXP D4400-4T4R21 System",
-					"NXP D4400-21RRH2W5 System";
+					"NXP D4400-21RRH2W5 System",
+					"Custom0 System";
 			};
 
 			xcvr-roc2 {
@@ -567,11 +568,12 @@
 				rx-reset = <4>;
 
 				eeprom-handle =<&system_eeprom>;
-				ipmi-mfg-str = "Freescale", "NXP";
+				ipmi-mfg-str = "Freescale", "NXP", "Custom";
 				ipmi-name-str =
 					"FSL D4400 4T4R Reference Board",
 					"NXP D4400-4T4R21 System",
-					"NXP D4400-21RRH2W5 System";
+					"NXP D4400-21RRH2W5 System",
+					"Custom0 System";
 			};
                 };
         };
