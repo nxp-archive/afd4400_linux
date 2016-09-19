@@ -496,8 +496,57 @@ static ssize_t show_debug(struct device *dev,
 
 static DEVICE_ATTR(debug,  S_IWUSR | S_IRUGO, show_debug,    set_debug);
 
+static ssize_t show_link_status(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	struct cpri_framer *framer = dev_get_drvdata(dev);
+	int temp, cnt = 0;
+	struct cpri_framer_regs __iomem *regs = framer->regs;
+	u32 mask;
+
+	const char *rate_name[] = {"rate_unknown", "1228.8msps", "2457.6msps",
+				"3072.0msps", "4915.2msps",
+				"6144.0msps", "9830.4msps"};
+
+	const char *protocal_version[] = {"version_unknown", "version1", "version2"};
+	const char *current_framer_status = "ok";
+
+	temp = sprintf(buf, "framer name: %s\n", framer->name);
+	buf += temp;
+	cnt += temp;
+
+	temp = sprintf(buf, "speed: %s\n",
+		rate_name[framer->autoneg_output.common_rate]);
+	buf += temp;
+	cnt += temp;
+
+	temp = sprintf(buf, "eth pointer: %d\n",
+		framer->autoneg_output.common_eth_ptr);
+	buf += temp;
+	cnt += temp;
+
+	temp = sprintf(buf, "protocal version: %s\n",
+		protocal_version[framer->autoneg_output.common_prot_ver]);
+	buf += temp;
+	cnt += temp;
+
+	mask = (RX_HFN_STATE_MASK | RX_BFN_STATE_MASK |
+		RX_LOS_MASK | RX_STATE_MASK);
+	if (cpri_reg_get_val(&regs->cpri_status, mask) != 0xE)
+		current_framer_status = "unstable";
+	temp = sprintf(buf, "Current framer status: %s\n",
+		current_framer_status);
+
+	buf += temp;
+	cnt += temp;
+
+	return cnt;
+}
+static DEVICE_ATTR(status,  S_IWUSR | S_IRUGO, show_link_status, NULL);
+
 static struct attribute *attributes[] = {
 	&dev_attr_debug.attr,
+	&dev_attr_status.attr,
 	NULL
 };
 

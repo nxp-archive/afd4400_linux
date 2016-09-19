@@ -285,9 +285,9 @@ enum cpri_errors_bitpos {
 #define CPRI_HW_RESET_EN	0x20
 
 enum cpri_prot_ver {
+	VER_INVALID,
 	VER_1 = 1,
 	VER_2,
-	VER_INVALID
 };
 
 enum cpri_hdlc_rate {
@@ -302,13 +302,13 @@ enum cpri_hdlc_rate {
 };
 
 enum cpri_link_rate {
+	RATE_INVALID,
 	RATE2_1228_8M = 1,
 	RATE3_2457_6M,
 	RATE4_3072_0M,
 	RATE5_4915_2M,
 	RATE6_6144_0M,
 	RATE7_9830_4M,
-	RATE_INVALID,
 };
 
 enum autoneg_mode_mask {
