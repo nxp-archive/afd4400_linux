@@ -225,24 +225,24 @@ static u32 cpri_conf_val(enum dma_channel_id_t chan_id, u8 cpri_chan,
 		if ((chan_id >= DMA_CHAN_8 && chan_id <= DMA_CHAN_11) ||
 					(chan_id == DMA_CHAN_15)) {
 			if (cpri_chan >= 17 && cpri_chan <= 20) {
-				if (cpri_framert_id == CPRI_FRAMER_1)
+				if (cpri_framert_id == CPRI_FRAMER_0)
 					val = CPRI_RX1_DMA_REQ_2;
 				else
 					val = CPRI_RX2_DMA_REQ_4;
 			} else if (cpri_chan >= 21 && cpri_chan <= 24) {
-				if (cpri_framert_id == CPRI_FRAMER_1)
+				if (cpri_framert_id == CPRI_FRAMER_0)
 					val = CPRI_RX1_DMA_REQ_3;
 				else
 					val = CPRI_RX2_DMA_REQ_5;
 			}
 		} else if (chan_id >= DMA_CHAN_12 && chan_id <= DMA_CHAN_14) {
 			if (cpri_chan >= 18 && cpri_chan <= 20) {
-				if (cpri_framert_id == CPRI_FRAMER_1)
+				if (cpri_framert_id == CPRI_FRAMER_0)
 					val = CPRI_RX1_DMA_REQ_3;
 				else
 					val = CPRI_RX2_DMA_REQ_5;
 			} else if (cpri_chan >= 21 && cpri_chan <= 23) {
-				if (cpri_framert_id == CPRI_FRAMER_1)
+				if (cpri_framert_id == CPRI_FRAMER_0)
 					val = CPRI_RX1_DMA_REQ_4;
 				else
 					val = CPRI_RX2_DMA_REQ_6;
@@ -251,24 +251,24 @@ static u32 cpri_conf_val(enum dma_channel_id_t chan_id, u8 cpri_chan,
 	} else if (comm_type == SETUP_UL) {
 		if (chan_id >= DMA_CHAN_8 && chan_id <= DMA_CHAN_13) {
 			if (cpri_chan >= 17 && cpri_chan <= 20) {
-				if (cpri_framert_id == CPRI_FRAMER_1)
+				if (cpri_framert_id == CPRI_FRAMER_0)
 					val = CPRI_TX1_DMA_REQ_3;
 				else
 					val = CPRI_TX2_DMA_REQ_5;
 			} else if (cpri_chan >= 21 && cpri_chan <= 24) {
-				if (cpri_framert_id == CPRI_FRAMER_1)
+				if (cpri_framert_id == CPRI_FRAMER_0)
 					val = CPRI_TX1_DMA_REQ_4;
 				else
 					val = CPRI_TX2_DMA_REQ_6;
 			}
 		} else if (chan_id >= DMA_CHAN_14 && chan_id <= DMA_CHAN_15) {
 			if (cpri_chan >= 17 && cpri_chan <= 18) {
-				if (cpri_framert_id == CPRI_FRAMER_1)
+				if (cpri_framert_id == CPRI_FRAMER_0)
 					val = CPRI_TX1_DMA_REQ_4;
 				else
 					val = CPRI_TX2_DMA_REQ_6;
 			} else if (cpri_chan >= 23 && cpri_chan <= 24) {
-				if (cpri_framert_id == CPRI_FRAMER_1)
+				if (cpri_framert_id == CPRI_FRAMER_0)
 					val = CPRI_TX1_DMA_REQ_5;
 				else
 					val = CPRI_TX2_DMA_REQ_7;
@@ -420,12 +420,12 @@ static u32 vsp_intf_gcr_reg_cfg_2bit(unsigned char gcr_id,
 		mask_bits = GCR_MSK1;
 		shift_mask_value = (chan_id - 16) * 2;
 
-		if (cpri_framert_id == CPRI_FRAMER_1) {
+		if (cpri_framert_id == CPRI_FRAMER_0) {
 			if (cpri_chan >= 1 && cpri_chan <= 16)
 				val = CPRI_RX1_DMA_REQ_2BIT(1);
 			else
 				val = CPRI_RX1_DMA_REQ_2BIT(2);
-		} else if (cpri_framert_id == CPRI_FRAMER_2) {
+		} else if (cpri_framert_id == CPRI_FRAMER_1) {
 			if (cpri_chan >= 1 && cpri_chan <= 16)
 				val = CPRI_RX2_DMA_REQ_2BIT(1);
 			else
@@ -435,12 +435,12 @@ static u32 vsp_intf_gcr_reg_cfg_2bit(unsigned char gcr_id,
 		/* for TX*/
 		mask_bits = GCR_MSK;
 
-		if (cpri_framert_id == CPRI_FRAMER_1) {
+		if (cpri_framert_id == CPRI_FRAMER_0) {
 			if (cpri_chan >= 1 && cpri_chan <= 16)
 				val = CPRI_TX1_DMA_REQ_2BIT(1);
 			else
 				val = CPRI_TX1_DMA_REQ_2BIT(2);
-		} else if (cpri_framert_id == CPRI_FRAMER_2) {
+		} else if (cpri_framert_id == CPRI_FRAMER_1) {
 			if (cpri_chan >= 1 && cpri_chan <= 16)
 				val = CPRI_TX2_DMA_REQ_2BIT(1);
 			else
@@ -495,16 +495,16 @@ static unsigned int get_gcr_reg(enum vsp_id_t vsp,
 			gcr_id = 47;
 		if ((chan >= 16) && (chan <= 31)) {
 			switch (vsp) {
-			case VSP1:
+			case VSP0:
 				gcr_id = 56;
 				break;
-			case VSP2:
+			case VSP1:
 				gcr_id = 57;
 				break;
-			case VSP3:
+			case VSP2:
 				gcr_id = 58;
 				break;
-			case VSP4:
+			case VSP3:
 				gcr_id = 59;
 				break;
 			default:
@@ -522,16 +522,16 @@ static unsigned int get_gcr_reg(enum vsp_id_t vsp,
 			gcr_id = 50;
 		if ((chan >= 16) && (chan <= 31)) {
 			switch (vsp) {
-			case VSP8:
+			case VSP7:
 				gcr_id = 60;
 				break;
-			case VSP9:
+			case VSP8:
 				gcr_id = 61;
 				break;
-			case VSP10:
+			case VSP9:
 				gcr_id = 62;
 				break;
-			case VSP11:
+			case VSP10:
 				gcr_id = 63;
 				break;
 			default:
@@ -607,16 +607,16 @@ int gcr_cpri_dma_mux(struct cpri_dma_mux_config *cpri_mux_parm,
 	for (tmp = 0; tmp < count; tmp++) {
 		rxtx_id = (cpri_mux_parm + tmp)->rxtx_id;
 		switch (rxtx_id) {
-		case CPRI_RX1:
+		case CPRI_RX0:
 			gcr_id = 20;
 			break;
-		case CPRI_RX2:
+		case CPRI_RX1:
 			gcr_id = 21;
 			break;
-		case CPRI_TX1:
+		case CPRI_TX0:
 			gcr_id = 29;
 			break;
-		case CPRI_TX2:
+		case CPRI_TX1:
 			gcr_id = 30;
 			break;
 
@@ -626,15 +626,15 @@ int gcr_cpri_dma_mux(struct cpri_dma_mux_config *cpri_mux_parm,
 		cpri_dma_out = (cpri_mux_parm + tmp)->cpri_dma_req_out;
 		cpri_core_id = (cpri_mux_parm + tmp)->src_cpri_complex;
 
-		if (cpri_core_id == CPRI_CORE_CMPLX_1) {
+		if (cpri_core_id == CPRI_CORE_CMPLX_0) {
 			value = ((value & (~(GCR_MSK2<<cpri_dma_out)))|
-					((((rxtx_id == CPRI_TX1) ||
-					(rxtx_id == CPRI_RX1))
+					((((rxtx_id == CPRI_TX0) ||
+					(rxtx_id == CPRI_RX0))
 					? 0 : 1)<<cpri_dma_out));
 		} else {
 			value = ((value & (~(GCR_MSK2<<cpri_dma_out)))|
-					((((rxtx_id == CPRI_TX1) ||
-					(rxtx_id == CPRI_RX1))
+					((((rxtx_id == CPRI_TX0) ||
+					(rxtx_id == CPRI_RX0))
 					? 1 : 0)<<cpri_dma_out));
 		}
 		scm_reg_write(value, gcr_id);
@@ -764,10 +764,10 @@ static s8 get_prr_shift_val(u32 gcr_id, enum dma_channel_id_t chan_id,
 	case 5:
 		if (comm_type == SETUP_UL) {
 			switch (jesd_id) {
-			case JESD10:
+			case JESD9:
 				bit_shift_val = (chan_id + jesd_id) + 2;
 				break;
-			case JESD9:
+			case JESD8:
 				bit_shift_val = (chan_id + jesd_id) - 2;
 				break;
 			default:
@@ -775,16 +775,16 @@ static s8 get_prr_shift_val(u32 gcr_id, enum dma_channel_id_t chan_id,
 			}
 		} else if (comm_type == SETUP_DL) {
 			switch (jesd_id) {
-			case JESD7:
+			case JESD6:
 				bit_shift_val = JESD_PRR_SHIFT_VAL_19;
 				break;
-			case JESD11:
+			case JESD10:
 				bit_shift_val = JESD_PRR_SHIFT_VAL_23;
 				break;
-			case JESD8:
+			case JESD7:
 				bit_shift_val = JESD_PRR_SHIFT_VAL_25;
 				break;
-			case JESD12:
+			case JESD11:
 				bit_shift_val = JESD_PRR_SHIFT_VAL_29;
 				break;
 			default:
@@ -797,41 +797,41 @@ static s8 get_prr_shift_val(u32 gcr_id, enum dma_channel_id_t chan_id,
 		bit_shift_val = (chan_id - 8) * 3;
 		break;
 	case 45:
-		if ((jesd_id >= JESD7 && jesd_id <= JESD10) ||
-				(chan_id == DMA_CHAN_9 && jesd_id == JESD6) ||
-				(chan_id == DMA_CHAN_8 && jesd_id == JESD5))
+		if ((jesd_id >= JESD6 && jesd_id <= JESD9) ||
+				(chan_id == DMA_CHAN_9 && jesd_id == JESD5) ||
+				(chan_id == DMA_CHAN_8 && jesd_id == JESD4))
 			bit_shift_val = (chan_id * 2) - 2 * (12 - jesd_id);
-		else if ((jesd_id >= JESD1 && jesd_id <= JESD4) ||
-				(chan_id == DMA_CHAN_13 && jesd_id == JESD6) ||
-				(chan_id == DMA_CHAN_12 && jesd_id == JESD5))
+		else if ((jesd_id >= JESD0 && jesd_id <= JESD3) ||
+				(chan_id == DMA_CHAN_13 && jesd_id == JESD5) ||
+				(chan_id == DMA_CHAN_12 && jesd_id == JESD4))
 			bit_shift_val = (chan_id * 2) - 2 * (9 - jesd_id);
 		break;
 	case 48:
 	case 51:
 		switch (jesd_id) {
+		case JESD4:
+		case JESD0:
+			bit_shift_val = JESD_PRR_SHIFT_VAL_00;
+			break;
 		case JESD5:
 		case JESD1:
-			bit_shift_val = JESD_PRR_SHIFT_VAL_00;
+			bit_shift_val = JESD_PRR_SHIFT_VAL_06;
 			break;
 		case JESD6:
 		case JESD2:
-			bit_shift_val = JESD_PRR_SHIFT_VAL_06;
+			bit_shift_val = JESD_PRR_SHIFT_VAL_14;
 			break;
 		case JESD7:
 		case JESD3:
-			bit_shift_val = JESD_PRR_SHIFT_VAL_14;
-			break;
-		case JESD8:
-		case JESD4:
 			bit_shift_val = JESD_PRR_SHIFT_VAL_20;
 			break;
-		case JESD9:
+		case JESD8:
 			bit_shift_val = JESD_PRR_SHIFT_VAL_03;
 			break;
-		case JESD10:
+		case JESD9:
 			bit_shift_val = JESD_PRR_SHIFT_VAL_11;
 			break;
-		case JESD13:
+		case JESD12:
 			bit_shift_val = JESD_PRR_SHIFT_VAL_17;
 			break;
 		default:
@@ -884,7 +884,7 @@ static u8 get_prr_shift_val_reg52(enum jesd_id_t jesd_id,
 		bit_shift_val = jesd_id * 2 + 8;
 		break;
 	case SETUP_DL:
-		if (jesd_id == JESD13)
+		if (jesd_id == JESD12)
 			bit_shift_val = 0;
 		else
 			bit_shift_val = jesd_id * 2 - 8;
@@ -901,63 +901,63 @@ static u8 validate_req(enum vsp_id_t vsp_id, enum dma_channel_id_t chan_id,
 	if (vsp_id >= M1VSP_MIN && vsp_id <= M1VSP_MAX) {
 		switch (comm_type) {
 		case SETUP_DL:
-			if (jesd_id == JESD13 && chan_id == DMA_CHAN_14)
+			if (jesd_id == JESD12 && chan_id == DMA_CHAN_14)
 				ret = 1;
 			break;
 		case SETUP_UL:
-			if ((jesd_id == JESD10 && chan_id == DMA_CHAN_13) ||
-				(jesd_id == JESD9 && chan_id == DMA_CHAN_12) ||
-				(jesd_id == JESD8 && chan_id == DMA_CHAN_15) ||
-				(jesd_id == JESD7 && chan_id == DMA_CHAN_14) ||
-				(jesd_id == JESD6 && chan_id == DMA_CHAN_13) ||
-				(jesd_id == JESD5 && chan_id == DMA_CHAN_12) ||
-				(jesd_id == JESD4 && chan_id == DMA_CHAN_11) ||
-				(jesd_id == JESD3 && chan_id == DMA_CHAN_10) ||
-				(jesd_id == JESD2 && chan_id == DMA_CHAN_9) ||
-				(jesd_id == JESD1 && chan_id == DMA_CHAN_8))
+			if ((jesd_id == JESD9 && chan_id == DMA_CHAN_13) ||
+				(jesd_id == JESD8 && chan_id == DMA_CHAN_12) ||
+				(jesd_id == JESD7 && chan_id == DMA_CHAN_15) ||
+				(jesd_id == JESD6 && chan_id == DMA_CHAN_14) ||
+				(jesd_id == JESD5 && chan_id == DMA_CHAN_13) ||
+				(jesd_id == JESD4 && chan_id == DMA_CHAN_12) ||
+				(jesd_id == JESD3 && chan_id == DMA_CHAN_11) ||
+				(jesd_id == JESD2 && chan_id == DMA_CHAN_10) ||
+				(jesd_id == JESD1 && chan_id == DMA_CHAN_9) ||
+				(jesd_id == JESD0 && chan_id == DMA_CHAN_8))
 				ret = 1;
 			break;
 		}
 	} else if (vsp_id >= M2VSP_MIN && vsp_id <= M2VSP_MAX) {
 		switch (comm_type) {
 		case SETUP_DL:
-			if (jesd_id == JESD13 && chan_id == DMA_CHAN_14)
+			if (jesd_id == JESD12 && chan_id == DMA_CHAN_14)
 				ret = 1;
 			break;
 		case SETUP_UL:
-			if ((jesd_id == JESD10 && chan_id == DMA_CHAN_13) ||
-				(jesd_id == JESD9 && chan_id == DMA_CHAN_12) ||
-				(jesd_id == JESD8 && chan_id == DMA_CHAN_11) ||
-				(jesd_id == JESD7 && chan_id == DMA_CHAN_10) ||
-				(jesd_id == JESD6 && chan_id == DMA_CHAN_9) ||
-				(jesd_id == JESD5 && chan_id == DMA_CHAN_8) ||
-				(jesd_id == JESD4 && chan_id == DMA_CHAN_15) ||
+			if ((jesd_id == JESD9 && chan_id == DMA_CHAN_13) ||
+				(jesd_id == JESD8 && chan_id == DMA_CHAN_12) ||
+				(jesd_id == JESD7 && chan_id == DMA_CHAN_11) ||
+				(jesd_id == JESD6 && chan_id == DMA_CHAN_10) ||
+				(jesd_id == JESD5 && chan_id == DMA_CHAN_9) ||
+				(jesd_id == JESD4 && chan_id == DMA_CHAN_8) ||
 				(jesd_id == JESD3 && chan_id == DMA_CHAN_15) ||
-				(jesd_id == JESD2 && chan_id == DMA_CHAN_13) ||
-				(jesd_id == JESD1 && chan_id == DMA_CHAN_12))
+				(jesd_id == JESD2 && chan_id == DMA_CHAN_15) ||
+				(jesd_id == JESD1 && chan_id == DMA_CHAN_13) ||
+				(jesd_id == JESD0 && chan_id == DMA_CHAN_12))
 				ret = 1;
 			break;
 		}
 	} else if (vsp_id >= M3VSP_MIN && vsp_id <= M3VSP_MAX) {
 		switch (comm_type) {
 		case SETUP_DL:
-			if ((jesd_id == JESD8 &&
+			if ((jesd_id == JESD7 &&
 					(chan_id == DMA_CHAN_11 ||
 						chan_id == DMA_CHAN_15)) ||
-					(jesd_id == JESD7 &&
+					(jesd_id == JESD6 &&
 					(chan_id == DMA_CHAN_10 ||
 						chan_id == DMA_CHAN_14)) ||
-					(jesd_id == JESD6 &&
+					(jesd_id == JESD5 &&
 					(chan_id == DMA_CHAN_9 ||
 						chan_id == DMA_CHAN_13)) ||
-					(jesd_id == JESD5 &&
+					(jesd_id == JESD4 &&
 					(chan_id == DMA_CHAN_8 ||
 						chan_id == DMA_CHAN_12)))
 				ret = 1;
 			break;
 		case SETUP_UL:
-			if ((jesd_id == JESD10 && chan_id == DMA_CHAN_15) ||
-				(jesd_id == JESD9 && chan_id == DMA_CHAN_14))
+			if ((jesd_id == JESD9 && chan_id == DMA_CHAN_15) ||
+				(jesd_id == JESD8 && chan_id == DMA_CHAN_14))
 				ret = 1;
 			break;
 		}
@@ -992,7 +992,7 @@ int gcr_jesd_dma_ptr_rst_req(struct jesd_dma_ptr_rst_parm *ptr_rst_parm,
 			return -EINVAL;
 
 		if (comm_type == SETUP_UL &&
-				jesd_id == JESD3 &&
+				jesd_id == JESD2 &&
 				chan_id == DMA_CHAN_15)
 			if (vsp_id >= M2VSP_MIN && vsp_id <= M2VSP_MAX)
 				goto REG52;
@@ -1020,10 +1020,10 @@ int gcr_jesd_dma_ptr_rst_req(struct jesd_dma_ptr_rst_parm *ptr_rst_parm,
 REG52:
 		/* logic to set GCR reg 52 */
 		if (((comm_type == SETUP_UL) &&
-				(jesd_id >= JESD1 && jesd_id <= JESD10)) ||
+				(jesd_id >= JESD0 && jesd_id <= JESD9)) ||
 				((comm_type == SETUP_DL) &&
-				((jesd_id >= JESD5 && jesd_id <= JESD8) ||
-				(jesd_id == JESD13)))) {
+				((jesd_id >= JESD4 && jesd_id <= JESD7) ||
+				(jesd_id == JESD12)))) {
 			if (!validate_req(vsp_id, chan_id, jesd_id, comm_type))
 				return 0;
 			mask = GCR_MSK1;

@@ -57,10 +57,10 @@ struct gcr_parm {
 
 /**  CPRI core group CommonDefs*/
 enum cpri_core_info {
-	CPRI_CORE_CMPLX_1 = 1,       /**< CPRI core complex group coreId */
-	CPRI_CORE_CMPLX_2,       /**< CPRI core complex group coreId */
-	CPRI_FRAMER_1 = 1,           /**< CPRI core complex framerId */
-	CPRI_FRAMER_2,           /**< CPRI core complex framerId */
+	CPRI_CORE_CMPLX_0 = 1,       /**< CPRI core complex group coreId */
+	CPRI_CORE_CMPLX_1,       /**< CPRI core complex group coreId */
+	CPRI_FRAMER_0 = 1,           /**< CPRI core complex framerId */
+	CPRI_FRAMER_1,           /**< CPRI core complex framerId */
 	CPRI_RX = 1,                 /**< CPRI cmd framer is selected for rx */
 	CPRI_TX                  /**< CPRI cmd framer is selected for tx */
 };
@@ -110,7 +110,8 @@ enum dma_channel_id_t {
 
 
 enum vsp_id_t {
-	VSP1 = 1,
+	VSP0 = 1,
+	VSP1,
 	VSP2,
 	VSP3,
 	VSP4,
@@ -119,8 +120,7 @@ enum vsp_id_t {
 	VSP7,
 	VSP8,
 	VSP9,
-	VSP10,
-	VSP11
+	VSP10
 };
 
 enum cpri_dma_map {
@@ -150,7 +150,8 @@ enum cpri_dma_map {
 };
 
 enum jesd_id_t {
-	JESD1 = 1,
+	JESD0 = 1,
+	JESD1,
 	JESD2,
 	JESD3,
 	JESD4,
@@ -161,9 +162,7 @@ enum jesd_id_t {
 	JESD9,
 	JESD10,
 	JESD11,
-	JESD12,
-	JESD13
-
+	JESD12
 };
 
 enum dma_comm_type_t {
@@ -191,10 +190,10 @@ struct dma_intf_switch_parm_t {
 
 
 enum cpri_rxtx_id {
-	CPRI_RX1 = 1,
-	CPRI_RX2,
-	CPRI_TX1,
-	CPRI_TX2
+	CPRI_RX0 = 1,
+	CPRI_RX1,
+	CPRI_TX0,
+	CPRI_TX1
 };
 
 struct cpri_dma_mux_config {
