@@ -42,6 +42,7 @@
 #define GCR_JESD_PTR_RST_CFG   _IOW(GCR_IOC_MAGIC, 4, struct gcr_parm *)
 #define GCR_WRITE_REG          _IOW(GCR_IOC_MAGIC, 5, struct gcr_parm *)
 #define GCR_READ_REG           _IOWR(GCR_IOC_MAGIC, 6, struct gcr_parm *)
+#define GCR_CLEAR_REG          _IO(GCR_IOC_MAGIC, 7)
 
 
 #define MAX_VSP_IN_DFE   11

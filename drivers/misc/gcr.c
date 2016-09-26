@@ -34,6 +34,7 @@
 #include <linux/uaccess.h>
 #include <linux/module.h>
 #include <linux/gcr.h>
+#include <linux/delay.h>
 
 #define DRIVER_NAME "gcr"
 #define MOD_VERSION "0.1"
@@ -2081,7 +2082,13 @@ struct gcr_field_desc gcr_descs[] = {
 	GCR_DESC(63, 0, 1, 0x2, "VSP11_CH16", "cpri_rx2 dma request 16"),
 	GCR_DESC(63, 0, 1, 0x3, "VSP11_CH16", "cpri_rx2 dma request 24"),
 };
-
+/* reg51 is taken out because there are bits related to flash control*/
+static int gcr_regs[] = {
+	12, 21, 3,  37, 41, 45, 49, 52, 59,  8,
+	13, 22, 30, 38, 42, 46, 5,  56, 60,  9,
+	10, 2,  23, 35, 39, 43, 47, 50, 57,  62,
+	11, 20, 29, 36, 40, 44, 48, 58,  63,
+};
 static struct kobject *gcr_kobj;
 static uint32_t debug = DEBUG_MESSAGES;
 
@@ -2105,25 +2112,30 @@ long gcr_ctrl(struct file *file, unsigned int cmd, unsigned long ioctl_arg)
 	unsigned int size = 0;
 	struct gcr_parm *arg = NULL;
 	unsigned int count = 0;
+	struct  gcr_ctl_parm param_clear = {
+		.param = 0,
+	};
 
-	priv = (struct gcr_priv *)file->private_data;
-	gcr = priv->gcr_reg;
+	if (cmd != GCR_CLEAR_REG) {
+		priv = (struct gcr_priv *)file->private_data;
+		gcr = priv->gcr_reg;
+		size = sizeof(struct gcr_parm);
+		arg = kmalloc(size, GFP_KERNEL);
+		if (!arg) {
+			ERR("gcr_ctrl: kmalloc failed for gcr_parm\n");
+			ret = -EFAULT;
+			goto end;
+		}
 
-	size = sizeof(struct gcr_parm);
-	arg = kmalloc(size, GFP_KERNEL);
-	if (!arg) {
-		ERR("gcr_ctrl: kmalloc failed for gcr_parm\n");
-		ret = -EFAULT;
-		goto end;
+		if (copy_from_user((void *)arg, (struct gcr_parm *)ioctl_arg, size)) {
+			kfree(arg);
+			ERR("gcr_ctrl: copy_from_user failed\n");
+			ret = -EFAULT;
+			goto end;
+		}
+		count = ((struct gcr_parm *)arg)->count;
 	}
 
-	if (copy_from_user((void *)arg, (struct gcr_parm *)ioctl_arg, size)) {
-		kfree(arg);
-		ERR("gcr_ctrl: copy_from_user failed\n");
-		ret = -EFAULT;
-		goto end;
-	}
-	count = ((struct gcr_parm *)arg)->count;
 	switch (cmd) {
 	case GCR_CONFIG_CMD:
 		{
@@ -2348,6 +2360,12 @@ long gcr_ctrl(struct file *file, unsigned int cmd, unsigned long ioctl_arg)
 			kfree(param);
 		}
 		break;
+	case GCR_CLEAR_REG:
+		for (i = 0; i < sizeof(gcr_regs) / sizeof(int); i++) {
+			param_clear.reg_offset = gcr_regs[i];
+			gcr_write_set(&param_clear, 1);
+		}
+		break;
 	default:
 		ERR("unknown ioctl command %u\n", cmd);
 		ret = -EINVAL;
@@ -2406,6 +2424,25 @@ static ssize_t set_debug(struct device *dev, struct device_attribute *devattr,
 
         debug = val;
         return count;
+}
+
+
+static ssize_t clear_gcr_reg(struct device *dev, struct device_attribute *devattr,
+		const char *buf, size_t count)
+{
+	int i;
+	struct  gcr_ctl_parm param = {
+		.param = 0,
+	};
+
+	if (!strncmp(buf, "all", 3)) {
+		for (i = 0; i < sizeof(gcr_regs) / sizeof(int); i++) {
+			param.reg_offset = gcr_regs[i];
+			gcr_write_set(&param, 1);
+			pr_info("gcr%d cleared\n", gcr_regs[i]);
+		}
+	}
+	return count;
 }
 
 static unsigned int gcr_table_probed;
@@ -2468,11 +2505,13 @@ static ssize_t show_gcr_status(struct device *dev,
 
 static DEVICE_ATTR(debug,  S_IWUSR | S_IRUGO, show_debug,    set_debug);
 static DEVICE_ATTR(status, S_IRUGO, show_gcr_status, NULL);
+static DEVICE_ATTR(clear, S_IWUSR, NULL, clear_gcr_reg);
 //static DEVICE_ATTR(versions,         S_IRUGO, show_versions, NULL);
 
 static struct attribute *attributes[] = {
 	&dev_attr_debug.attr,
 	&dev_attr_status.attr,
+	&dev_attr_clear.attr,
 	NULL
 };
 
