@@ -105,6 +105,8 @@ static struct class *vspa_class = NULL;
 #define ERR(...)	{if (vspadev->debug & DEBUG_MESSAGES) \
 				pr_err(VSPA_DEVICE_NAME __VA_ARGS__);}
 
+#define ERR_RATELIMITED(...)	{if (vspadev->debug & DEBUG_MESSAGES) \
+				pr_err_ratelimited(VSPA_DEVICE_NAME __VA_ARGS__);}
 #define CONTROL_REG_MASK (~0x000100FF)
 #define CONTROL_PDN_EN	 (1<<31)
 #define CONTROL_HOST_GO	 (1<<0)
@@ -1306,14 +1308,14 @@ static irqreturn_t vspa_dma_irq_handler(int irq, void *dev)
 	int err;
 
 //	spin_lock(&vspadev->irq_lock);
-	if (vspadev->irq_bits) { pr_err("VSPA%d dma irqs = %d\n",
+	if (vspadev->irq_bits) { pr_err_ratelimited("VSPA%d dma irqs = %d\n",
 			vspadev->id, vspadev->irq_bits);
 	}
 	vspadev->irq_bits |= 4;
 
 	status = vspa_reg_read(regs + STATUS_REG_OFFSET);
 	IF_DEBUG(DEBUG_DMA_IRQ)
-	pr_info("vspa%d: dma_irq %08x, COMP %08x, XFRERR %08x, CFGERR %08x\n",
+	pr_info_ratelimited("vspa%d: dma_irq %08x, COMP %08x, XFRERR %08x, CFGERR %08x\n",
 			vspadev->id,
 			vspa_reg_read(regs + DMA_IRQ_STAT_REG_OFFSET),
 			vspa_reg_read(regs + DMA_COMP_STAT_REG_OFFSET),
@@ -1347,7 +1349,7 @@ static irqreturn_t vspa_dma_irq_handler(int irq, void *dev)
 		}
 		/* Watch for completed DMAs from VSPA with incorrect IRQ_EN */
 		if (stat) {
-			ERR("%d: DMA IRQ STAT %08x\n", vspadev->id, stat);
+			ERR_RATELIMITED("%d: DMA IRQ STAT %08x\n", vspadev->id, stat);
 			vspa_reg_write(regs + DMA_IRQ_STAT_REG_OFFSET, stat);
 		}
 	}
@@ -1361,7 +1363,7 @@ static irqreturn_t vspa_dma_irq_handler(int irq, void *dev)
 			if (stat & spm_mask) /* Transfer error from SPM DMA */
 				spm_flags |= DMA_FLAG_XFRERR;
 			if (stat & ~(mask | spm_mask)) { /* Other channels */
-				ERR("%d: DMA XFRERR %08x\n", vspadev->id, stat);
+				ERR_RATELIMITED("%d: DMA XFRERR %08x\n", vspadev->id, stat);
 			}
 			vspa_reg_write(regs+DMA_XFRERR_STAT_REG_OFFSET, stat);
 		}
@@ -1373,7 +1375,7 @@ static irqreturn_t vspa_dma_irq_handler(int irq, void *dev)
 			if (stat & spm_mask) /* Config error from SPM DMA */
 				spm_flags |= DMA_FLAG_CFGERR;
 			if (stat & ~(mask | spm_mask)) { /* Other channels */
-				ERR("%d: DMA CFGERR %08x\n", vspadev->id, stat);
+				ERR_RATELIMITED("%d: DMA CFGERR %08x\n", vspadev->id, stat);
 			}
 			vspa_reg_write(regs+DMA_CFGERR_STAT_REG_OFFSET, stat);
 		}
@@ -1401,7 +1403,7 @@ static irqreturn_t vspa_dma_irq_handler(int irq, void *dev)
 				vspadev->seqid[dr->id].cmd_buffer_idx = -1;
 			}
 		} else
-			ERR("%d: unknown DMA type %d\n", vspadev->id, dr->type);
+			ERR_RATELIMITED("%d: unknown DMA type %d\n", vspadev->id, dr->type);
 		dq->idx_chk = dq->idx_dma;
 		dma_transmit(vspadev);
 	}
