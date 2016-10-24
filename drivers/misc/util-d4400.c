@@ -20,7 +20,12 @@ int fsl_get_board_type(char *name_str)
 		type = BOARD_TYPE_D4400_EVB;
 	else if (strstr(name_str, D4400_RDB_NAME_STR) != NULL)
 		type = BOARD_TYPE_D4400_RDB;
+	else if (strstr(name_str, D4400_4T4RK1_NAME_STR) != NULL)
+		type = BOARD_TYPE_D4400_4T4RK1;
 	else if (strstr(name_str, D4400_4T4R_NAME_STR) != NULL)
+		/* strstr() used for catch-all for boards with "4T4R"
+		 * substring.
+		*/
 		type = BOARD_TYPE_D4400_4T4R;
 	else if (strstr(name_str, D4400_21RRH_NAME_STR) != NULL)
 		type = BOARD_TYPE_D4400_21RRH;
@@ -54,7 +59,12 @@ enum board_type ipmi_get_board_type(char *name_str)
 		type = BOARD_TYPE_D4400_EVB;
 	else if (strstr(name_str, D4400_RDB_NAME_STR) != NULL)
 		type = BOARD_TYPE_D4400_RDB;
+	else if (strstr(name_str, D4400_4T4RK1_NAME_STR) != NULL)
+		type = BOARD_TYPE_D4400_4T4RK1;
 	else if (strstr(name_str, D4400_4T4R_NAME_STR) != NULL)
+		/* strstr() used for catch-all for boards with "4T4R"
+		 * substring.
+		*/
 		type = BOARD_TYPE_D4400_4T4R;
 	else if (strstr(name_str, D4400_21RRH_NAME_STR) != NULL)
 		type = BOARD_TYPE_D4400_21RRH;

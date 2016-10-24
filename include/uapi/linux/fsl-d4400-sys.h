@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2015-2016 Freescale Semiconductor, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -54,7 +54,7 @@ struct ipmi_mrec_nxp_board_info {
 	u32	features;
 };
 
-/* Bit position of PA control signals */
+/* Bit position of PA control signals (4t4r/4t4rk1) */
 enum pa_sig_bit_pos {
 	PA_ALARM1_B	= 0,
 	PA_ALARM2_B	= 1,
@@ -98,8 +98,10 @@ enum pa_num {
 #define PA_CON_MAX	2 /* 2 PA connectors */
 #define PA_ALARM_MAX	2 /* 2 alarms per PA connector */
 
-/* POC 4t4r PA connector control signals */
+/* POC 4t4r/4t4rk1 PA connector control signals */
 struct pa_con {
+	int pa_alarm_enabled[PA_ALARM_MAX];
+	int alarm_irq[PA_ALARM_MAX];
 	int pins[PA_PINCNT];
 	u32 sig;
 			/*
@@ -125,6 +127,13 @@ struct pa_con {
 			 */
 };
 
+/* 4T4RK1 board has 4 rx lna 8v bias enable and 4 rx lna
+ * status.
+ */
+#define RX_8VBIAS_EN_MAX	(4)
+#define RX_8VBIAS_STAT_MAX	(4)
+
+
 struct fsl_4t4r_board {
 	u32 ipmi_mrec_ver;
 	u32 freqband_MHz;
@@ -142,12 +151,53 @@ struct fsl_4t4r_board {
 	u32 gpio_led1;
 	u32 gpio_led2;
 	struct pa_con pac[PA_CON_MAX];
+	struct delayed_work pa_alarm_irq_wq;
 
 	u32 pa_con1;	/* Bits corresponds to enum pa_sig_bit_pos */
 	u32 pa_con2;	/* Bits corresponds to enum pa_sig_bit_pos */
 	int pa_con1_pins[PA_PINCNT];
 	int pa_con2_pins[PA_PINCNT];
 };
+
+struct fsl_4t4rk1_board {
+	u32 ipmi_mrec_ver;
+	u32 freqband_MHz;
+        /* features: PA wattage, number of Tx/Rx
+         * b[31:16] - max PA wattage, A.B watts
+         *    b[31:24] - A
+         *    b[23:16] - B
+         * b[15:8] - number of TX channels
+         * b[7:0] - number of RX channels
+         */
+	u32 features;
+	u32 max_pa_watts; /* A.B  b[15:8] - A, b[7:0] - B */
+	u32 max_tx;
+	u32 max_rx;
+	u32 gpio_led1;
+	u32 gpio_led2;
+	u32 gpio_led3;
+	u32 gpio_led4;
+	u32 gpio_rs485_dir;
+	struct pa_con pac[PA_CON_MAX];
+	struct delayed_work pa_alarm_irq_wq;
+
+	/* Rx LNA 8v bias enable and status */
+	u32 rx_8vbias_en; /* Each bit corresponds to an rx bias control
+			   * b[0]-rx1, b[1]-rx2, b[2]-rx3
+			   */
+	int rx_8vbias_en_pins[RX_8VBIAS_EN_MAX];
+
+	u32 rx_8vbias_stat; /* Each bit corresponds to an rx bias control
+			     * b[0]-rx1, b[1]-rx2, b[2]-rx3
+			     */
+	int rx_8vbias_stat_pins[RX_8VBIAS_STAT_MAX];
+
+	/* PA connector 1 is not available */
+	u32 pa_con2;	/* Bits corresponds to enum pa_sig_bit_pos */
+	int pa_con2_pins[PA_PINCNT];
+};
+
+
 
 #define NXP_D4400_SYS_MAGIC 'F'
 

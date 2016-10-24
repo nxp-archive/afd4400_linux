@@ -299,12 +299,12 @@ static struct of_device_id spi_match_roc0[] = {
 	{.compatible = "xcvr_spi1_0", .data = &roc_spi_params[AD93682]},
 	{.compatible = "xcvr_spi5_1", .data = &roc_spi_params[AD9525]},
 	{.compatible = "xcvr_spi1_2", .data = &roc_spi_params[AD93681]},
-#elif defined CONFIG_BOARD_4T4R
+#elif defined CONFIG_BOARD_4T4R || defined CONFIG_BOARD_4T4RK1
 	{.compatible = "xcvr_spi1_1", .data = &roc_spi_params[AD93681]}, /* tx */
 	{.compatible = "xcvr_spi5_0", .data = &roc_spi_params[AD9525]},
 	{.compatible = "xcvr_spi1_0", .data = &roc_spi_params[AD93682]}, /* rx */
 #else
-#error No board defined for ROC_0 transceiver
+#error xcvr.c No board defined for ROC_0 transceiver
 #endif
 	{},
 };
@@ -328,7 +328,7 @@ static struct of_device_id spi_match_roc1[] = {
 			.data = &roc_spi_params[AD9525 + ROC_SPI_CNT]},
 	{.compatible = "xcvr_spi3_2",
 			.data = &roc_spi_params[AD93681 + ROC_SPI_CNT]},
-#elif defined CONFIG_BOARD_4T4R
+#elif defined CONFIG_BOARD_4T4R || defined CONFIG_BOARD_4T4RK1
 	{.compatible = "xcvr_spi3_0",
 			.data = &roc_spi_params[AD93682 + ROC_SPI_CNT]}, /* tx */
 	{.compatible = "xcvr_spi5_0",
@@ -336,7 +336,7 @@ static struct of_device_id spi_match_roc1[] = {
 	{.compatible = "xcvr_spi3_1",
 			.data = &roc_spi_params[AD93681 + ROC_SPI_CNT]}, /* rx */
 #else
-#error No board defined for ROC_1 transceiver
+#error xcvr.c No board defined for ROC_1 transceiver
 #endif
 	{},
 

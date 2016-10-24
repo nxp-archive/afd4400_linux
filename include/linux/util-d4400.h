@@ -25,6 +25,7 @@
 #define D4400_RDB_NAME_STR	"RDB"
 #define D4400_4T4R_NAME_STR	"4T4R"
 #define D4400_21RRH_NAME_STR	"21RRH"
+#define D4400_4T4RK1_NAME_STR	"4T4RK1"
 
 /* Name string is matched against revision name.  Only
  * part of the substring needs to match.
@@ -41,6 +42,7 @@ enum board_type {
 	BOARD_TYPE_D4400_RDB = 1,
 	BOARD_TYPE_D4400_4T4R = 2,
 	BOARD_TYPE_D4400_21RRH = 3,
+	BOARD_TYPE_D4400_4T4RK1 = 4,
 };
 
 enum board_rev {

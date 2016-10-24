@@ -12,7 +12,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2015-2016 Freescale Semiconductor, Inc.
  *
  */
 
@@ -60,15 +60,19 @@ struct d4400_sys_dev *d4400_sys_data;
 static struct ipmi_info *d4400_sys_verify_ipmi_info(
 	struct d4400_sys_i2c_eeprom *eeprom);
 
+/* Note that the board name index must match the
+ * enum board_type in util-d4400.h
+ */
 static const char * const board_names[] = {
 	"UNKNOWN",	/* BOARD_TYPE_UNKNOWN+1 */
 	"D4400_EVB",	/* BOARD_TYPE_D4400_EVB+1 */
 	"D4400_RDB",	/* BOARD_TYPE_D4400_RDB+1 */
 	"D4400_4T4R",	/* BOARD_TYPE_D4400_4T4R+1 */
-	"D4400_21RRH"	/* BOARD_TYPE_D4400_21RRH+1 */
+	"D4400_21RRH",	/* BOARD_TYPE_D4400_21RRH+1 */
+	"D4400_4T4RK1",	/* BOARD_TYPE_D4400_4T4RK1+1 */
 };
 
-/* Default IPMI data:
+/* Default IPMI data for 4T4R POC:
  *  Mfg str:  "Freescale"
  *  Name str: "FSL D4400 4T4R Reference Board"
  *  Serial:   "1001"
@@ -99,6 +103,56 @@ static const u8 default_ipmi_4t4r_v1_0[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00
 };
+
+/* Default IPMI data for 4T4RK1 POC board:
+ *  Mfg str:  "NXP"
+ *  Name str: "NXP AFD4400-4T4RK1 System"
+ *  Serial:   "1001"
+ *  Part num: "REV A"
+ *  Multirecord version v1.01
+ */
+static const u8 default_ipmi_4t4rk1_v1_01[] = {
+0x01, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00, 0xf6,
+0x01, 0x07, 0x19, 0x00, 0x00, 0x00, 0xc3, 0x4e,
+0x58, 0x50, 0xd9, 0x4e, 0x58, 0x50, 0x20, 0x41,
+0x46, 0x44, 0x34, 0x34, 0x30, 0x30, 0x2d, 0x34,
+0x54, 0x34, 0x52, 0x4b, 0x31, 0x20, 0x53, 0x79,
+0x73, 0x74, 0x65, 0x6d, 0xc4, 0x31, 0x30, 0x30,
+0x31, 0xc5, 0x52, 0x45, 0x56, 0x20, 0x41, 0xc0,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xef,
+0xc0, 0x02, 0x04, 0xfe, 0x3c, 0x01, 0x00, 0x01,
+0x00, 0xc3, 0x82, 0x10, 0xbc, 0xef, 0x34, 0x08,
+0x00, 0x00, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+#ifdef CONFIG_BOARD_4T4R
+static const u8 *default_ipmi_rawdata = default_ipmi_4t4r_v1_0;
+#elif defined CONFIG_BOARD_4T4RK1
+static const u8 *default_ipmi_rawdata = default_ipmi_4t4rk1_v1_01;
+#else
+#error fsl-d4400-sys.c Default IPMI table not defined!
+#endif
 
 /* Current/power monitoring ina220 device for 4T4R21 revC */
 #define INA220_I2C_BUSNUM	6 /* i2c9 */
@@ -224,6 +278,22 @@ int d4400_sys_leds_set_clear(unsigned int set, unsigned int clear)
 				(leds & 0x02)>>1);
 		}
 		break;
+	case BOARD_TYPE_D4400_4T4RK1:
+		{
+			struct fsl_4t4rk1_board *brd_4t4rk1 =
+				(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
+
+			leds = (u8) (((leds & ~clear) | set) & 0x0f);
+			gpio_direction_output(brd_4t4rk1->gpio_led1,
+				leds & 0x01);
+			gpio_direction_output(brd_4t4rk1->gpio_led2,
+				(leds & 0x02)>>1);
+			gpio_direction_output(brd_4t4rk1->gpio_led3,
+				(leds & 0x04)>>2);
+			gpio_direction_output(brd_4t4rk1->gpio_led4,
+				(leds & 0x08)>>3);
+		}
+		break;
 	default:
 		break;
 	}
@@ -245,7 +315,7 @@ int d4400_sys_set_reboot_method(unsigned int method)
 EXPORT_SYMBOL(d4400_sys_set_reboot_method);
 
 
-static int pa_set_clear(int pa, u32 set, u32 clear,
+static int pa_set_clear_4t4r(int pa, u32 set, u32 clear,
 	struct fsl_4t4r_board *brd_4t4r)
 {
 	int ret = 0;
@@ -258,6 +328,45 @@ static int pa_set_clear(int pa, u32 set, u32 clear,
 		pa_pins = brd_4t4r->pac[pa].pins;
 	} else
 		return -EINVAL;
+
+	if (set) {
+		/* Set some bits */
+		for (i = 0; i < PA_PINCNT; ++i) {
+			if (set & (1 << i)) {
+				gpio_direction_output(pa_pins[i], 1);
+				*pa_sig |= (1 << i);
+			}
+		}
+	}
+	if (clear) {
+		/* Clear some bits */
+		for (i = 0; i < PA_PINCNT; ++i) {
+			if (clear & (1 << i)) {
+				gpio_direction_output(pa_pins[i], 0);
+				*pa_sig &= ~(1 << i);
+			}
+		}
+	}
+	return ret;
+}
+
+static int pa_set_clear_4t4rk1(int pa, u32 set, u32 clear,
+	struct fsl_4t4rk1_board *brd_4t4rk1)
+{
+	int ret = 0;
+	int i;
+	u32 *pa_sig;
+	int *pa_pins;
+
+	if (pa == PA2) {
+		pa_sig = &brd_4t4rk1->pac[0].sig;
+		pa_pins = brd_4t4rk1->pac[0].pins;
+	} else {
+		if (pa == PA1) {
+		pr_warn(D4400_SYS_MOD_NAME ": PA connector 1 is not availabe on 4T4RK1 board.\n");
+		}
+		return -EINVAL;
+	}
 
 	if (set) {
 		/* Set some bits */
@@ -293,7 +402,14 @@ static int d4400_sys_pa_set_clear(int pa, unsigned int set, unsigned int clear)
 		{
 			struct fsl_4t4r_board *brd_4t4r =
 				(struct fsl_4t4r_board *)d4400_sys_data->brd;
-			ret = pa_set_clear(pa, set, clear, brd_4t4r);
+			ret = pa_set_clear_4t4r(pa, set, clear, brd_4t4r);
+		}
+		break;
+	case BOARD_TYPE_D4400_4T4RK1:
+		{
+			struct fsl_4t4rk1_board *brd_4t4rk1 =
+				(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
+			ret = pa_set_clear_4t4rk1(pa, set, clear, brd_4t4rk1);
 		}
 		break;
 	default:
@@ -314,6 +430,7 @@ static int d4400_sys_xcvr_present(int xcvr_id)
 
 	switch (d4400_sys_data->brd_info.board_type) {
 	case BOARD_TYPE_D4400_4T4R:
+	case BOARD_TYPE_D4400_4T4RK1:
 	case BOARD_TYPE_D4400_21RRH:
 
 		/* Two transceivers available, each bit position
@@ -352,10 +469,31 @@ static int board_ipmi_4t4r(struct ipmi_info *ipmi,
 		return 0;
 
 	/* Decode multirecord info if it exists */
-	ret = d4400_mrec_decode(mrec, &recordver, brd_4t4r);
+	ret = d4400_mrec_decode_4t4r(mrec, &recordver, brd_4t4r);
 	if (!ret)
 		brd_4t4r->ipmi_mrec_ver = recordver;
 	return ret;
+}
+
+
+static void wq_pa_alarm_4t4r(struct work_struct *work)
+{
+	//struct fsl_4t4r_board *brd_4t4r = container_of(to_delayed_work(work),
+	//	struct fsl_4t4r_board, pa_alarm_irq_wq);
+	//printk("\n\t%s %i  freqband %i MHz\n",
+	//	__func__, __LINE__, brd_4t4r->freqband_MHz);
+}
+
+static irqreturn_t pa_alarm_handler_4t4r(int irq, void *brd)
+{
+	struct fsl_4t4r_board *brd_4t4r = (struct fsl_4t4r_board *)brd;
+
+	//printk("\n\t%s %i  brd %08x pa_alarm_irq_wq %08x\n",
+	//	__func__, __LINE__, (u32)brd,
+	//	(u32)brd_4t4r->pa_alarm_irq_wq.work.func);
+
+	schedule_delayed_work(&brd_4t4r->pa_alarm_irq_wq, 0);
+	return IRQ_HANDLED;
 }
 
 static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
@@ -367,7 +505,8 @@ static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
 	struct fsl_4t4r_board *brd_4t4r = NULL;
 	int i;
 	int pa;
-	const char *dtsnode_str[PA_CON_MAX] = { "pa_con1", "pa_con2" };
+	const char *pacon_node_str[PA_CON_MAX] = { "pa_con1", "pa_con2" };
+	int alarm_irq;
 	int pin;
 	struct pa_con *pac;
 
@@ -412,6 +551,8 @@ static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
 		gpio_direction_output(brd_4t4r->gpio_led2, 0);
 	}
 
+	INIT_DELAYED_WORK(&brd_4t4r->pa_alarm_irq_wq, wq_pa_alarm_4t4r);
+
 	/* PA signals */
 	for (pa = 0; pa < PA_CON_MAX; ++pa) {
 		pac = &brd_4t4r->pac[pa];
@@ -419,18 +560,47 @@ static int board_setup_4t4r(struct d4400_sys_dev *d4400_sys)
 
 		for (i = 0; i < PA_PINCNT; ++i) {
 			pin = pac->pins[i] = of_get_named_gpio(
-				dev_node, dtsnode_str[pa], i);
+				dev_node, pacon_node_str[pa], i);
 			if (!gpio_is_valid(pin)) {
 				dev_err(dev, "4T4R brd PA%d control signal %d is not valid %i\n",
 					pa, pin, i);
 				ret = -EINVAL;
 				goto out_err;
 			}
+
+			/* Setup gpio signal */
 			gpio_request(pin, "pa_con_signal");
-			if ((i == PA_ALARM1_B) || (i == PA_ALARM2_B))
+			if ((i == PA_ALARM1_B) || (i == PA_ALARM2_B)) {
+				/* Interrupt input signals */
 				gpio_direction_input(pin);
-			else
+				alarm_irq = gpio_to_irq(pin);
+				if (alarm_irq < 0) {
+					dev_err(dev, "gpio_to_irq fail");
+					goto out_err;
+				}
+
+				pac->alarm_irq[pa] = alarm_irq;
+				ret = request_irq(alarm_irq,
+					(irq_handler_t)pa_alarm_handler_4t4r,
+					IRQF_TRIGGER_FALLING,
+					"pa_alarm_handler_4t4r",
+					brd_4t4r);
+				if (ret) {
+					dev_err(dev, "request_irq fail");
+					goto out_err;
+				}
+				/* Start with alarm irq disabled */
+				disable_irq(alarm_irq);
+				if (i == PA_ALARM1_B)
+					pac->pa_alarm_enabled[0] = 0;
+				else
+					pac->pa_alarm_enabled[1] = 0;
+
+			} else {
+				/* Gpio output */
 				gpio_direction_output(pin, 0);
+			}
+
 		}
 	}
 	/* Get IPMI multirecord info */
@@ -458,6 +628,265 @@ out_err:
 		}
 	}
 	kfree(brd_4t4r);
+	return ret;
+}
+
+static u32 get_pa_sig_4t4rk1(struct fsl_4t4rk1_board *brd_4t4rk1)
+{
+	u32 pa_sig = 0;
+	int pa = 0; /* One PA connector for 4t4rk1 */
+	int *pa_pins;
+
+	pa = 0;
+	pa_sig = brd_4t4rk1->pac[pa].sig;
+	pa_pins = brd_4t4rk1->pac[pa].pins;
+
+	/* Update gpio inputs */
+	pa_sig &= ~(1 << PA_ALARM1_B);
+	if (gpio_get_value_cansleep(pa_pins[PA_ALARM1_B]))
+		pa_sig |= (1 << PA_ALARM1_B);
+	pa_sig &= ~(1 << PA_ALARM2_B);
+	if (gpio_get_value_cansleep(pa_pins[PA_ALARM2_B]))
+		pa_sig |= (1 << PA_ALARM2_B);
+
+	/* Update */
+	brd_4t4rk1->pac[pa].sig = pa_sig;
+
+	return pa_sig;
+}
+
+static void wq_pa_alarm_4t4rk1(struct work_struct *work)
+{
+	u32 pa_sig = 0;
+
+	struct fsl_4t4rk1_board *brd_4t4rk1 = container_of(to_delayed_work(work),
+		struct fsl_4t4rk1_board, pa_alarm_irq_wq);
+
+	pa_sig = get_pa_sig_4t4rk1(brd_4t4rk1);
+
+	if (pa_sig & (1 << PA_ALARM1_B)) {
+		pr_info(D4400_SYS_MOD_NAME ": Alarm1_B interrupt\n");
+	}
+	if (pa_sig & (1 << PA_ALARM2_B)) {
+		pr_info(D4400_SYS_MOD_NAME ": Alarm2_B interrupt\n");
+	}
+	//printk("\n\t%s %i  freqband %i MHz\n",
+	//	__func__, __LINE__, brd_4t4rk1->freqband_MHz);
+}
+
+static irqreturn_t pa_alarm_handler_4t4rk1(int irq, void *brd)
+{
+	struct fsl_4t4rk1_board *brd_4t4rk1 = (struct fsl_4t4rk1_board *)brd;
+
+	//printk("\n\t%s %i  brd %08x pa_alarm_irq_wq %08x\n",
+	//	__func__, __LINE__, (u32)brd,
+	//	(u32)brd_4t4rk1->pa_alarm_irq_wq.work.func);
+
+	schedule_delayed_work(&brd_4t4rk1->pa_alarm_irq_wq, 0);
+	return IRQ_HANDLED;
+}
+
+static int board_ipmi_4t4rk1(struct ipmi_info *ipmi,
+	struct fsl_4t4rk1_board *brd_4t4rk1)
+{
+	int ret = 0;
+	u32 recordver = 0;
+	struct ipmi_multirecord *mrec = &ipmi->multirec;
+
+	/* Default values if nothing found */
+	brd_4t4rk1->ipmi_mrec_ver = 0;
+	brd_4t4rk1->freqband_MHz = 2100;	/* 2.1GHz */
+	brd_4t4rk1->features = 0;
+	brd_4t4rk1->max_pa_watts = 0;
+	brd_4t4rk1->max_tx = 4;
+	brd_4t4rk1->max_rx = 4;
+
+	/* Get IPMI mrec board info if available */
+	if (mrec->num_rec == 0)
+		/* Don't return error, early boards may not have
+		 * IPMI multirec burned in eeprom.
+		 */
+		return 0;
+
+	/* Decode multirecord info if it exists */
+	ret = d4400_mrec_decode_4t4rk1(mrec, &recordver, brd_4t4rk1);
+	if (!ret)
+		brd_4t4rk1->ipmi_mrec_ver = recordver;
+	return ret;
+}
+
+static int board_setup_4t4rk1(struct d4400_sys_dev *d4400_sys)
+{
+	int ret = 0;
+	struct device_node *dev_node = d4400_sys->dev->of_node;
+	struct device *dev = d4400_sys->dev;
+	struct pinctrl *pinctrl;
+	struct fsl_4t4rk1_board *brd_4t4rk1 = NULL;
+	int i;
+	int pa;
+	const char *pacon_node_str[1] = { "pa_con2" };
+	const char *led_node_str[4] = { "gpio-led1", "gpio-led2",
+		"gpio-led3", "gpio-led4"};
+	const char rx_8vbias_en_str[] = "rx_8vbias_en";
+	const char rx_8vbias_stat_str[] = "rx_8vbias_stat";
+	int alarm_irq;
+	int pin;
+	struct pa_con *pac;
+
+	brd_4t4rk1 = kzalloc(
+		sizeof(struct fsl_4t4rk1_board), GFP_KERNEL);
+	if (!brd_4t4rk1) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	/* Pin muxing */
+	pinctrl = devm_pinctrl_get_select_default(dev);
+	if (IS_ERR(pinctrl)) {
+		dev_err(dev, "4T4RK1 brd can't get/select pinctrl\n");
+		ret = -EINVAL;
+		goto out_err;
+	}
+
+	/* Led gpios */
+	for (i = 0; i < 4; ++i) {
+		u32 *led;
+
+		switch(i)
+		{
+			default:
+			case 0: led = &brd_4t4rk1->gpio_led1; break;
+			case 1: led = &brd_4t4rk1->gpio_led2; break;
+			case 2: led = &brd_4t4rk1->gpio_led3; break;
+			case 3: led = &brd_4t4rk1->gpio_led4; break;
+		}
+
+		*led = of_get_named_gpio(dev_node, led_node_str[i], 0);
+		if (!gpio_is_valid(*led)) {
+			dev_err(dev, "4T4RK1 brd led%i gpio %d is not valid\n",
+				i, *led);
+			ret = -EINVAL;
+			goto out_err;
+		} else {
+			gpio_request(*led, led_node_str[i]);
+			gpio_direction_output(*led, 0); /* Set low */
+		}
+	}
+
+	/* Uart3 RS-485 direction control gpio */
+	brd_4t4rk1->gpio_rs485_dir = of_get_named_gpio(dev_node,
+		"gpio-rs485-dir", 0);
+	if (!gpio_is_valid(brd_4t4rk1->gpio_rs485_dir)) {
+		dev_err(dev, "4T4R brd uart3 RS-485 direction control gpio %d is not valid\n",
+			brd_4t4rk1->gpio_rs485_dir);
+		ret = -EINVAL;
+		goto out_err;
+	} else {
+		/* Set low for SN65HVD72D receiver enable/transmitter
+		 * disable (REb).
+		 */
+		gpio_request(brd_4t4rk1->gpio_rs485_dir, "gpio-rs485-dir");
+		gpio_direction_output(brd_4t4rk1->gpio_rs485_dir, 0);
+	}
+
+
+	/* Rx LNA 8v bias enable and status, all are active low */
+	for (i = 0; i < RX_8VBIAS_EN_MAX; ++i) {
+		pin = brd_4t4rk1->rx_8vbias_en_pins[i] = of_get_named_gpio(
+			dev_node, rx_8vbias_en_str, i);
+		if (!gpio_is_valid(pin)) {
+			dev_err(dev, "4T4RK1 brd RX LNA 8v bias enable signal %d is not valid %i\n",
+				pin, i);
+			ret = -EINVAL;
+			goto out_err;
+		}
+		gpio_request(pin, "rx_8vbias_en");
+		/* Bias voltage enable is active low, set high to turn OFF */
+		gpio_direction_output(pin, 1);
+	}
+	for (i = 0; i < RX_8VBIAS_STAT_MAX; ++i) {
+		pin = brd_4t4rk1->rx_8vbias_stat_pins[i] = of_get_named_gpio(
+			dev_node, rx_8vbias_stat_str, i);
+		if (!gpio_is_valid(pin)) {
+			dev_err(dev, "4T4RK1 brd RX LNA 8v bias status signal %d is not valid %i\n",
+				pin, i);
+			ret = -EINVAL;
+			goto out_err;
+		}
+		gpio_request(pin, "rx_8vbias_stat");
+		gpio_direction_input(pin);
+	}
+
+
+	INIT_DELAYED_WORK(&brd_4t4rk1->pa_alarm_irq_wq, wq_pa_alarm_4t4rk1);
+
+	/* PA connector 2 control signals */
+	pa = 0;
+	pac = &brd_4t4rk1->pac[pa];
+	memset(pac, 0, sizeof(struct pa_con));
+
+	for (i = 0; i < PA_PINCNT; ++i) {
+		pin = pac->pins[i] = of_get_named_gpio(
+			dev_node, pacon_node_str[pa], i);
+		if (!gpio_is_valid(pin)) {
+			dev_err(dev, "4T4RK1 brd PA%d control signal %d is not valid %i\n",
+				pa, pin, i);
+			ret = -EINVAL;
+			goto out_err;
+		}
+
+		/* Setup gpio signal */
+		gpio_request(pin, "pa_con_signal");
+		if ((i == PA_ALARM1_B) || (i == PA_ALARM2_B)) {
+
+			/* Interrupt input signals */
+			gpio_direction_input(pin);
+			alarm_irq = gpio_to_irq(pin);
+			if (alarm_irq < 0) {
+				dev_err(dev, "gpio_to_irq fail");
+				goto out_err;
+			}
+
+			pac->alarm_irq[pa] = alarm_irq;
+			ret = request_irq(alarm_irq,
+				(irq_handler_t)pa_alarm_handler_4t4rk1,
+				IRQF_TRIGGER_FALLING,
+				"pa_alarm_handler_4t4rk1",
+				brd_4t4rk1);
+			if (ret) {
+				dev_err(dev, "request_irq fail");
+				goto out_err;
+			}
+
+		} else {
+			gpio_direction_output(pin, 0);
+		}
+	}
+
+	/* Get IPMI multirecord info */
+	if (d4400_sys->ipmi)
+		ret = board_ipmi_4t4rk1(d4400_sys->ipmi, brd_4t4rk1);
+
+	/* Normal reboot method:
+	 *   0 - via WDT and cpu reset
+	 *   1 - simulated cpu reset
+	 */
+	d4400_sys->reboot_method = 0;
+
+	/* Save board data */
+	d4400_sys->brd = brd_4t4rk1;
+
+out:
+	return 0;
+out_err:
+	/* Release gpio */
+	pa = 0;
+	for (i = 0; i < PA_PINCNT; ++i)  {
+		pin = brd_4t4rk1->pac[pa].pins[i];
+		if (pin)
+			gpio_free(pin);
+	}
+	kfree(brd_4t4rk1);
 	return ret;
 }
 
@@ -501,6 +930,9 @@ static int d4400_sys_setup_board(struct d4400_sys_dev *d4400_sys)
 	case BOARD_TYPE_D4400_4T4R:
 	case BOARD_TYPE_D4400_21RRH:
 		ret = board_setup_4t4r(d4400_sys);
+		break;
+	case BOARD_TYPE_D4400_4T4RK1:
+		ret = board_setup_4t4rk1(d4400_sys);
 		break;
 	default:
 		break;
@@ -554,6 +986,29 @@ static int generate_ipmi_info_str(char *buf)
 			sprintf(p, "\tPA watts: %i.%i\n",
 				brd_4t4r->max_pa_watts >> 4 & 0xfff,
 				brd_4t4r->max_pa_watts & 0x0f);
+			p += strlen(p);
+			break;
+		}
+	case BOARD_TYPE_D4400_4T4RK1:
+		{
+			struct fsl_4t4rk1_board *brd_4t4rk1;
+			brd_4t4rk1 = d4400_sys_data->brd;
+
+			sprintf(p, "\tFreq band: %i MHz\n",
+				brd_4t4rk1->freqband_MHz);
+			p += strlen(p);
+			sprintf(p, "\tMultirec ver: %i%i.%i%i\n",
+				(brd_4t4rk1->ipmi_mrec_ver>>24) & 0xff,
+				(brd_4t4rk1->ipmi_mrec_ver>>16) & 0xff,
+				(brd_4t4rk1->ipmi_mrec_ver>>8) & 0xff,
+				brd_4t4rk1->ipmi_mrec_ver & 0xff);
+			p += strlen(p);
+			sprintf(p, "\tMax Tx/Rx: %i  %i\n",
+				brd_4t4rk1->max_tx, brd_4t4rk1->max_rx);
+			p += strlen(p);
+			sprintf(p, "\tPA watts: %i.%i\n",
+				brd_4t4rk1->max_pa_watts >> 4 & 0xfff,
+				brd_4t4rk1->max_pa_watts & 0x0f);
 			p += strlen(p);
 			break;
 		}
@@ -620,15 +1075,31 @@ static ssize_t show_leds(struct device *dev,
 		{
 			struct fsl_4t4r_board *brd_4t4r =
 				(struct fsl_4t4r_board *)d4400_sys_data->brd;
-			leds = gpio_get_value(brd_4t4r->gpio_led1);
-			leds |= (gpio_get_value(brd_4t4r->gpio_led2) << 1);
+			if (gpio_get_value(brd_4t4r->gpio_led1) > 0)
+				leds |= (1 << 0);
+			if (gpio_get_value(brd_4t4r->gpio_led2) > 0)
+				leds |= (1 << 1);
+		}
+		break;
+	case BOARD_TYPE_D4400_4T4RK1:
+		{
+			struct fsl_4t4rk1_board *brd_4t4rk1 =
+				(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
+			if (gpio_get_value(brd_4t4rk1->gpio_led1) > 0)
+				leds |= (1 << 0);
+			if (gpio_get_value(brd_4t4rk1->gpio_led2) > 0)
+				leds |= (1 << 1);
+			if (gpio_get_value(brd_4t4rk1->gpio_led3) > 0)
+				leds |= (1 << 2);
+			if (gpio_get_value(brd_4t4rk1->gpio_led4) > 0)
+				leds |= (1 << 3);
 		}
 		break;
 	default:
 		break;
 	}
 	mutex_unlock(&d4400_sys_data->lock);
-	return sprintf(buf, "%d\n", leds);
+	return sprintf(buf, "x%02x\n", leds);
 }
 
 static ssize_t set_leds(struct device *dev, struct device_attribute *attr,
@@ -697,6 +1168,22 @@ static ssize_t show_pa(struct device *dev,
 					pa, pa_sig);
 				p += strlen(p);
 			}
+			sprintf(p, "\n");
+			p += strlen(p);
+		}
+		break;
+	case BOARD_TYPE_D4400_4T4RK1:
+		{
+			struct fsl_4t4rk1_board *brd_4t4rk1 =
+				(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
+
+			/* Get alarm signal state */
+			pa_sig = get_pa_sig_4t4rk1(brd_4t4rk1);
+
+			sprintf(p, "   PA0: Not implemented on this board\n");
+			p += strlen(p);
+			sprintf(p, "   PA1: x%08x   ", pa_sig);
+			p += strlen(p);
 			sprintf(p, "\n");
 			p += strlen(p);
 		}
@@ -827,6 +1314,102 @@ static ssize_t set_reboot(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
+#ifdef CONFIG_BOARD_4T4RK1
+static ssize_t show_rs485dir(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	int pin, val = 0;
+	struct fsl_4t4rk1_board *brd_4t4rk1 =
+		(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
+
+	mutex_lock(&d4400_sys_data->lock);
+	pin = brd_4t4rk1->gpio_rs485_dir;
+	if (gpio_get_value_cansleep(pin)) {
+		val = 1;
+	}
+	mutex_unlock(&d4400_sys_data->lock);
+
+	if (val) {
+		return sprintf(buf, "Output - %i\n", val);
+	} else {
+		return sprintf(buf, "Input - %i\n", val);
+	}
+}
+
+static ssize_t set_rs485dir(struct device *dev, struct device_attribute *attr,
+		       const char *buf, size_t count)
+{
+	int err;
+	unsigned int val;
+	int pin;
+	struct fsl_4t4rk1_board *brd_4t4rk1 =
+		(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
+
+	err = kstrtouint(buf, 0, &val);
+	if (err)
+		return err;
+
+	mutex_lock(&d4400_sys_data->lock);
+	pin = brd_4t4rk1->gpio_rs485_dir;
+	/* Bias voltage enable is active low */
+	if (val > 0) {
+		gpio_direction_output(pin, 1); /* Receiver disabled */
+	} else {
+		gpio_direction_output(pin, 0); /* Receiver enabled */
+	}
+	mutex_unlock(&d4400_sys_data->lock);
+
+	return count;
+}
+
+static ssize_t show_rx8vbias(struct device *dev,
+			struct device_attribute *devattr, char *buf)
+{
+	int i, pin, val = 0;
+	struct fsl_4t4rk1_board *brd_4t4rk1 =
+		(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
+
+	mutex_lock(&d4400_sys_data->lock);
+	/* Bias status (power good) is active low, 0-bias ON */
+	for (i = 0; i < RX_8VBIAS_STAT_MAX; ++i) {
+		pin = brd_4t4rk1->rx_8vbias_stat_pins[i];
+		if (gpio_get_value_cansleep(pin)) {
+			val |= (1 << i);
+		}
+	}
+	mutex_unlock(&d4400_sys_data->lock);
+
+	return sprintf(buf, "x%02x\n", val);
+}
+
+static ssize_t set_rx8vbias(struct device *dev, struct device_attribute *attr,
+		       const char *buf, size_t count)
+{
+	int err;
+	unsigned int val;
+	int i, pin;
+	struct fsl_4t4rk1_board *brd_4t4rk1 =
+		(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
+
+	err = kstrtouint(buf, 0, &val);
+	if (err)
+		return err;
+
+	mutex_lock(&d4400_sys_data->lock);
+	for (i = 0; i < RX_8VBIAS_EN_MAX; ++i) {
+		pin = brd_4t4rk1->rx_8vbias_en_pins[i];
+		if (val & (1 << i)) {
+			gpio_direction_output(pin, 1); /* Turn off bias */
+		} else {
+			gpio_direction_output(pin, 0); /* Turn on bias */
+		}
+	}
+	mutex_unlock(&d4400_sys_data->lock);
+
+	return count;
+}
+#endif /* CONFIG_BOARD_4T4RK1 */
+
 static DEVICE_ATTR(board_type,      S_IRUGO, show_board_type,      NULL);
 static DEVICE_ATTR(board_type_name, S_IRUGO, show_board_type_name, NULL);
 static DEVICE_ATTR(board_rev,       S_IRUGO, show_board_rev,       NULL);
@@ -836,6 +1419,10 @@ static DEVICE_ATTR(reboot, S_IWUSR | S_IRUGO, show_reboot,         set_reboot);
 static DEVICE_ATTR(debug, S_IWUSR | S_IRUGO, show_debug,           set_debug);
 static DEVICE_ATTR(ipmi_info, S_IRUGO, show_ipmi_info,             NULL);
 static DEVICE_ATTR(pa,    S_IWUSR | S_IRUGO, show_pa,              set_pa);
+#ifdef CONFIG_BOARD_4T4RK1
+static DEVICE_ATTR(rs485_dir, S_IWUSR | S_IRUGO, show_rs485dir,    set_rs485dir);
+static DEVICE_ATTR(rx_8vbias_en, S_IWUSR | S_IRUGO, show_rx8vbias, set_rx8vbias);
+#endif
 
 static struct attribute *d4400_sys_attributes[] = {
 	&dev_attr_board_type.attr,
@@ -847,6 +1434,10 @@ static struct attribute *d4400_sys_attributes[] = {
 	&dev_attr_debug.attr,
 	&dev_attr_ipmi_info.attr,
 	&dev_attr_pa.attr,
+#ifdef CONFIG_BOARD_4T4RK1
+	&dev_attr_rs485_dir.attr,
+	&dev_attr_rx_8vbias_en.attr,
+#endif
 	NULL
 };
 
@@ -1029,8 +1620,8 @@ static struct ipmi_info *d4400_sys_verify_ipmi_info(
 	/* Create IPMI info */
 	ret = ipmi_create(ipmi_rawbuf, ipmi);
 	if (ret) {
-		pr_warn(D4400_SYS_MOD_NAME ": IPMI decode failure, using defaults\n");
-		ret = ipmi_create((u8 *)default_ipmi_4t4r_v1_0, ipmi);
+		pr_warn(D4400_SYS_MOD_NAME ": IPMI decode failure, using default IPMI table\n");
+		ret = ipmi_create((u8 *)default_ipmi_rawdata, ipmi);
 		if (ret)
 			goto out1;
 	}
@@ -1189,7 +1780,6 @@ static int __init d4400_sys_probe(struct platform_device *pdev)
 		d4400_sys_data->brd_info.board_rev = fsl_get_board_rev(
 			d4400_sys_data->ipmi->board.partnum_str);
 	}
-
 	/* Setup the board */
 	ret = d4400_sys_setup_board(d4400_sys_data);
 	if (ret)

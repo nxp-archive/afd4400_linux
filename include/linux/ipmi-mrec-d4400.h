@@ -43,7 +43,10 @@ struct ipmi_mrec_nxp_board_info_v1_01 {
         u32     property4;
 };
 
-int d4400_mrec_decode(struct ipmi_multirecord *mrecs, u32 *version,
+int d4400_mrec_decode_4t4r(struct ipmi_multirecord *mrecs, u32 *version,
 	struct fsl_4t4r_board *bi);
+
+int d4400_mrec_decode_4t4rk1(struct ipmi_multirecord *mrecs, u32 *version,
+	struct fsl_4t4rk1_board *bi);
 
 #endif /* D4400_IPMI_MREC_H */

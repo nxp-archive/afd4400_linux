@@ -13,7 +13,7 @@
 /include/ "d4400.dtsi"
 
 / {
-	model = "D4400 4T4R Board";
+	model = "D4400 4T4RK1 Board";
 	compatible = "fsl,d4400";
 
 	aliases {
@@ -27,11 +27,31 @@
 
         soc@0 {
                 aips-bus@1000000 { /* AIPS1 */
+
+                        uart1: serial@ec000 {
+                                pinctrl-names = "default";
+                                pinctrl-0 = <&pinctrl_uart1_1>;
+                                status = "okay";
+                        };
+
+                        uart2: serial@f0000 {
+                                pinctrl-names = "default";
+                                pinctrl-0 = <&pinctrl_uart2_1>;
+                                status = "okay";
+                        };
+
                         uart3: serial@f4000 {
                                 pinctrl-names = "default";
                                 pinctrl-0 = <&pinctrl_uart3_1>;
                                 status = "okay";
                         };
+
+                        uart4: serial@f8000 {
+                                pinctrl-names = "default";
+                                pinctrl-0 = <&pinctrl_uart4_1>;
+                                status = "okay";
+                        };
+
 			ecspi@A4000 {
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -232,11 +252,42 @@
 
                         iomuxc@8c000 {
 
-		                uart3_pins {
-                                        pinctrl_uart3_1: uart3grp-1 {
+				// 4t4r uart1 AISG PA
+				uart1_pins {
+					pinctrl_uart1_1: uart1grp-1 {
+						fsl,pins = <
+							325 0x80000000    /* D4400_PAD_UART1_TXD_UART_1_TXD */
+							329 0x80000000    /* D4400_PAD_UART1_RXD_UART_1_RXD */
+                                                >;
+					};
+				};
+
+				// 4t4r uart2 AISG RET
+				uart2_pins {
+					pinctrl_uart2_1: uart2grp-1 {
+						fsl,pins = <
+							333 0x80000000    /* D4400_PAD_UART2_TXD_UART_2_TXD */
+							337 0x80000000    /* D4400_PAD_UART2_RXD_UART_2_RXD */
+                                                >;
+					};
+				};
+
+				// 4t4r uart3 rs-485
+				uart3_pins {
+					pinctrl_uart3_1: uart3grp-1 {
+						fsl,pins = <
+							341 0x80000000    /* D4400_PAD_UART3_TXD_UART_3_TXD */
+							345 0x80000000    /* D4400_PAD_UART3_RXD_UART_3_RXD */
+                                                >;
+					};
+				};
+
+				// 4t4rk1 uart4 linux console
+                                uart4 {
+                                        pinctrl_uart4_1: uart4grp-1 {
                                                 fsl,pins = <
-                                                        341 0x80000000    /* D4400_PAD_UART3_TXD_UART_3_TXD */
-                                                        345 0x80000000    /* D4400_PAD_UART3_RXD_UART_3_RXD */
+                                                        350 0x80000000    /* D4400_PAD_UART4_TXD_UART_4_TXD */
+                                                        356 0x80000000    /* D4400_PAD_UART4_RXD_UART_4_RXD */
                                                 >;
                                         };
                                 };
@@ -262,11 +313,38 @@
                                         };
                                 };
 
+                                rs485_dir_pins {
+                                        pinctrl_rs485_dir_1: rs485dirgrp-1 {
+                                                fsl,pins = <
+                                                        648 0x80000000    /* D4400_PAD_GPIOB2_GPIOB_2 */
+                                                >;
+                                        };
+                                };
+
+                                rxlna_8vbias_pins {
+                                        pinctrl_rxlna_8vbias_1: grp-1 {
+                                                fsl,pins = <
+							/* Rx LNA 8v enable control, output, active low */
+                                                        685 0x80000000    /* D4400_PAD_GPIOB8_GPIOB_8 */
+                                                        691 0x80000000    /* D4400_PAD_GPIOB9_GPIOB_9 */
+                                                        697 0x80000000    /* D4400_PAD_GPIOB10_GPIOB_10 */
+                                                        703 0x80000000    /* D4400_PAD_GPIOB11_GPIOB_11 */
+							/* Rx LNA 8v power good status, input, active low */
+                                                        709 0x80000000    /* D4400_PAD_GPIOB12_GPIOB_12 */
+                                                        715 0x80000000    /* D4400_PAD_GPIOB13_GPIOB_13 */
+                                                        721 0x80000000    /* D4400_PAD_GPIOB14_GPIOB_14 */
+                                                        727 0x80000000    /* D4400_PAD_GPIOB15_GPIOB_15 */
+                                                >;
+                                        };
+                                };
+
                                 leds_pins {
                                         pinctrl_leds_1: ledsgrp-1 {
                                                 fsl,pins = <
-                                                        351 0x80000000    /* D4400_PAD_UART4_TXD_GPIOE_29 */
-                                                        357 0x80000000    /* D4400_PAD_UART4_RXD_GPIOE_30 */
+                                                        661 0x80000000    /* D4400_PAD_GPIOB4_GPIOB_4 */
+                                                        667 0x80000000    /* D4400_PAD_GPIOB5_GPIOB_5 */
+                                                        745 0x80000000    /* D4400_PAD_GPIOB18_GPIOB_18 */
+                                                        751 0x80000000    /* D4400_PAD_GPIOB19_GPIOB_19 */
                                                 >;
                                         };
                                 };
@@ -289,47 +367,6 @@
                                 };
 
 				pa_control {
-					pinctrl_pa_con1: pacongrp-1 {
-                                                fsl,pins = <
-							/* Alarm */
-							506 0x80000000     /* D4400_PAD_GPIOA4_GPIOA_4 */
-							512 0x80000000     /* D4400_PAD_GPIOA5_GPIOA_5 */
-
-							/* PSU EN */
-							661 0x80000000     /* D4400_PAD_GPIOB4_GPIOB_4 */
-							667 0x80000000     /* D4400_PAD_GPIOB5_GPIOB_5 */
-
-							/* OBS_SEL */
-							783 0x80000000     /* D4400_PAD_GPIOB24_GPIOB_24 */
-							790 0x80000000     /* D4400_PAD_GPIOB25_GPIOB_25 */
-							797 0x80000000     /* D4400_PAD_GPIOB26_GPIOB_26 */
-							804 0x80000000     /* D4400_PAD_GPIOB27_GPIOB_27 */
-
-							/* TX_EN, TRX_SW */
-							847 0x80000000     /* D4400_PAD_GPIOC1_GPIOC_1 */
-							863 0x80000000     /* D4400_PAD_GPIOC3_GPIOC_3 */
-							910 0x80000000     /* D4400_PAD_GPIOC9_GPIOC_9 */
-							926 0x80000000     /* D4400_PAD_GPIOC11_GPIOC_11 */
-
-							/* Spare1 */
-							206 0x80000000     /* D4400_PAD_SPI2_CLK_GPIOD_24 */
-							/* Spare2 */
-							209 0x80000000     /* D4400_PAD_SPI2_SS0_GPIOD_25 */
-
-							/* SS2 */
-							/* Conflicts with spi7 ss2 */
-							//495 0x80000000     /* D4400_PAD_GPIOA2_GPIOA_2 */
-
-							/* LNA_CTL */
-							/* LNA signals are currently unused and conflicts
-							 * with ADI ROC1 cs-gpios gpioC16/18/19.
-							 */
-							//966 0x80000000     /* D4400_PAD_GPIOC16_GPIOC_16 */
-							//974 0x80000000     /* D4400_PAD_GPIOC17_GPIOC_17 */
-							//982 0x80000000     /* D4400_PAD_GPIOC18_GPIOC_18 */
-							//989 0x80000000     /* D4400_PAD_GPIOC19_GPIOC_19 */
-                                                >;
-					};
 
 					pinctrl_pa_con2: pacongrp-2 {
                                                 fsl,pins = <
@@ -451,27 +488,11 @@
 		fsl-d4400-sys {
 			compatible = "fsl,d4400-sys";
 			eeprom-handle =<&system_eeprom>;
-			gpio-led1 = <&gpioE 29  0>;
-			gpio-led2 = <&gpioE 30  0>;
-			pa_con1 = <&gpioA 4 0>, /* PA_ALARM1_B */
-				<&gpioA 5 0>,	/* PA_ALARM2_B */
-				<&gpioB 4 0>,	/* PA_PSU_EN1 */
-				<&gpioB 5 0>,	/* PA_PSU_EN2 */
-				<&gpioB 24 0>,	/* PA_OBS_SEL1A */
-				<&gpioB 25 0>,	/* PA_OBS_SEL1B */
-				<&gpioB 26 0>,	/* PA_OBS_SEL2A */
-				<&gpioB 27 0>,	/* PA_OBS_SEL2B */
-				<&gpioC 1 0>,	/* PA_TX_EN1 */
-				<&gpioC 3 0>,	/* PA_TX_EN2 */
-				<&gpioC 9 0>,	/* PA_TRX_SW1 */
-				<&gpioC 11 0>,	/* PA_TRX_SW2 */
-				<&gpioD 24 0>;	/* PA_SPARE1 */
-				//<&gpioD 25 0>;	/* PA_SPARE2 */
-				//<&gpioA 2 0>,		/* PA_SS2 */
-				//<&gpioC 16 0>,	/* PA_LNA_CTL_1A */
-				//<&gpioC 17 0>,	/* PA_LNA_CTL_1B */
-				//<&gpioC 18 0>,	/* PA_LNA_CTL_2A */
-				//<&gpioC 19 0>;	/* PA_LNA_CTL_2B */
+			gpio-led1 = <&gpioB 4  0>;
+			gpio-led2 = <&gpioB 5  0>;
+			gpio-led3 = <&gpioB 18  0>;
+			gpio-led4 = <&gpioB 19  0>;
+			gpio-rs485-dir = <&gpioB 2 0>;
 
 			pa_con2 = <&gpioA 6 0>, /* PA_ALARM1_B */
 				<&gpioA 7 0>,	/* PA_ALARM2_B */
@@ -493,11 +514,22 @@
 				//<&gpioC 22 0>,	/* PA_LNA_CTL_2A */
 				//<&gpioC 23 0>;	/* PA_LNA_CTL_2B */
 
+			rx_8vbias_en = <&gpioB 8 0>, /* Rx1 LNA 8v enable, out, active low */
+				<&gpioB 9 0>, /* Rx2 LNA 8v enable, out, active low */
+				<&gpioB 10 0>, /* Rx3 LNA 8v enable, out, active low */
+				<&gpioB 11 0>; /* Rx4 LNA 8v enable, out, active low */
+			rx_8vbias_stat = <&gpioB 12 0>, /* Rx1 LNA 8v status, in, active low */
+				<&gpioB 13 0>, /* Rx2 LNA 8v status, in, active low */
+				<&gpioB 14 0>, /* Rx3 LNA 8v status, in, active low */
+				<&gpioB 15 0>; /* Rx4 LNA 8v status, in, active low */
+
 			pinctrl-names = "default";
-                        pinctrl-0 = <&pinctrl_leds_1>, <&pinctrl_rmii_1>,
+                        pinctrl-0 = <&pinctrl_leds_1>,
+				<&pinctrl_rmii_1>,
                                 <&pinctrl_ad9525_gpiospi_1>,
-				<&pinctrl_pa_con1>,
-				<&pinctrl_pa_con2>;
+				<&pinctrl_pa_con2>,
+				<&pinctrl_rs485_dir_1>,
+				<&pinctrl_rxlna_8vbias_1>;
 		};
 
 		/* Spi gpio used in place of ecspi5 due to miso/mosi
