@@ -42,8 +42,10 @@
 
                         uart3: serial@f4000 {
                                 pinctrl-names = "default";
-                                pinctrl-0 = <&pinctrl_uart3_1>;
+                                pinctrl-0 = <&pinctrl_uart3_1>,
+					<&pinctrl_rs485_dir_1>;
                                 status = "okay";
+				fsl,rs485-enable = <&gpioB 2 0>;
                         };
 
                         uart4: serial@f8000 {
@@ -492,7 +494,6 @@
 			gpio-led2 = <&gpioB 5  0>;
 			gpio-led3 = <&gpioB 18  0>;
 			gpio-led4 = <&gpioB 19  0>;
-			gpio-rs485-dir = <&gpioB 2 0>;
 
 			pa_con2 = <&gpioA 6 0>, /* PA_ALARM1_B */
 				<&gpioA 7 0>,	/* PA_ALARM2_B */
@@ -528,7 +529,6 @@
 				<&pinctrl_rmii_1>,
                                 <&pinctrl_ad9525_gpiospi_1>,
 				<&pinctrl_pa_con2>,
-				<&pinctrl_rs485_dir_1>,
 				<&pinctrl_rxlna_8vbias_1>;
 		};
 

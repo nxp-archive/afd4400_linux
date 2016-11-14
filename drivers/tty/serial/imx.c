@@ -55,6 +55,14 @@
 #include <asm/irq.h>
 #include <linux/platform_data/serial-imx.h>
 
+#ifdef CONFIG_BOARD_4T4RK1
+/* Gpio control of rs-485 transceiver direction */
+#include <linux/of_gpio.h>
+u32 gpio_rs485_dir = 0;
+#define RS485_ENABLE_TRANSMIT() gpio_direction_output(gpio_rs485_dir, 1)
+#define RS485_ENABLE_RECEIVE() gpio_direction_output(gpio_rs485_dir, 0)
+#endif /* CONFIG_BOARD_4T4RK1 */
+
 /* Register definitions */
 #define URXD0 0x0  /* Receiver Register */
 #define URTX0 0x40 /* Transmitter Register */
@@ -399,6 +407,24 @@ static void imx_stop_tx(struct uart_port *port)
 		return;
 	}
 
+#ifdef CONFIG_BOARD_4T4RK1
+	/* RS-485 is half duplex, wait for transmit fifo to empty.
+	 * Loop count is based on worst case of 9600 baud or about
+	 * 3.3 millisecond to trasmit 32 bytes in FIFO buffer.
+	 */
+	if (sport->rs485_enable > 0) {
+		int n = 670;
+		while ((--n > 0) &&
+		      !(readl(sport->port.membase + USR2) & USR2_TXDC)) {
+			udelay(5);
+			barrier();
+		}
+		udelay(5);
+		RS485_ENABLE_RECEIVE();
+
+	}
+#endif
+
 	temp = readl(sport->port.membase + UCR1);
 	writel(temp & ~UCR1_TXMPTYEN, sport->port.membase + UCR1);
 }
@@ -442,8 +468,15 @@ static inline void imx_transmit_buffer(struct imx_port *sport)
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
 		uart_write_wakeup(&sport->port);
 
-	if (uart_circ_empty(xmit))
+	if (uart_circ_empty(xmit)) {
 		imx_stop_tx(&sport->port);
+
+#ifdef CONFIG_BOARD_4T4RK1
+		if (sport->rs485_enable > 0) {
+			RS485_ENABLE_RECEIVE();
+		}
+#endif
+	}
 }
 
 /*
@@ -454,6 +487,11 @@ static void imx_start_tx(struct uart_port *port)
 	struct imx_port *sport = (struct imx_port *)port;
 	unsigned long temp;
 
+#ifdef CONFIG_BOARD_4T4RK1
+	if (sport->rs485_enable > 0) {
+		RS485_ENABLE_TRANSMIT();
+	}
+#endif
 	if (USE_IRDA(sport)) {
 		/* half duplex in IrDA mode; have to disable receive mode */
 		temp = readl(sport->port.membase + UCR4);
@@ -1447,6 +1485,35 @@ static int serial_imx_probe_dt(struct imx_port *sport,
 
 	if (of_get_property(np, "fsl,rs485-enable", NULL))
 		sport->rs485_enable = 1;
+
+	if (sport->rs485_enable == 1) {
+#ifdef CONFIG_BOARD_4T4RK1
+		gpio_rs485_dir = of_get_named_gpio(np,
+			"fsl,rs485-enable", 0);
+		if (!gpio_is_valid(gpio_rs485_dir)) {
+			dev_err(&pdev->dev,
+				"4T4R brd uart3 RS-485 direction control gpio %d is not valid\n",
+				gpio_rs485_dir);
+			return -EINVAL;
+		} else {
+			/* Set low for SN65HVD72D receiver enable/transmitter
+			 * disable (REb).
+			 */
+			ret = gpio_request(gpio_rs485_dir, "gpio-rs485-dir");
+			if (ret) {
+				dev_err(&pdev->dev, "Failed to request rs-485 direction gpio, errno %d\n",
+					ret);
+				return ret;
+			}
+			ret = RS485_ENABLE_RECEIVE();
+			if (ret) {
+				dev_err(&pdev->dev, "Failed to set rs-485 direction gpio, errno %d\n",
+					ret);
+				return ret;
+			}
+		}
+#endif /* CONFIG_BOARD_4T4RK1 */
+	}
 
 	sport->devdata = of_id->data;
 

@@ -177,7 +177,6 @@ struct fsl_4t4rk1_board {
 	u32 gpio_led2;
 	u32 gpio_led3;
 	u32 gpio_led4;
-	u32 gpio_rs485_dir;
 	struct pa_con pac[PA_CON_MAX];
 	struct delayed_work pa_alarm_irq_wq;
 

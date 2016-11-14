@@ -773,23 +773,6 @@ static int board_setup_4t4rk1(struct d4400_sys_dev *d4400_sys)
 		}
 	}
 
-	/* Uart3 RS-485 direction control gpio */
-	brd_4t4rk1->gpio_rs485_dir = of_get_named_gpio(dev_node,
-		"gpio-rs485-dir", 0);
-	if (!gpio_is_valid(brd_4t4rk1->gpio_rs485_dir)) {
-		dev_err(dev, "4T4R brd uart3 RS-485 direction control gpio %d is not valid\n",
-			brd_4t4rk1->gpio_rs485_dir);
-		ret = -EINVAL;
-		goto out_err;
-	} else {
-		/* Set low for SN65HVD72D receiver enable/transmitter
-		 * disable (REb).
-		 */
-		gpio_request(brd_4t4rk1->gpio_rs485_dir, "gpio-rs485-dir");
-		gpio_direction_output(brd_4t4rk1->gpio_rs485_dir, 0);
-	}
-
-
 	/* Rx LNA 8v bias enable and status, all are active low */
 	for (i = 0; i < RX_8VBIAS_EN_MAX; ++i) {
 		pin = brd_4t4rk1->rx_8vbias_en_pins[i] = of_get_named_gpio(
@@ -1315,53 +1298,6 @@ static ssize_t set_reboot(struct device *dev, struct device_attribute *attr,
 }
 
 #ifdef CONFIG_BOARD_4T4RK1
-static ssize_t show_rs485dir(struct device *dev,
-			struct device_attribute *devattr, char *buf)
-{
-	int pin, val = 0;
-	struct fsl_4t4rk1_board *brd_4t4rk1 =
-		(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
-
-	mutex_lock(&d4400_sys_data->lock);
-	pin = brd_4t4rk1->gpio_rs485_dir;
-	if (gpio_get_value_cansleep(pin)) {
-		val = 1;
-	}
-	mutex_unlock(&d4400_sys_data->lock);
-
-	if (val) {
-		return sprintf(buf, "Output - %i\n", val);
-	} else {
-		return sprintf(buf, "Input - %i\n", val);
-	}
-}
-
-static ssize_t set_rs485dir(struct device *dev, struct device_attribute *attr,
-		       const char *buf, size_t count)
-{
-	int err;
-	unsigned int val;
-	int pin;
-	struct fsl_4t4rk1_board *brd_4t4rk1 =
-		(struct fsl_4t4rk1_board *)d4400_sys_data->brd;
-
-	err = kstrtouint(buf, 0, &val);
-	if (err)
-		return err;
-
-	mutex_lock(&d4400_sys_data->lock);
-	pin = brd_4t4rk1->gpio_rs485_dir;
-	/* Bias voltage enable is active low */
-	if (val > 0) {
-		gpio_direction_output(pin, 1); /* Receiver disabled */
-	} else {
-		gpio_direction_output(pin, 0); /* Receiver enabled */
-	}
-	mutex_unlock(&d4400_sys_data->lock);
-
-	return count;
-}
-
 static ssize_t show_rx8vbias(struct device *dev,
 			struct device_attribute *devattr, char *buf)
 {
@@ -1420,7 +1356,6 @@ static DEVICE_ATTR(debug, S_IWUSR | S_IRUGO, show_debug,           set_debug);
 static DEVICE_ATTR(ipmi_info, S_IRUGO, show_ipmi_info,             NULL);
 static DEVICE_ATTR(pa,    S_IWUSR | S_IRUGO, show_pa,              set_pa);
 #ifdef CONFIG_BOARD_4T4RK1
-static DEVICE_ATTR(rs485_dir, S_IWUSR | S_IRUGO, show_rs485dir,    set_rs485dir);
 static DEVICE_ATTR(rx_8vbias_en, S_IWUSR | S_IRUGO, show_rx8vbias, set_rx8vbias);
 #endif
 
@@ -1435,7 +1370,6 @@ static struct attribute *d4400_sys_attributes[] = {
 	&dev_attr_ipmi_info.attr,
 	&dev_attr_pa.attr,
 #ifdef CONFIG_BOARD_4T4RK1
-	&dev_attr_rs485_dir.attr,
 	&dev_attr_rx_8vbias_en.attr,
 #endif
 	NULL
