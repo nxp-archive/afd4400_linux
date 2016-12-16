@@ -36,7 +36,7 @@
 #define VSPA_MAGIC_NUM 'V'
 
 /* Maximum allowed size for any individual command */
-#define CMD_MAX_SZ_BYTES	(128)
+#define CMD_MAX_SZ_BYTES	(256)
 
 enum vspa_state {
 	VSPA_STATE_UNKNOWN = 0,
