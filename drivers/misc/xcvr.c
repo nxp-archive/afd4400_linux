@@ -283,6 +283,79 @@ struct fragment_node frag_xcvr_spi_wb[] = {
 	{}
 };
 
+/* wideband2 spi devices attributes */
+static struct spi_device_params wideband2_spi_params[] = {
+	{WB_SPIADC_SENSOR,		SPI_LEN_AD7689, 16,	0, SPI_MODE_0, 15000000},
+	{WB_AD9680,			SPI_LEN_NORMAL, 24,	0, SPI_MODE_0, 10000000},
+	{WB_AD9144,			SPI_LEN_NORMAL, 24,	0, SPI_MODE_3, 5000000},
+	{WB_SRX_ATTN_PE43711,		SPI_LEN_PE4312, 8,	0, SPI_MODE_0, 5000000},
+	{WB_DCCLO_LMX2492,		SPI_LEN_NORMAL, 24,	0, SPI_MODE_0, 10000000},
+	{WB_TXLO_LMX2492,		SPI_LEN_NORMAL, 24,	0, SPI_MODE_0, 10000000},
+	{WB_SRXLO_LMX2492,		SPI_LEN_NORMAL, 24,	0, SPI_MODE_0, 10000000},
+	{WB_REFLO_ADF4002,		SPI_LEN_NORMAL, 24,	0, SPI_MODE_0, 10000000},
+	{WB_TX1_ATTN_PE43711,		SPI_LEN_PE4312, 8,	0, SPI_MODE_0, 5000000},
+	{WB_TX2_ATTN_PE43711,		SPI_LEN_PE4312, 8,	0, SPI_MODE_0, 5000000},
+	{WB_GBM_SRX_OFFSET_DAC_AD5457R,	SPI_LEN_NORMAL, 24,	0, SPI_MODE_1, 5000000},
+	{WB_SRX_DIFF_OFFSET_DAC_AD5457R, SPI_LEN_NORMAL, 24,	0, SPI_MODE_1, 5000000},
+};
+
+/* wideband2 spi devices binding to dtb */
+static struct of_device_id spi_match_wb2[] = {
+	{.compatible = "xcvr_spi1_0", .data = &wideband2_spi_params[WB_SPIADC_SENSOR]},
+	{.compatible = "xcvr_spi2_0", .data = &wideband2_spi_params[WB_AD9680]},
+	{.compatible = "xcvr_spi3_0", .data = &wideband2_spi_params[WB_AD9144]},
+	{.compatible = "xcvr_spi5_0", .data = &wideband2_spi_params[WB_SRX_ATTN_PE43711]},
+	{.compatible = "xcvr_spi6_0", .data = &wideband2_spi_params[WB_DCCLO_LMX2492]},
+	{.compatible = "xcvr_spi6_1", .data = &wideband2_spi_params[WB_TXLO_LMX2492]},
+	{.compatible = "xcvr_spi6_2", .data = &wideband2_spi_params[WB_SRXLO_LMX2492]},
+	{.compatible = "xcvr_spi6_3", .data = &wideband2_spi_params[WB_REFLO_ADF4002]},
+	{.compatible = "xcvr_spi7_0", .data = &wideband2_spi_params[WB_TX1_ATTN_PE43711]},
+	{.compatible = "xcvr_spi8_0", .data = &wideband2_spi_params[WB_TX2_ATTN_PE43711]},
+	{.compatible = "xcvr_spi8_1", .data = &wideband2_spi_params[WB_GBM_SRX_OFFSET_DAC]},		/* AD5724 */
+	{.compatible = "xcvr_spi8_2", .data = &wideband2_spi_params[WB_SRX_DIFF_OFFSET_DAC_AD5457R]},	/* AD5754 */
+	{},
+};
+
+/* wideband2 spi overlay */
+struct fragment_node frag_xcvr_spi_wb2[] = {
+	{
+		.target = "&ecspi1",
+		.np_array = xcvr_ecspi1,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi2",
+		.np_array = xcvr_ecspi2,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi3",
+		.np_array = xcvr_ecspi3,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi5",
+		.np_array = xcvr_ecspi5,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi6",
+		.np_array = xcvr_ecspi6,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi7",
+		.np_array = xcvr_ecspi7,
+		.ov_prop_array = NULL,
+	},
+	{
+		.target = "&ecspi8",
+		.np_array = xcvr_ecspi8,
+		.ov_prop_array = NULL,
+	},
+	{}
+};
+
 /* roc devices attribute */
 static struct spi_device_params roc_spi_params[] = {
 	{AD93681, SPI_LEN_NORMAL, 24, 0, SPI_MODE_0, 20000000},
@@ -357,6 +430,11 @@ static struct of_device_id wb_misc_match[] = {
 	{},
 };
 
+static struct of_device_id wb2_misc_match[] = {
+	{.compatible = "fsl,xcvr-wb2",},
+	{},
+};
+
 static struct of_device_id roc_misc_match[] = {
 	{.compatible = "adi,xcvr-roc",},
 	{},
@@ -394,13 +472,15 @@ static struct spi_driver spi_driver_##board = {				\
 	.probe = spi_probe_##board,					\
 };
 
-XCVR_SPI_PROBE_FUNC(roc0)
-XCVR_SPI_PROBE_FUNC(roc1)
-XCVR_SPI_PROBE_FUNC(wb)
+XCVR_SPI_PROBE_FUNC(roc0)	/* spi_probe_roc0 */
+XCVR_SPI_PROBE_FUNC(roc1)	/* spi_probe_roc1 */
+XCVR_SPI_PROBE_FUNC(wb)		/* spi_probe_wb */
+XCVR_SPI_PROBE_FUNC(wb2)	/* spi_probe_wb2 */
 
-XCVR_SPI_DRIVER(roc0)
-XCVR_SPI_DRIVER(roc1)
-XCVR_SPI_DRIVER(wb)
+XCVR_SPI_DRIVER(roc0)		/* spi_driver_roc0 */
+XCVR_SPI_DRIVER(roc1)		/* spi_driver_roc1 */
+XCVR_SPI_DRIVER(wb)		/* spi_driver_wb */
+XCVR_SPI_DRIVER(wb2)		/* spi_driver_wb2 */
 
 static void wb_ad9680_bitbang(struct xcvr_spi_buf *spi_buf)
 {
@@ -533,6 +613,11 @@ static int verify_xcvr_spi_device(const struct xcvr_spi_buf *spi_buf)
 			return -1;
 	}
 
+	if ((type == WIDEBAND) && (attached_xcvr == WB2_PRESENT)) {
+		if (chip_id > WB_SPI_CNT)
+			return -1;
+	}
+
 	if (type == ROC1 && (attached_xcvr & ROC1_PRESENT))
 		chip_id += ROC_SPI_CNT;
 
@@ -564,6 +649,14 @@ static int verify_xcvr_gpio(const struct xcvr_gpio_buf *gpio_buf)
 		else if (operation == 1 && gpio_id <= WB_OUTPUT_PINCNT)
 			return output_pins[gpio_id];
 	}
+
+	if ((type == WIDEBAND) && (attached_xcvr == WB2_PRESENT)) {
+		if (operation == 0 && gpio_id <= WB_INPUT_PINCNT)
+			return input_pins[gpio_id];
+		else if (operation == 1 && gpio_id <= WB_OUTPUT_PINCNT)
+			return output_pins[gpio_id];
+	}
+
 	return -1;
 }
 
@@ -573,7 +666,8 @@ static int verify_xcvr_reset(const struct xcvr_reset_buf *buf)
 	int chip_id = buf->chip_id;
 
 	if ((type == ROC0 && (attached_xcvr & ROC0_PRESENT)) ||
-		(type == WIDEBAND && (attached_xcvr == WB_PRESENT)))
+		(type == WIDEBAND && (attached_xcvr == WB_PRESENT)) ||
+		(type == WIDEBAND && (attached_xcvr == WB2_PRESENT)))
 		return reset_src[chip_id];
 
 	if (type == ROC1 && (attached_xcvr & ROC1_PRESENT))
@@ -617,12 +711,15 @@ static long xcvr_ioctl(struct file *filep, unsigned int cmd,
 		if (verify_xcvr_spi_device(&spi_buf) < 0)
 			ret = -ENODEV;
 		else {
-			if (attached_xcvr == WB_PRESENT &&
+			if (((attached_xcvr == WB_PRESENT) ||
+				(attached_xcvr == WB2_PRESENT))  &&
 				spi_buf.chip_id == WB_AD9680 &&
 				spi_buf.operation == READ_OP)
 				wb_ad9680_bitbang(&spi_buf);
-			else
+			else {
 				xcvr_spi_operation(&spi_buf);
+			}
+
 			if (spi_buf.operation == READ_OP) {
 				if (copy_to_user(argp, &spi_buf,
 						sizeof(struct xcvr_spi_buf)))
@@ -765,6 +862,96 @@ static int wb_misc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int wb2_misc_probe(struct platform_device *pdev)
+{
+	struct device_node *np = pdev->dev.of_node;
+	int i = 0;
+	int ret;
+	if (!np || !of_device_is_available(np)) {
+		pr_err("%s: No wb entry available in dtb\n",
+			DEV_NAME);
+		return -ENODEV;
+	}
+
+	ret = ov_load(frag_xcvr_spi_wb2);
+	if (ret < 0) {
+		pr_err("%s: failed to create spi overlay with err %x\n",
+				DEV_NAME, ret);
+		goto out1;
+	}
+
+	ret = spi_register_driver(&spi_driver_wb2);
+	if (ret) {
+		pr_err("%s: spi_register_driver failed with err %x\n",
+				DEV_NAME, ret);
+		goto out1;
+	}
+
+	for (i = 0; i < WB_INPUT_PINCNT; i++) {
+		input_pins[i] =
+			of_get_named_gpio(np, "input-gpios", i);
+		ret = gpio_request(input_pins[i], "wb_input_pin");
+		if (ret < 0)
+			break;
+		gpio_direction_input(input_pins[i]);
+	}
+
+	for (i = 0; i < WB_OUTPUT_PINCNT; i++) {
+		output_pins[i] =
+			of_get_named_gpio(np, "output-gpios", i);
+		ret = gpio_request(output_pins[i], "wb_output_pin");
+		if (ret < 0)
+			break;
+		gpio_direction_output(output_pins[i], 0);
+	}
+
+	/* AD9680 is a special device which uses bi-dir spi so
+	 * we use gpio to bitbang it in read mode.
+	 */
+	for (i = 0; i < 3; i++) {
+		ad9680_pins[i] =
+			of_get_named_gpio(np, "ad9680-spi-pins", i);
+
+		ret = gpio_request(ad9680_pins[i], "ad9680_pins");
+		if (ret < 0)
+			break;
+		gpio_direction_output(ad9680_pins[i], 0);
+	}
+
+	of_property_read_u32(np, "tx-reset", &reset_src[WB_AD9144]);
+
+	if (ret) {
+		pr_err("%s fail\n", __func__);
+		goto out0;
+	}
+
+	/* Mark as attached. */
+	attached_xcvr |= WB2_PRESENT;
+out1:
+	return ret;
+out0:
+	spi_unregister_driver(&spi_driver_wb2);
+	return ret;
+}
+
+static int wb2_misc_remove(struct platform_device *pdev)
+{
+	int i;
+
+	for (i = 0; i < WB_INPUT_PINCNT; i++)
+		gpio_free(input_pins[i]);
+
+	for (i = 0; i < WB_OUTPUT_PINCNT; i++)
+		gpio_free(output_pins[i]);
+
+	for (i = 0; i < 3; i++)
+		gpio_free(ad9680_pins[i]);
+
+	attached_xcvr &= ~WB2_PRESENT;
+
+	return 0;
+}
+
 static int roc_misc_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
@@ -881,6 +1068,16 @@ static struct platform_driver wb_misc_driver = {
 	}
 };
 
+static struct platform_driver wb2_misc_driver = {
+	.probe          = wb2_misc_probe,
+	.remove         = wb2_misc_remove,
+	.driver         = {
+		.name   = "wb2_misc_driver",
+		.owner  = THIS_MODULE,
+		.of_match_table = of_match_ptr(wb2_misc_match),
+	}
+};
+
 static struct platform_driver roc_misc_driver = {
 	.probe          = roc_misc_probe,
 	.remove         = roc_misc_remove,
@@ -908,6 +1105,13 @@ static int __init xcvr_init(void)
 	}
 	if (platform_driver_register(&wb_misc_driver)) {
 		pr_err("%s: Error in loading wideband transceiver driver\n",
+			DEV_NAME);
+		ret = -ENODEV;
+		goto out0;
+	}
+
+	if (platform_driver_register(&wb2_misc_driver)) {
+		pr_err("%s: Error in loading wideband2 transceiver driver\n",
 			DEV_NAME);
 		ret = -ENODEV;
 		goto out0;
@@ -968,6 +1172,10 @@ static void __exit xcvr_exit(void)
 	case WB_PRESENT:
 		platform_driver_unregister(&wb_misc_driver);
 		spi_unregister_driver(&spi_driver_wb);
+		break;
+	case WB2_PRESENT:
+		platform_driver_unregister(&wb2_misc_driver);
+		spi_unregister_driver(&spi_driver_wb2);
 		break;
 	}
 

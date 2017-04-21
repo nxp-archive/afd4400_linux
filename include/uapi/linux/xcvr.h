@@ -7,6 +7,7 @@ enum xcvr_present_info {
 	ROC0_PRESENT = (1 << 0),
 	ROC1_PRESENT = (1 << 1),
 	WB_PRESENT = (1 << 2),
+	WB2_PRESENT = (1 << 3),
 };
 
 enum rw_operation {
@@ -29,6 +30,16 @@ enum wideband_spi_chip_id {
 	WB_SRX_DIFF_OFFSET_DAC,
 	WB_SPI_CNT
 };
+
+/* Wideband 2 */
+#define WB_SRX_ATTN_PE43711		WB_SRX_ATTN
+#define WB_DCCLO_LMX2492		WB_DCCLO_LMX2485
+#define WB_TXLO_LMX2492			WB_TXLO_LMX2485
+#define WB_SRXLO_LMX2492		WB_SRXLO_LMX2485
+#define WB_TX1_ATTN_PE43711		WB_TX1_ATTN
+#define WB_TX2_ATTN_PE43711		WB_TX2_ATTN
+#define WB_GBM_SRX_OFFSET_DAC_AD5457R	WB_GBM_SRX_OFFSET_DAC
+#define WB_SRX_DIFF_OFFSET_DAC_AD5457R	WB_SRX_DIFF_OFFSET_DAC
 
 /* Output gpio pins from DFE to wideband
  * used as enable signal.
@@ -79,6 +90,7 @@ enum board_type {
 	ROC0,
 	ROC1,
 	WIDEBAND,
+	WIDEBAND2,
 };
 
 struct xcvr_spi_buf {

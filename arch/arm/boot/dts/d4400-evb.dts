@@ -574,6 +574,46 @@
 				ipmi-mfg-str = "Freescale";
 				ipmi-name-str = "FSL Wideband transceiver R1.00";
 			};
+
+			wb2-xcvr {  /* 2.5GHz and 3.5GHz */
+				#address-cells = <1>;
+				#size-cells = <1>;
+				platform-drv-name = "wb2_misc_driver";
+				/* FMC connector: 0-none, 1-fmc1, 2-fmc2, 3-fmc1 & fmc2 */
+				connector-fmc = <3>;
+
+				tx-reset = <4>;
+				output-gpios =
+					<&gpioC 22 0>,
+					<&gpioC 23 0>,
+					<&gpioC 16 0>,
+					<&gpioA 17 0>, /* FMC1 pin K38, was gpioC 17 */
+					<&gpioC 18 0>,
+					<&gpioC 19 0>,
+					<&gpioD 6 0>,
+					<&gpioC 7 0>;
+
+				input-gpios = <&gpioC 8 0>,
+					<&gpioC 9 0>,
+					<&gpioC 10 0>,
+					<&gpioC 11 0>,
+					<&gpioA 22 0>,
+					<&gpioA 23 0>,
+					<&gpioA 20 0>,
+					<&gpioA 21 0>;
+
+				ad9680-spi-pins =
+					<&gpioE 2 0>,  /* sdio, spi2, 199 */
+					<&gpioD 24 0>, /* sclk, spi2, 206 */
+					<&gpioD 25 0>; /* ss0, spi2, 209 */
+
+				eeprom-handle =<&xcvr_wb_eeprom>;
+				ipmi-mfg-str = "NXP";
+				ipmi-name-str =
+					"NXP Wideband2 2.5GHz R1.00",
+					"NXP Wideband2 3.5GHz R1.00";
+			};
+
                 };
 
         };
