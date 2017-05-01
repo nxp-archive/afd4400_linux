@@ -587,11 +587,11 @@
 					<&gpioC 22 0>,
 					<&gpioC 23 0>,
 					<&gpioC 16 0>,
-					<&gpioA 17 0>, /* FMC1 pin K38, was gpioC 17 */
+					<&gpioC 17 0>,
 					<&gpioC 18 0>,
 					<&gpioC 19 0>,
 					<&gpioD 6 0>,
-					<&gpioC 7 0>;
+					<&gpioA 17 0>;
 
 				input-gpios = <&gpioC 8 0>,
 					<&gpioC 9 0>,
