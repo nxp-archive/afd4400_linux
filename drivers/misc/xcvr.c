@@ -56,6 +56,8 @@ static struct spi_device *spi_devs[MAX_SPI_CNT];
 static int input_pins[MAX_INPUT_GPIO] = {[0 ... (MAX_INPUT_GPIO - 1)] = -1};
 static int output_pins[MAX_OUTPUT_GPIO] = {[0 ... (MAX_OUTPUT_GPIO - 1)] = -1};
 static int ad9680_pins[3] = {[0 ... 2] = -1};
+static int pe43711_ss_pins[3] = {[0 ... 2] = -1}; /* Three pe43711 devices for wb2 */
+static int lmx2492_ss_pins[3] = {[0 ... 2] = -1}; /* Three lmx2492 devices for wb2 */
 /* Assume that every spi chip might have a reset */
 static int reset_src[MAX_SPI_CNT] = {[0 ... (MAX_SPI_CNT - 1)] = -1};
 
@@ -482,6 +484,88 @@ XCVR_SPI_DRIVER(roc1)		/* spi_driver_roc1 */
 XCVR_SPI_DRIVER(wb)		/* spi_driver_wb */
 XCVR_SPI_DRIVER(wb2)		/* spi_driver_wb2 */
 
+static void wb_attenuator_latch_toggle(struct xcvr_spi_buf *spi_buf)
+{
+	int ss_pin;	/* spi slave select function */
+	int gpio_pin;	/* gpio function */
+	int latch_en;
+
+	if (spi_buf->chip_id == WB_SRX_ATTN) {
+		/* spi5 SRX ss0-256, gpioD_30-257 */
+		ss_pin = 256;
+		gpio_pin = 257;
+		latch_en = pe43711_ss_pins[0];
+	} else if (spi_buf->chip_id == WB_TX1_ATTN) {
+		/* spi7 TX1 ss0-295, gpioE_17-296 */
+		ss_pin = 295;
+		gpio_pin = 296;
+		latch_en = pe43711_ss_pins[1];
+	} else { /* WB_TX2_ATTN */
+		/* spi8 TX2 ss0-316, gpioE_21-317 */
+		ss_pin = 316;
+		gpio_pin = 317;
+		latch_en = pe43711_ss_pins[2];
+	}
+	/* Switch spi ss pin to gpio */
+	d4400_pinmux_hack(gpio_pin);
+
+	/* Do a lo-hi-lo pulse to make new reg value effective.
+	 * The latency after the SPI write is completed and this
+	 * function is called is about ~50-60 usec.  Each of the
+	 * gpio function call below has about 4-8 usec latency
+	 * which is enough that there is no need to add delay.
+	 */
+	gpio_direction_output(latch_en, 0);
+	//msleep_interruptible(1);
+	gpio_direction_output(latch_en, 1);
+	//msleep_interruptible(1);
+	gpio_direction_output(latch_en, 0);
+
+	/* Switch back to spi ss pin */
+	d4400_pinmux_hack(ss_pin);
+}
+
+static void wb_pll_latch_toggle(struct xcvr_spi_buf *spi_buf)
+{
+	int ss_pin;	/* spi slave select function */
+	int gpio_pin;	/* gpio function */
+	int latch_en;
+
+	if (spi_buf->chip_id == WB_DCCLO_LMX2492) {
+		/* spi6 DCC LO ss0-275, gpioE_13-276 */
+		ss_pin = 275;
+		gpio_pin = 276;
+		latch_en = lmx2492_ss_pins[0];
+	} else if (spi_buf->chip_id == WB_TXLO_LMX2492) {
+		/* spi6 TX LO ss1-279, gpioE_27-280 */
+ 		ss_pin = 279;
+		gpio_pin = 280;
+		latch_en = lmx2492_ss_pins[1];
+	} else { /* WB_SRXLO_LMX2492 */
+		/* spi6 SRX LO ss2-603, gpioA_26-602 */
+		ss_pin = 603;
+		gpio_pin = 602;
+		latch_en = lmx2492_ss_pins[2];
+	}
+	/* Switch spi ss pin to gpio */
+	d4400_pinmux_hack(gpio_pin);
+
+	/* Do a lo-hi-lo pulse to make new reg value effective.
+	 * The latency after the SPI write is completed and this
+	 * function is called is about ~50-60 usec.  Each of the
+	 * gpio function call below has about 4-8 usec latency
+	 * which is enough that there is no need to add delay.
+	 */
+	gpio_direction_output(latch_en, 0);
+	//msleep_interruptible(1);
+	gpio_direction_output(latch_en, 1);
+	//msleep_interruptible(1);
+	gpio_direction_output(latch_en, 0);
+
+	/* Switch back to spi ss pin */
+	d4400_pinmux_hack(ss_pin);
+}
+
 static void wb_ad9680_bitbang(struct xcvr_spi_buf *spi_buf)
 {
 	int i;
@@ -718,6 +802,30 @@ static long xcvr_ioctl(struct file *filep, unsigned int cmd,
 				wb_ad9680_bitbang(&spi_buf);
 			else {
 				xcvr_spi_operation(&spi_buf);
+
+				/* PE43711 digital attenuator slave sel or
+				 * latch enable is required to pulse after
+				 * write to latch in value (wb2 board).
+				 */
+				if ((attached_xcvr == WB2_PRESENT) &&
+				  (spi_buf.operation == WRITE_OP) &&
+				  ((spi_buf.chip_id == WB_SRX_ATTN) ||
+				  (spi_buf.chip_id == WB_TX1_ATTN) ||
+				  (spi_buf.chip_id == WB_TX2_ATTN))) {
+					wb_attenuator_latch_toggle(&spi_buf);
+				}
+
+				/* LMX2492 PLL LO generator slave sel or
+				 * latch enable is required to pulse after
+				 * write to latch in value (wb2 board).
+				 */
+				if ((attached_xcvr == WB2_PRESENT) &&
+				  (spi_buf.operation == WRITE_OP) &&
+				  ((spi_buf.chip_id == WB_DCCLO_LMX2492) ||
+				  (spi_buf.chip_id == WB_TXLO_LMX2492) ||
+				  (spi_buf.chip_id == WB_SRXLO_LMX2492))) {
+					wb_pll_latch_toggle(&spi_buf);
+				}
 			}
 
 			if (spi_buf.operation == READ_OP) {
@@ -919,6 +1027,39 @@ static int wb2_misc_probe(struct platform_device *pdev)
 	}
 
 	of_property_read_u32(np, "tx-reset", &reset_src[WB_AD9144]);
+
+	/* PE43711 dig attenuator slave select / latch enable requires an
+	 * extra pulse after data is written in order to make new value
+	 * effective. Wb2 has 3 pe43711 devices (spi5 ss0, spi7 ss0, and
+	 * spi8 ss0).
+	 */
+	for (i = 0; i < 3; i++) {
+		pe43711_ss_pins[i] =
+			of_get_named_gpio(np, "pe43711-ss-spi-pins", i);
+
+		ret = gpio_request(pe43711_ss_pins[i], "pe43711_ss_pins");
+		if (ret < 0)
+			break;
+
+		//printk("\t pe43711 ss pin %d: %d\n", i, pe43711_ss_pins[i]);
+		gpio_direction_output(pe43711_ss_pins[i], 0);
+	}
+
+	/* LMX2492 PLL LO slave select / latch enable requires an extra
+	 * pulse after data is written in order to make new value effective.
+	 * Wb2 has 3 lmx2492 devices (spi6 ss0, spi6 ss1, and spi6 ss2).
+	 */
+	for (i = 0; i < 3; i++) {
+		lmx2492_ss_pins[i] =
+			of_get_named_gpio(np, "lmx2492-ss-spi-pins", i);
+
+		ret = gpio_request(lmx2492_ss_pins[i], "lmx2492_ss_pins");
+		if (ret < 0)
+			break;
+
+		//printk("\t lmx2492 ss pin %d: %d\n", i, lmx2492_ss_pins[i]);
+		gpio_direction_output(lmx2492_ss_pins[i], 0);
+	}
 
 	if (ret) {
 		pr_err("%s fail\n", __func__);

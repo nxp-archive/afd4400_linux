@@ -607,6 +607,18 @@
 					<&gpioD 24 0>, /* sclk, spi2, 206 */
 					<&gpioD 25 0>; /* ss0, spi2, 209 */
 
+				/* PE43711 digital attenuator devices need extra pulse on LE signal */
+				pe43711-ss-spi-pins =
+					<&gpioD 30 0>, /* spi5 SRX ss0-256, gpioD_30-257 */
+					<&gpioE 17 0>, /* spi7 TX1 ss0-295, gpioE_17-296 */
+					<&gpioE 21 0>; /* spi8 TX2 ss0-316, gpioE_21-317 */
+
+				/* LMX2492 PLL LO devices need extra pulse on LE signal */
+				lmx2492-ss-spi-pins =
+					<&gpioE 13 0>, /* spi6 DCC LO ss0-275, gpioE_13-276 */
+					<&gpioE 27 0>, /* spi6 TX LO  ss1-279, gpioE_27-280 */
+					<&gpioA 26 0>; /* spi6 SRX LO ss2-603, gpioA_26-602 */
+
 				eeprom-handle =<&xcvr_wb_eeprom>;
 				ipmi-mfg-str = "NXP";
 				ipmi-name-str =
