@@ -363,6 +363,7 @@ static int check_axc_overlap(const struct axc_info *axc0,
 	return err;
 }
 
+/* Check for various illegal AxC conditions */
 static int check_axc_conflict(struct cpri_framer *framer,
 		struct axc_info *axc, int clear)
 {
@@ -374,7 +375,8 @@ static int check_axc_conflict(struct cpri_framer *framer,
 	struct axc_info **axc_info_his;
 	int i;
 	const char *axc_dir;
-	int ret;
+	int match = 0;
+	int ret = 0;
 
 	if (clear) {
 		memset(axc_info_tx, 0, sizeof(struct axc_info *) * 24);
@@ -390,7 +392,7 @@ static int check_axc_conflict(struct cpri_framer *framer,
 	bits_per_bf = iq_bits_per_bf(framer);
 	axc_dir = (axc->flags & AXC_DIR_TX) ? "TX" : "RX";
 
-	/* Do some basic check */
+	/* Do some basic check within this AxC itself */
 	if (axc->container_offset < 0) {
 		dev_err(dev, "%s AxC%d err: container offset negative",
 			axc_dir, axc->id);
@@ -465,34 +467,17 @@ static int check_axc_conflict(struct cpri_framer *framer,
 
 	if (axc->flags & AXC_DIR_TX) {
 		axc_info_his = axc_info_tx;
-		if (axc->memblk_sel & MEMBLK0)
-			memblk_tx0++;
-		else
-			memblk_tx1++;
 	} else {
 		axc_info_his = axc_info_rx;
-		if (axc->memblk_sel & MEMBLK1)
-			memblk_rx0++;
-		else
-			memblk_rx1++;
 	}
 
-	if ((memblk_tx0 > 12) || (memblk_tx1 > 12) || (memblk_rx0 > 12)
-		|| (memblk_rx1 > 12)) {
-		dev_err(dev, "%s AxC%d err: memblk can't hold more than 12 AxCs",
-				axc_dir, axc->id);
-		goto out;
-	}
-
-
-	/* Checks if one AxC steps on other AxC */
+	/* Check for conflicts between the new AxC and existing ones */
 	for (i = 0; i < framer->max_axcs; i++) {
-		if (axc_info_his[i] == NULL)
+		if (i == 0) {
+			match = 0;
+		}
+		if (axc_info_his[i] == NULL) {
 			continue;
-		else if (axc_info_his[i]->id == axc->id) {
-			dev_err(dev, "%s AxC%d err: duplicate AxC id",
-					axc_dir, axc->id);
-			goto out;
 		} else {
 			ret = check_axc_overlap(axc, axc_info_his[i]);
 			if (ret & 1) {
@@ -501,11 +486,56 @@ static int check_axc_conflict(struct cpri_framer *framer,
 					axc_dir, axc_info_his[i]->id);
 				goto out;
 			} else if (ret & 2) {
-				dev_err(dev, "%s AxC%d and %s AxC%d in memory buffer",
-					axc_dir, axc->id,
-					axc_dir, axc_info_his[i]->id);
-				goto out;
+				/* Make sure two entries from different AxCs
+				 * aren't in the same buffer.
+				 */
+				if (axc_info_his[i]->id != axc->id) {
+					dev_err(dev, "%s AxC%d and %s AxC%d in same memory buffer",
+						axc_dir, axc->id,
+						axc_dir, axc_info_his[i]->id);
+					goto out;
+				}
 			}
+			/* Multiple AxC entries can share an ID.  
+			 * If so, they must share the same buffer. 
+			 */				
+			if ((axc_info_his[i]->id == axc->id) && 
+				((axc->flags & AXC_DIR_TX) == (axc_info_his[i]->flags & AXC_DIR_TX)) &&
+				((axc->flags & AXC_DIR_RX) == (axc_info_his[i]->flags & AXC_DIR_RX))) {
+				if (!(ret & 2)) {				
+					dev_err(dev, "%s Buffer offset %d does not match offset of \
+							 another entry %d with same ID %d",
+						axc_dir, 
+						axc->buffer_offset_addr, 
+						axc_info_his[i]->buffer_offset_addr, 
+						axc->id);
+					goto out;
+				}
+				match = 1;
+			}
+		}
+	}
+
+	/* If this entry creates a new AxC ID, increment the appropriate counter */
+	if (!match) {
+		if (axc->flags & AXC_DIR_TX) {
+			axc_info_his = axc_info_tx;
+			if (axc->memblk_sel & MEMBLK0)
+				memblk_tx0++;
+			else
+				memblk_tx1++;
+		} else {
+			axc_info_his = axc_info_rx;
+			if (axc->memblk_sel & MEMBLK1)
+				memblk_rx0++;
+			else
+				memblk_rx1++;
+		}
+		if ((memblk_tx0 > 12) || (memblk_tx1 > 12) || (memblk_rx0 > 12) 
+			|| (memblk_rx1 > 12)) {
+			dev_err(dev, "%s AxC%d err: memblk can't hold more than 12 AxCs",
+					axc_dir, axc->id);
+			goto out;
 		}
 	}
 
@@ -515,6 +545,7 @@ static int check_axc_conflict(struct cpri_framer *framer,
 		axc_info_rx[axc->id] = axc;
 
 	return 0;
+
 out:
 	return -EINVAL;
 }
