@@ -869,8 +869,8 @@ CONFIG_SMSC_PHY=y
 # Enable WiMAX (Networking options) to see the WiMAX drivers
 #
 # CONFIG_WAN is not set
-# CONFIG_RF_CPRI is not set
-# CONFIG_RF_SFP is not set
+CONFIG_RF_CPRI=y
+CONFIG_RF_SFP=y
 # CONFIG_ISDN is not set
 
 #

@@ -72,5 +72,5 @@ obj-$(CONFIG_USB_CDC_PHONET)   += usb/
 
 obj-$(CONFIG_HYPERV_NET) += hyperv/
 
-obj-y			+= cpri/sfp/
-obj-y			+= cpri/
+obj-$(CONFIG_RF_SFP)	+= cpri/sfp/
+obj-$(CONFIG_RF_CPRI)		+= cpri/
