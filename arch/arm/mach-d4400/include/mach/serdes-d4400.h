@@ -234,6 +234,12 @@ struct serdes_per_lane_regs {
 	u32 tcsr3;
 };
 
+/* SerDes CPRInCR0/1 */
+struct serdes_cpri_regs {
+	u32 rx_dly;
+	u32 tx_dly;
+};
+
 /** \struct serdes_regs register structure
 *  @brief This is serdes register set structure include the reserved if any.
 *  each SerDes module from 0x000 to 0xFFF (4 KB).
@@ -280,7 +286,12 @@ struct serdes_regs {
 	u32 lane6_pssr_reg;
 	u32 reserved_13[7];	/* 0x1C4-0x1E0 */
 	u32 lane7_pssr_reg;
-	u32 reserved_14[391];	/* 0x1E4-0x800 */
+	u32 reserved_14[231];	/* 0x1E4-0x57C */
+
+	/* CPRInCR0/1 0x580-0x5BC */
+	struct serdes_cpri_regs cpri[MAX_NUMBER_OF_LANES];
+	u32 reserved_15[144];  /* 0x5C0-0x7FC */
+	
 	/* Per-Lane Control and Status Registers (R/W)*/
 	struct serdes_per_lane_regs lane_csr[MAX_NUMBER_OF_LANES];
 };
@@ -517,4 +528,20 @@ void serdes_jcpll_enable(void *sdev_handle,
 
 signed int serdes_sfp_amp_set(void *sdev_handle, u32 lane_id,
 		u32 max_volt, u8 flag);
+
+/* --------------------------------------------------------------------------*/
+/**
+ *@Synopsis Set SERDES delay values for t_offset calculation
+ *
+ * @Param sdev_handle
+ * @Param linerate
+ *
+ * @Returns 0: On success
+ *     Error code: On failure
+ */
+/* --------------------------------------------------------------------------*/
+int serdes_set_delays(void *sdev_handle, 
+		enum srds_lane_id lane_id, 
+		u32 linerate);
+
 #endif

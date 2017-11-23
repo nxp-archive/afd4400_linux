@@ -160,6 +160,11 @@ static int linkrate_autoneg_reset(struct cpri_framer *framer,
 		return -EINVAL;
 	}
 
+	if (serdes_set_delays(framer->serdes_handle, lane_param.lane_id, linerate)) {
+		dev_err(dev, "CPRI set serdes delays fail!");
+		return -EINVAL;
+	}
+
 	if (!(framer->autoneg_params.mode & REC_MODE)) {
 		serdes_jcpll_enable(framer->serdes_handle, &lane_param,
 			&pll_param);
@@ -183,6 +188,7 @@ static void cpri_init_framer(struct cpri_framer *framer,
 	struct cpri_framer *re_framer = framer->cpri_dev->framer[0];
 	enum cpri_prot_ver tproto_ver;
 	u32 tx_seed;
+	const unsigned int ex_delay_period[] = {0, 160, 80, 80, 40, 40, 20};
 
 	/* The CPRI complex is in daisy chain mode
 	 * Some of the slave regs nees to be set
@@ -196,10 +202,11 @@ static void cpri_init_framer(struct cpri_framer *framer,
 		cpri_reg_set(&re_framer->regs->cpri_auxctrl, AUX_MODE_MASK);
 		cpri_reg_set(&regs->cpri_auxctrl, AUX_MODE_MASK);
 		cpri_reg_set(&re_framer->regs->cpri_cwddelay, CW_DELAY_EN);
-	} else if (framer->autoneg_params.mode & RE_MODE_SLAVE)
+	} else if (framer->autoneg_params.mode & RE_MODE_SLAVE) 
 		cpri_reg_set_val(&framer->regs->cpri_timer_cfg,
 				CPRI_SYNC_ESA_MASK, CPRI_SELF_SYNC);
 
+#if 0
 	/* Due to the silicon bug, we are using master mode
 	 * althrough is's in slave mode. The slave mode will
 	 * set the SYNC_PULSE_MODE bit to get around this
@@ -210,6 +217,15 @@ static void cpri_init_framer(struct cpri_framer *framer,
 		cpri_reg_set(&regs->cpri_config, CONF_SYNC_PULSE_MODE_MASK);
 	else
 		cpri_reg_clear(&regs->cpri_config, CONF_SYNC_PULSE_MODE_MASK);
+#else
+	if (framer->autoneg_params.mode & REC_MODE) {
+		cpri_reg_set(&regs->cpri_config, CONF_SYNC_PULSE_MODE_MASK);
+		cpri_reg_clear(&regs->cpri_config, SLAVE_MODE_MASK);
+	} else {
+		cpri_reg_clear(&regs->cpri_config, CONF_SYNC_PULSE_MODE_MASK);
+		cpri_reg_set(&regs->cpri_config, SLAVE_MODE_MASK);
+	}
+#endif
 
 	cpri_reg_set(&framer->regs->cpri_timeren, CPRI_TMR_EN);
 
@@ -236,6 +252,9 @@ static void cpri_init_framer(struct cpri_framer *framer,
 	}
 	cpri_reg_set_val(&regs->cpri_tprotver, PROTO_VER_MASK, tproto_ver);
 	cpri_reg_set_val(&regs->cpri_tscrseed, SCR_SEED_MASK, tx_seed);
+
+	printk("Setting ex_delay_period to %u\n", ex_delay_period[rate] - 1);
+	cpri_reg_set_val(&regs->cpri_exdelaycfg, RX_EX_DELAY_PERIOD_MASK, ex_delay_period[rate] - 1);
 
 	cpri_reg_clear(&regs->cpri_rcr, MASK_ALL);
 	cpri_reg_clear(&regs->cpri_tcr, MASK_ALL);
@@ -781,6 +800,7 @@ static int cpri_rate_autoneg(struct cpri_framer *framer)
 		mdelay(1);
 
 		cpri_init_framer(framer, rate);
+
 		/* Start timer */
 		timer_dur = jiffies + (param->rate_neg_timeout) * HZ / 1000;
 		linerate_timer.expires = timer_dur;

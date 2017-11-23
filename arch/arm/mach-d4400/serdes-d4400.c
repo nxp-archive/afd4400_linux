@@ -601,6 +601,50 @@ out:
 }
 EXPORT_SYMBOL_GPL(serdes_init_lane);
 
+const u32 rx_delay[] = {  0, 0x95B, 0x4E3, 0x492, 0x2FA, 0x319, 0x20E };
+const u32 tx_delay[] = {  0, 0x1E0C, 0xEF3, 0xBED, 0x766, 0x766, 0x491 };
+
+int serdes_set_delays(void *sdev_handle, 
+		enum srds_lane_id lane_id, 
+		u32 linerate)
+{
+	int rc = 0;
+	u32 *reg, val, mask;
+	struct serdes_dev *sdev = (struct serdes_dev *)sdev_handle;
+
+	if ((!sdev) || !(sdev->regs)) {
+		dev_err(sdev->dev, "Invalid dev info\n");
+		rc = -EINVAL;
+		goto out;
+	}
+
+	if (lane_id >= LANE_INVAL) {
+		dev_err(sdev->dev, "Invalid lane Params\n");
+		rc = -EINVAL;
+		goto out;
+	}
+	
+	printk("Setting delays for linerate %d\n", linerate);
+
+	reg = (u32 *)&sdev->regs->cpri[lane_id].rx_dly;
+	val = rx_delay[linerate];
+	mask = SRDS_CPRI_PROTO_CTRL_RX_DLY_BITS;
+	srds_update_reg(reg, val, mask);
+	printk("SerdesCPRI%dCR1(%p) = 0x%04X\n", lane_id, reg, val);
+
+	reg = (u32 *)&sdev->regs->cpri[lane_id].tx_dly;
+	val = tx_delay[linerate];
+	mask = SRDS_CPRI_PROTO_CTRL_TX_DLY_BITS;
+	srds_update_reg(reg, val, mask);
+	printk("SerdesCPRI%dCR0(%p) = 0x%04X\n", lane_id, reg, val);
+
+	udelay(50);
+
+out:
+	return rc;
+}
+EXPORT_SYMBOL_GPL(serdes_set_delays);
+
 int serdes_lane_power_up(void *sdev_handle,
 		enum srds_lane_id lane_id, int direction)
 {

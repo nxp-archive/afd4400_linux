@@ -309,6 +309,7 @@ enum cpri_link_rate {
 	RATE5_4915_2M,
 	RATE6_6144_0M,
 	RATE7_9830_4M,
+	RATECNT,
 };
 
 enum autoneg_mode_mask {
